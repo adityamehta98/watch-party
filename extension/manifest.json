@@ -1,0 +1,90 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Party Sync",
+  "version": "1.6.5",
+  "description": "Keeps Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+ and YouTube in sync with your Watch Party. Everyone uses their own account.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_title": "Watch Party: show the party panel",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*/join/*",
+        "http://localhost/host/*",
+        "http://127.0.0.1/host/*"
+      ],
+      "js": [
+        "party.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://*.netflix.com/*",
+        "https://*.primevideo.com/*",
+        "https://*.amazon.com/*",
+        "https://*.hulu.com/*",
+        "https://*.peacocktv.com/*",
+        "https://*.crunchyroll.com/*",
+        "https://*.paramountplus.com/*",
+        "https://*.max.com/*",
+        "https://*.hbomax.com/*",
+        "https://*.disneyplus.com/*",
+        "https://tv.apple.com/*",
+        "https://*.youtube.com/*"
+      ],
+      "js": [
+        "services.js",
+        "service.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.netflix.com/*"
+      ],
+      "js": [
+        "netflix-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "host_permissions": [
+    "https://*.netflix.com/*",
+    "https://*.primevideo.com/*",
+    "https://*.amazon.com/*",
+    "https://*.hulu.com/*",
+    "https://*.peacocktv.com/*",
+    "https://*.crunchyroll.com/*",
+    "https://*.paramountplus.com/*",
+    "https://*.max.com/*",
+    "https://*.hbomax.com/*",
+    "https://*.disneyplus.com/*",
+    "https://tv.apple.com/*",
+    "https://*.youtube.com/*",
+    "https://*.apple.com/*"
+  ]
+}

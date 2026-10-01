@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Watch Party</title>
+  <link rel="icon" href="icon48.png">
+  <link rel="stylesheet" href="theater.css">
+</head>
+<body>
+  <iframe id="party" title="Watch Party" allow="camera; microphone; autoplay; fullscreen; clipboard-write; encrypted-media; picture-in-picture; display-capture"></iframe>
+  <div id="svcBox" class="svc-box" hidden>
+    <iframe id="svc" title="Streaming service" allow="encrypted-media; autoplay; fullscreen; picture-in-picture; clipboard-write"></iframe>
+  </div>
+  <div id="help" class="help" hidden><span id="helpText"></span><button type="button" id="helpTab">Use a separate tab instead</button><button type="button" id="helpX" aria-label="Close">×</button></div>
+  <div id="bad" class="bad" hidden></div>
+  <script src="services.js"></script>
+  <script src="theater.js"></script>
+</body>
+</html>

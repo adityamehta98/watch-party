@@ -1,0 +1,31 @@
+{
+  "port": 8765,
+  "bind": "0.0.0.0",
+  "folders": [
+    "D:\\Movies"
+  ],
+  "cacheDir": "cache",
+  "keepPrepared": false,
+  "linkMode": "secure",
+  "upnp": true,
+  "publicHost": "",
+  "publicUrl": "",
+  "publicLink": false,
+  "tunnel": "none",
+  "uploadMbps": 0,
+  "maxChunkMB": 32,
+  "webcamMode": "auto",
+  "extraIceServers": [],
+  "cloudflareTurn": null,
+  "room": {
+    "autoWait": true,
+    "requireApproval": true,
+    "maxGuests": 4,
+    "defaults": {
+      "playback": true,
+      "chat": true,
+      "react": true,
+      "camera": true
+    }
+  }
+}

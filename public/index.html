@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0a0b0e">
+<meta name="watch-party-app" content="1">
+<title>Watch Party</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 6 6M22 9l-6 6"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="m16 10.5 6-3.5v10l-6-3.5"/></symbol>
+    <symbol id="i-cam-off" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="m16 10.5 6-3.5v10l-6-3.5M3 3l18 18"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5M3 3l18 18"/></symbol>
+    <symbol id="i-cc" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M10.5 10a2.4 2.4 0 1 0 0 4M17 10a2.4 2.4 0 1 0 0 4"/></symbol>
+    <symbol id="i-fs" viewBox="0 0 24 24"><path d="M3.5 9V3.5H9M20.5 9V3.5H15M3.5 15v5.5H9M20.5 15v5.5H15"/></symbol>
+    <symbol id="i-fs-exit" viewBox="0 0 24 24"><path d="M9 3.5V9H3.5M15 3.5V9h5.5M9 20.5V15H3.5M15 20.5V15h5.5"/></symbol>
+    <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14.5s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20.5a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20.5a6.5 6.5 0 0 0-4-6"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M7.5 3v18M16.5 3v18M3 8h4.5M3 16h4.5M16.5 8H21M16.5 16H21M3 12h18"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.5a4.5 4.5 0 0 0 6.8.5l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2M14 10.5a4.5 4.5 0 0 0-6.8-.5l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11.5" height="11.5" rx="2"/><path d="M5.5 15H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5h8.5A1.5 1.5 0 0 1 15 5v.5"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6M20.5 3.5V9H15"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></symbol>
+    <symbol id="i-back10" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 3.5V9H9"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
+    <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6M20.5 3.5V9H15"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="15" rx="2.5"/><rect x="12" y="11" width="7" height="5.5" rx="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.9-2.6L2.8 15a1.5 1.5 0 0 1 2.4-1.8L8 16"/></symbol>
+  </defs>
+</svg>
+
+<div id="app" data-screen="loading">
+
+  <!-- ============ entry screens ============ -->
+  <section class="screen center" data-for="loading">
+    <div class="spinner" aria-label="Loading"></div>
+  </section>
+
+  <section class="screen center" data-for="join">
+    <form class="card join-card" id="joinForm" autocomplete="on">
+      <div class="brand-mark big"><span></span></div>
+      <h1>You're invited to a watch party</h1>
+      <p class="muted" id="joinSub">Pick a name so everyone knows who's here.</p>
+      <label class="field">
+        <span>Your name</span>
+        <input id="joinName" name="nickname" maxlength="32" required placeholder="e.g. Priya" autocomplete="nickname">
+      </label>
+      <button class="btn primary block" type="submit">Join the party</button>
+      <p class="fine">Best in Chrome or Edge on a computer or TV. Headphones help if you'll use your mic.</p>
+    </form>
+  </section>
+
+  <section class="screen center" data-for="pending">
+    <div class="card">
+      <div class="spinner"></div>
+      <h1>Waiting for the host</h1>
+      <p class="muted">The host will let you in shortly.</p>
+    </div>
+  </section>
+
+  <section class="screen center" data-for="denied">
+    <div class="card">
+      <h1 id="deniedTitle">You can't join this room</h1>
+      <p class="muted" id="deniedText">Ask the host for a new link.</p>
+    </div>
+  </section>
+
+  <!-- ============ room ============ -->
+  <div class="room" data-for="room" id="room">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark"><span></span></div><span class="brand-name">Watch Party</span></div>
+      <div class="now-playing" id="nowPlaying"></div>
+      <div class="top-actions">
+        <span class="tb-media" id="tbMedia">
+          <button class="ctrl" id="tbCam" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
+          <button class="ctrl" id="tbMic" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
+        </span>
+        <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
+        <button class="btn primary sm host-only" id="inviteBtn" type="button"><svg><use href="#i-link"/></svg><span>Invite</span></button>
+        <button class="icon-btn" id="sidebarBtn" type="button" title="Show or hide the side panel" aria-label="Toggle side panel"><svg><use href="#i-panel"/></svg></button>
+      </div>
+    </header>
+
+    <main class="stage-wrap">
+      <div class="stage" id="stage" data-idle="false">
+        <video id="video" playsinline preload="auto"></video>
+        <div class="yt-host" id="ytHost"></div>
+        <div class="click-layer" id="clickLayer"></div>
+        <div class="service-panel" id="servicePanel" hidden></div>
+        <button class="yt-open ctl-only" id="ytOpen" type="button" hidden><svg><use href="#i-film"/></svg>Search YouTube</button>
+        <div class="yt-browser" id="ytBrowser" hidden>
+          <div class="yt-top">
+            <span class="yt-logo">YouTube</span>
+            <form class="yt-search" id="ytSearchForm" autocomplete="off"><input id="ytQuery" placeholder="Search YouTube, or paste a video link" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
+            <button class="icon-btn" id="ytClose" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+          </div>
+          <div class="yt-chips" id="ytChips"></div>
+          <div class="yt-status fine" id="ytStatus"></div>
+          <div class="yt-results" id="ytResults"></div>
+        </div>
+
+        <div class="stage-empty" id="stageEmpty">
+          <div class="empty-inner">
+            <svg class="empty-icon"><use href="#i-film"/></svg>
+            <h2 id="emptyTitle">Nothing is playing yet</h2>
+            <p class="muted" id="emptyText">The host will pick a movie.</p>
+            <div class="empty-actions ctl-only">
+              <button class="btn primary" type="button" data-open-tab="library"><svg><use href="#i-film"/></svg>Open library</button>
+              <button class="btn host-only" type="button" id="emptyInvite"><svg><use href="#i-link"/></svg>Invite people</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-notice" id="stageNotice" hidden></div>
+        <div class="osd" id="osd" hidden aria-live="polite"></div>
+        <button class="unmute-pill" id="unmutePill" type="button" hidden><svg><use href="#i-mute"/></svg>Tap to turn sound on</button>
+
+        <div class="reactions-layer" id="reactionsLayer" aria-hidden="true"></div>
+        <div class="toasts" id="toasts" aria-live="polite"></div>
+        <div class="cams" id="cams"></div>
+        <div class="chat-float" id="chatFloat"></div>
+        <form class="quick-chat" id="quickChat" hidden>
+          <input id="quickChatInput" maxlength="500" placeholder="Say something… (Esc to close)" autocomplete="off">
+        </form>
+
+        <div class="controls" id="controls">
+          <div class="seek" id="seek">
+            <div class="seek-track">
+              <div class="seek-buffered" id="seekBuffered"></div>
+              <div class="seek-played" id="seekPlayed"></div>
+              <div class="seek-thumb" id="seekThumb"></div>
+            </div>
+            <div class="seek-tip" id="seekTip">0:00</div>
+          </div>
+          <div class="ctrl-row">
+            <button class="ctrl" id="playBtn" type="button" title="Play / pause (Space)" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+            <button class="ctrl hide-sm" id="backBtn" type="button" title="Back 10 seconds (← key)" aria-label="Back 10 seconds"><svg><use href="#i-back10"/></svg></button>
+            <button class="ctrl hide-sm" id="fwdBtn" type="button" title="Forward 10 seconds (→ key)" aria-label="Forward 10 seconds"><svg><use href="#i-fwd10"/></svg></button>
+            <div class="volume">
+              <button class="ctrl" id="muteBtn" type="button" title="Mute (M) · volume: ↑ ↓ keys" aria-label="Mute"><svg><use href="#i-vol"/></svg></button>
+              <input type="range" id="volume" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+            </div>
+            <div class="time" id="time">0:00 / 0:00</div>
+            <div class="grow"></div>
+            <div class="pop-wrap">
+              <button class="ctrl" id="reactBtn" type="button" title="React" aria-label="React"><svg><use href="#i-smile"/></svg></button>
+              <div class="popover reactions-pop" id="reactPop" hidden></div>
+            </div>
+            <button class="ctrl" id="camBtn" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
+            <button class="ctrl" id="micBtn" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
+            <div class="pop-wrap">
+              <button class="ctrl" id="ccBtn" type="button" title="Subtitles" aria-label="Subtitles"><svg><use href="#i-cc"/></svg></button>
+              <div class="popover menu" id="ccPop" hidden></div>
+            </div>
+            <button class="ctrl" id="pipBtn" type="button" title="Pop out cameras: float them over other windows, like Netflix" aria-label="Pop out cameras"><svg><use href="#i-pip"/></svg></button>
+            <button class="ctrl fs-only" id="quickChatBtn" type="button" title="Chat (Enter)" aria-label="Chat"><svg><use href="#i-chat"/></svg></button>
+            <button class="ctrl" id="fsBtn" type="button" title="Fullscreen (F)" aria-label="Fullscreen"><svg><use href="#i-fs"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="side-cams" id="sideCams"></div>
+      <nav class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="chat" type="button"><svg><use href="#i-chat"/></svg><span>Chat</span><em class="badge" id="chatBadge" hidden></em></button>
+        <button class="tab" role="tab" data-tab="people" type="button"><svg><use href="#i-users"/></svg><span>People</span><em class="badge" id="peopleBadge" hidden></em></button>
+        <button class="tab ctl-only" role="tab" data-tab="library" type="button"><svg><use href="#i-film"/></svg><span>Library</span></button>
+        <button class="tab host-only" role="tab" data-tab="settings" type="button"><svg><use href="#i-sliders"/></svg><span>Room</span></button>
+      </nav>
+
+      <section class="panel" data-panel="chat">
+        <div class="chat-list" id="chatList"></div>
+        <form class="chat-form" id="chatForm">
+          <input id="chatInput" maxlength="500" placeholder="Message everyone" autocomplete="off">
+          <button class="icon-btn accent" type="submit" aria-label="Send"><svg><use href="#i-send"/></svg></button>
+        </form>
+      </section>
+
+      <section class="panel" data-panel="people">
+        <div class="panel-scroll" id="peopleList"></div>
+      </section>
+
+      <section class="panel ctl-only" data-panel="library">
+        <div class="panel-scroll">
+          <div class="lib-head">
+            <div class="search"><svg><use href="#i-search"/></svg><input id="libSearch" placeholder="Search movies" autocomplete="off"></div>
+            <button class="icon-btn host-only" id="libRescan" type="button" title="Rescan folders" aria-label="Rescan"><svg><use href="#i-refresh"/></svg></button>
+          </div>
+          <p class="fine" id="libGuestNote" hidden>You can pick what everyone watches: a movie from the host's PC, or a streaming service. On a service, press play on anything in your window and the room (the host too) follows you.</p>
+          <details class="svc-pick" id="svcPick">
+            <summary class="section-label">Watch together on a streaming service</summary>
+            <p class="fine">Pick a service. It opens right here in the Watch Party window; sign in with your own account and press play on anything. Everyone else is brought to the same title and signs in with <b>their own</b> account. Needs the free <b>Watch Party Sync</b> extension (you and each guest).</p>
+            <div class="svc-grid" id="svcGrid"></div>
+            <label class="check-row"><input type="checkbox" id="svcNewTab"> Open in a separate tab instead (the party floats in a small window on top)</label>
+            <label class="check-row host-only"><input type="checkbox" id="svcAutoSkip" checked> Skip intros, recaps and credits, and start the next episode right away (where the service offers it)</label>
+            <details class="stream-box" id="streamBox">
+              <summary><svg><use href="#i-link"/></svg><span>Or paste a link (YouTube plays right here)</span></summary>
+              <input id="streamUrl" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false">
+              <label class="check-row"><input type="checkbox" id="streamInTabs"> For YouTube: everyone opens it in their own tab (needs the extension; use this for videos that won't play here)</label>
+              <div class="row end"><button class="btn sm primary" id="streamGo" type="button">Show in room</button></div>
+            </details>
+          </details>
+          <details class="folders host-only" id="foldersBox">
+            <summary><svg><use href="#i-folder"/></svg><span id="foldersSummary">Movie folders</span></summary>
+            <p class="fine">Paste one folder per line, like <code>D:\Movies</code>. Subfolders are included.</p>
+            <textarea id="foldersInput" rows="3" spellcheck="false" placeholder="D:\Movies"></textarea>
+            <div class="row end"><button class="btn sm primary" id="foldersSave" type="button">Save folders</button></div>
+          </details>
+          <div id="libList" class="lib-list"></div>
+        </div>
+      </section>
+
+      <section class="panel host-only" data-panel="settings">
+        <div class="panel-scroll settings" id="settingsPanel">
+          <h3>Joining</h3>
+          <label class="switch-row"><span><b>Ask me before letting people in</b><small>New people wait until you admit them.</small></span><input type="checkbox" class="switch" data-setting="requireApproval"></label>
+          <label class="switch-row"><span><b>Lock the room</b><small>Nobody new can join. People already here can rejoin.</small></span><input type="checkbox" class="switch" data-setting="locked"></label>
+          <label class="field inline" style="padding-top:10px"><span>Most guests at once</span><span class="with-unit"><input id="maxGuestsInput" type="number" min="1" max="20"><em>people</em></span></label>
+          <div class="row"><button class="btn sm danger-ghost" id="rotateBtn" type="button"><svg><use href="#i-refresh"/></svg>New link (removes all guests)</button></div>
+
+          <h3>Playback</h3>
+          <label class="switch-row"><span><b>Pause for everyone when someone buffers</b><small>Keeps the room together if one connection falls behind.</small></span><input type="checkbox" class="switch" data-setting="autoWait"></label>
+
+          <h3>New guests can…</h3>
+          <label class="switch-row"><span><b>Play, pause and seek</b></span><input type="checkbox" class="switch" data-default="playback"></label>
+          <label class="switch-row"><span><b>Chat</b></span><input type="checkbox" class="switch" data-default="chat"></label>
+          <label class="switch-row"><span><b>Send reactions</b></span><input type="checkbox" class="switch" data-default="react"></label>
+          <label class="switch-row"><span><b>Use camera and mic</b></span><input type="checkbox" class="switch" data-default="camera"></label>
+          <p class="fine">Change permissions for one person in the People tab.</p>
+
+          <h3>Your connection</h3>
+          <div class="net-box" id="netBox"></div>
+          <label class="field inline" style="margin-top:12px"><span>Home upload speed</span><span class="with-unit"><input id="uploadInput" type="number" min="0" step="1" placeholder="e.g. 40"><em>Mbps</em></span></label>
+          <p class="fine">Each viewer downloads the movie from your PC, so your upload speed has to cover the movie's bitrate once per viewer. Run a speed test and enter your <b>upload</b> number to get warnings in the library.</p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <dialog class="dialog" id="inviteDialog">
+    <form method="dialog" class="dialog-inner">
+      <button class="icon-btn close" value="close" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      <h2>Invite people</h2>
+      <p class="muted">Send this link or have them scan the code. Anyone with the link can join, so only share it with people you trust.</p>
+      <div class="invite-kind" id="inviteKind" hidden></div>
+      <div class="qr" id="inviteQr"></div>
+      <div class="copy-row">
+        <input id="inviteUrl" readonly>
+        <button class="btn primary" type="button" id="copyInvite"><svg><use href="#i-copy"/></svg>Copy</button>
+      </div>
+      <p class="fine" id="inviteStatus"></p>
+      <p class="fine" id="lanLink"></p>
+      <div class="guest-note" id="guestNote" hidden>
+        <b>Tell your guests:</b> the browser will warn that the connection "isn't private". That's expected for a home PC. Click <b>Advanced → Continue</b> (Safari: <b>Show Details → visit this website</b>).
+        <div class="row"><button class="btn sm" type="button" id="copyGuestMsg"><svg><use href="#i-copy"/></svg>Copy invite message with instructions</button></div>
+      </div>
+    </form>
+  </dialog>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

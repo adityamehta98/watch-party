@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Personal settings and secrets (admin key, local folders, TLS keys)
+config.json
+cache/
+
+# Build output and binaries (publish these as GitHub Release assets instead)
+dist/
+*.exe
+bin/*.dll
+bin/*.exe
+bin/FFMPEG-LICENSE.txt
+_update/
+old version (safe to delete)/
+
+# Logs and OS junk
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+_to_delete/
