@@ -49,7 +49,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 
 > Use this if you just want to host a party. To work on the code, see [Running from source](#running-from-source).
 
-1. **Download** the latest release zip from the [Releases](../../releases) page and extract it anywhere (for example `D:\watch-party`). It contains:
+1. **Download** the latest release zip from the [Releases](https://github.com/adityamehta98/watch-party/releases) page and extract it anywhere (for example `D:\watch-party`). It contains:
    ```
    WatchParty.exe           the whole app (Node + server + web page in one file)
    Start Watch Party.bat    launcher (also installs pending updates)
@@ -83,7 +83,7 @@ Watch Party runs in the background with no window. Closing the host page stops i
 ### Steps
 
 ```bash
-git clone https://github.com/<your-username>/watch-party.git
+git clone https://github.com/adityamehta98/watch-party.git
 cd watch-party
 npm install
 npm start
