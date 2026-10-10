@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Watch Party Sync",
-  "version": "1.6.5",
-  "description": "Keeps Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+ and YouTube in sync with your Watch Party. Everyone uses their own account.",
+  "version": "1.9.3",
+  "description": "Keeps Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, YouTube, and any website the host opens in the Watch Party window, in sync with your Watch Party.",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -20,7 +20,9 @@
   },
   "permissions": [
     "sidePanel",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequestWithHostAccess",
+    "scripting",
+    "webNavigation"
   ],
   "background": {
     "service_worker": "background.js"
@@ -70,6 +72,17 @@
       "world": "MAIN",
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "custom-gate.js"
+      ],
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "run_at": "document_idle"
     }
   ],
   "host_permissions": [
@@ -85,6 +98,7 @@
     "https://*.disneyplus.com/*",
     "https://tv.apple.com/*",
     "https://*.youtube.com/*",
-    "https://*.apple.com/*"
+    "https://*.apple.com/*",
+    "<all_urls>"
   ]
 }

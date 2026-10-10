@@ -5,7 +5,7 @@ const $ = s => document.querySelector(s);
 let ui = null;
 let time = null;
 let port = null;
-let pc = null, pendingIce = [], camNames = new Map(), streams = new Map();
+let pc = null, pendingIce = [], streams = new Map();
 
 function connect() {
   port = chrome.runtime.connect({ name: 'dock' });

@@ -23,7 +23,11 @@ function wpCanonicalUrl(raw) {
   let u;
   try { u = new URL(String(raw || '')); } catch { return ''; }
   const svc = wpServiceOf(u.hostname);
-  if (!svc) return '';
+  if (!svc) {
+    // any other website (the host's "custom site"): the page itself, query included (?ep=3 matters there)
+    if (!/^https?:$/.test(u.protocol)) return '';
+    return `https://${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, '')}${u.search}`;
+  }
   u.hash = '';
   if (svc === 'youtube') { const v = u.searchParams.get('v'); u.search = v ? `?v=${v}` : ''; }
   else u.search = '';

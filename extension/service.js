@@ -3,7 +3,8 @@
 (() => {
   if (window.__wpService) return;
   window.__wpService = true;
-  const SERVICE = wpServiceOf(location.hostname);
+  // a known service, or the custom site the host opened in the Watch Party window (see custom-gate.js)
+  const SERVICE = wpServiceOf(location.hostname) || (window.__wpCustom ? 'custom' : null);
   if (!SERVICE) return;
   // The site's own page: normally the top of the tab, or the frame inside the Watch Party's "watch here" window.
   const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && /^chrome-extension:/.test(location.ancestorOrigins[0]));
@@ -267,26 +268,7 @@
     if (m.wp === 'cmd') apply(m.cmd);
     else if (!TOP) return;
     else if (m.wp === 'overlay') { if (!m.dockOpen || document.fullscreenElement) overlay(m.item); } // the side panel already shows chat
-    else if (m.wp === 'linked') { linked = true; dockOpen = !!m.dockOpen || !!m.theater; theater = !!m.theater; showButton(); }
-    else if (m.wp === 'unlinked') { linked = false; showButton(); }
-    else if (m.wp === 'dock') { dockOpen = !!m.open || theater; showButton(); }
   });
-
-  // ------------------------------------------------ "Watch Party" button, to bring back the side panel
-  let linked = false, dockOpen = false, theater = false, btn = null;
-  function showButton() {
-    const want = linked && !dockOpen && !document.fullscreenElement;
-    if (!want) { if (btn) btn.remove(); btn = null; return; }
-    if (btn && btn.isConnected) return;
-    btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = '💬 Watch Party';
-    btn.title = 'Show the party (chat, cameras, controls) next to the video';
-    btn.setAttribute('style', 'all:initial;position:fixed;right:0;top:40%;z-index:2147483647;writing-mode:vertical-rl;transform:rotate(180deg);background:#f5b544;color:#1a1300;font:700 13px/1 system-ui,Segoe UI,sans-serif;padding:14px 8px;border-radius:0 10px 10px 0;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.45);opacity:.92');
-    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); send({ wp: 'open-panel' }); });
-    document.documentElement.appendChild(btn);
-  }
-  document.addEventListener('fullscreenchange', showButton);
 
   // ------------------------------------------------ chat and reactions on top of the player
   let box = null;
@@ -316,7 +298,7 @@
 // A small bar you can drag anywhere, even in fullscreen: camera, microphone, chat, and everyone's
 // faces. It talks to your Watch Party tab (or the Watch Party window), which does the real work.
 (() => {
-  const SERVICE = wpServiceOf(location.hostname);
+  const SERVICE = wpServiceOf(location.hostname) || (window.__wpCustom ? 'custom' : null);
   const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && /^chrome-extension:/.test(location.ancestorOrigins[0]));
   if (!SERVICE || !TOP || window.__wpBar) return;
   window.__wpBar = true;
