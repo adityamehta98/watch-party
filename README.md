@@ -52,13 +52,13 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 1. **Download** the latest release zip from the [Releases](https://github.com/adityamehta98/watch-party/releases) page and extract it anywhere (for example `D:\watch-party`). It contains:
    ```
    WatchParty.exe           the whole app (Node + server + web page in one file)
-   Start Watch Party.bat    launcher (also installs pending updates)
+   refresh.bat              starts Watch Party (installs an update first, if one is waiting in _update)
    bin\                     ffmpeg.exe, ffprobe.exe and their DLLs
    extension\               the Watch Party Sync browser extension
    README.md
    ```
 2. **Set your home network to Private:** Start → Settings → Network & internet → Wi-Fi (or Ethernet) → your network → **Network profile type: Private**.
-3. **Double-click `Start Watch Party.bat`.** You'll see two one-time prompts:
+3. **Double-click `refresh.bat`** (or `WatchParty.exe`). You'll see two one-time prompts:
    - *"Windows protected your PC"*: click **More info**, then **Run anyway** (the app is unsigned).
    - *"Windows Defender Firewall has blocked some features"*: tick **Private networks** only, then **Allow**.
 4. Your browser opens the **host page**. In **Library**, add the folders that hold your movies.
@@ -144,7 +144,7 @@ The output goes to `dist/WatchParty/`. What the script does:
 6. **Switches the PE subsystem** from console to GUI so the app runs without a console window.
 7. **Copies** ffmpeg, ffprobe, their DLLs, the ffmpeg license and this README into `dist/WatchParty/`.
 
-Put `Start Watch Party.bat` next to the exe, zip the `dist/WatchParty` folder and attach it to a GitHub release.
+Put `refresh.bat` next to the exe, zip the `dist/WatchParty` folder and attach it to a GitHub release.
 
 > When you change the extension, bump `version` in `extension/manifest.json` **and** `REQUIRED_EXT_VERSION` in `public/js/media.js` together.
 
@@ -174,7 +174,7 @@ Put `Start Watch Party.bat` next to the exe, zip the `dist/WatchParty` folder an
 
 ### 1. One port, one secret
 
-Everything (web page, WebSocket, movie bytes, webcam relay) runs on **one port, 8765**: TCP for HTTPS/WebSocket and UDP for the TURN relay. Every guest URL contains a random 24-character room key (`/join/<key>`). Requests without a valid key get a plain `404`, so the server doesn't reveal itself. The host page (`/host/<adminKey>`) only answers requests from `localhost`.
+Everything (web page, WebSocket, movie bytes, webcam relay) runs on **one port, 8765**: TCP for HTTPS/WebSocket and UDP for the TURN relay. Every guest URL contains a random 24-character room key (`/join/<key>`), kept in `config.json` so the invite link stays the same between starts. Requests without a valid key get a plain `404`, so the server doesn't reveal itself. The host page (`/host/<adminKey>`) only answers requests from `localhost`.
 
 ### 2. Streaming the movie
 
@@ -275,6 +275,7 @@ Use **[Tailscale](https://tailscale.com/)** (free):
 
 - **No certificate warning:** in the Tailscale admin console go to **DNS → HTTPS Certificates → Enable HTTPS**, then restart Watch Party. The invite becomes `https://your-pc.your-tailnet.ts.net:8765/…` with a trusted certificate.
 - **Link for anyone, no Tailscale for guests:** turn on **Room → Public link for anyone** (Tailscale Funnel). Webcams don't work over it (TCP only) and speed is limited, so use a "Compress for streaming" copy.
+- Watch Party connects Tailscale on this PC when it starts (opening the Tailscale app if needed) and disconnects it when it stops, so the public link is ready from the start.
 
 ### Provider shares IP addresses (CGNAT: T-Mobile Home Internet, Starlink, …)
 Direct connections can't work. Use Tailscale as above, or as a last resort put `cloudflared.exe` in `bin/` and set `"tunnel": "cloudflare"` in `config.json` (no webcams).
@@ -301,13 +302,25 @@ How it behaves:
 - **Phones and tablets** can't run extensions. They get a big live clock showing where the room is, plus an "Open in the app" button.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
 - **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
-- The extension only runs on those sites and on Watch Party pages. It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
+- The extension's sync script only runs on those sites, on Watch Party pages, and on a custom site the host opened inside the Watch Party window (a tiny check runs on other pages and stops right away). It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
+
+### Custom site (any website with a video)
+
+In **Library → Watch together on a streaming service → Custom site**, the host pastes the link of any page with a video and clicks **Open for everyone**.
+
+- The page opens inside everyone's Watch Party window (the extension's "watch here" window), even if the site normally refuses to be shown inside another page.
+- **Only the host controls it.** When the host presses play, pause or skips in the site's own player, everyone follows. A guest's clicks are undone and their player follows the host. Guests with playback control lose it while a custom site is on.
+- When the host moves to another page on the site (the next episode, say) and plays it, everyone's window follows.
+- Players that sit in a frame inside the page (common on video sites) work too.
+- **Ad pop-ups and pop-unders are blocked (on by default):** cross-site tabs opened by the custom site or its player frames are closed at once and focus returns to the Watch Party. Same-site buttons and navigation still work. This does not add an iframe sandbox, so players cannot reject playback with a “Sandbox detected” error.
+- **Built-in ad blocker (always on for custom sites, nowhere else):** ad and pop-up networks are blocked (`extension/ad-domains.js`), pop-up and pop-under tabs are closed the moment they open, invisible click-catching layers over the video and the page are removed, and links that would take over the whole window stay inside the site's box. The video and the site's own buttons keep working.
+- Everyone watching needs the extension. If a video doesn't start by itself, click play once inside it. Some sites refuse to run inside another window; for those, nothing can be done from here.
 
 ---
 
 ## Hosting a watch party
 
-1. Double-click **Start Watch Party.bat**.
+1. Double-click **refresh.bat** (or **WatchParty.exe**).
 2. **Library → Show in room** on a movie. Press **Prepare** first if it says **Needs prep**.
 3. **Invite → Copy invite message with instructions** and send it.
 4. Approve each guest in the **Let in / Deny** pop-up.
@@ -360,6 +373,7 @@ Created automatically on first run, next to `WatchParty.exe` (or in the repo roo
 | `room.maxGuests` | `4` | Maximum number of guests |
 | `room.defaults` | all `true` | Default permissions for new guests: `playback`, `chat`, `react`, `camera` |
 | `adminKey` | *(generated)* | Secret for the host page URL. **Keep private.** |
+| `roomKey` | *(generated)* | The secret in the invite link (`/join/<roomKey>`). Stays the same between starts, so your invite link doesn't change; **Room → Make a new invite link** replaces it. |
 
 ---
 
@@ -394,7 +408,7 @@ watch-party/
 ├── extension/              "Watch Party Sync" Chrome/Edge/Brave extension (MV3)
 ├── build/build-windows.js  builds dist/WatchParty/WatchParty.exe (Node SEA)
 ├── bin/                    ffmpeg/ffprobe binaries (not committed; see bin/README.txt)
-├── Start Watch Party.bat   Windows launcher and updater
+├── refresh.bat             Windows launcher: installs a waiting update (from _update\), then starts Watch Party
 ├── config.example.json     sample configuration
 └── package.json
 ```
