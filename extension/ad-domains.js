@@ -3,7 +3,7 @@
 const WP_AD_DOMAINS = [
   // big ad exchanges and trackers
   'doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'googletagservices.com', 'adservice.google.com',
-  'pagead2.googlesyndication.com', 'adnxs.com', 'adsrvr.org', 'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com',
+  'adnxs.com', 'adsrvr.org', 'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com',
   'amazon-adsystem.com', 'rubiconproject.com', 'pubmatic.com', 'openx.net', 'casalemedia.com', 'smartadserver.com',
   'yieldmo.com', 'media.net', 'adform.net', 'moatads.com', 'scorecardresearch.com', 'quantserve.com', 'zedo.com',
   'revcontent.com', 'mgid.com', 'adblade.com', 'contextweb.com', 'bidswitch.net', 'sharethrough.com', 'teads.tv',

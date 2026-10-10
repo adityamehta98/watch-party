@@ -8,7 +8,7 @@
   window.__wpClean = true;
   const AD = self.WP_AD_DOMAINS || [];
   const isAd = h => !!h && AD.some(d => h === d || h.endsWith('.' + d));
-  const site = h => String(h || '').split('.').slice(-2).join('.');
+  const sameSite = (a, b) => a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
   const depth = (location.ancestorOrigins && location.ancestorOrigins.length) || 1; // 1 = the site's own page
 
   // ---- ad boxes
@@ -26,7 +26,7 @@
     if (isAd(u.hostname)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     if (t === '_blank') {
       // another site in a new tab: an ad. This site in a new tab: open it here instead.
-      if (site(u.hostname) !== site(location.hostname)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      if (!sameSite(u.hostname, location.hostname)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       a.setAttribute('target', depth === 1 ? '_self' : '_parent');
     } else if (t === '_top' || t === '_parent') {
       // "the whole window" would be the Watch Party: keep it inside the site's own box
