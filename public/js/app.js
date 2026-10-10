@@ -1,7 +1,7 @@
 import { Connection } from './net.js';
 import { SyncPlayer } from './player.js';
 import { Mesh } from './rtc.js';
-import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl } from './media.js';
+import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 import { DEVICE } from './player.js';
 
 // ---------------------------------------------------------------- helpers
@@ -104,7 +104,14 @@ function start(name) {
     onPeerGone: id => { S.remoteStreams.delete(id); renderCams(); },
   });
   ytMedia = new YouTubeMedia($('#ytHost'));
-  remote = new RemoteMedia({ onInfo: () => { renderServicePanel(); maybeSendMeta(); } });
+  remote = new RemoteMedia({ onInfo: () => {
+    renderServicePanel(); maybeSendMeta();
+    if (remote.present && extOutdated(remote.version) && !S.extWarned) {
+      S.extWarned = true;
+      toast(`Your Watch Party Sync extension is out of date (${remote.version || '?'}). Open ${/Edg\//.test(navigator.userAgent) ? 'edge' : 'brave or chrome'}://extensions and click its reload arrow, then reload this page.`, { kind: 'error', timeout: 20000 });
+    }
+  } });
+  remote.onProblem = p => { if (p.kind === 'theater') clearTimeout(enterTheater.timer); extProblem(p); };
   remote.onUser = onRemoteUserAction;
   // the level set in Netflix & co's own player shows on the party's slider too (and is remembered)
   remote.onUserVolume = (v, muted) => { if (M !== remote) return; $('#volume').value = muted ? 0 : v; store.set('wp.volume', v); scheduleUi(); dockPushSoon(); };
@@ -262,6 +269,7 @@ function loadMovie(movie) {
   bringAlong(movie);
   renderLibraryCurrent();
   renderServicePanel();
+  if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
   if (same) return;
   trackEls.clear();
   const media = mediaFor(movie);
@@ -314,9 +322,8 @@ function renderServicePanel() {
     // Phones and tablets can't run browser extensions, so the service can't be driven from here.
     // Instead: open the service's own app, and follow the room by hand with the live clock below.
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
-    const pickerName = m.by && m.by !== (S.me && S.me.name) ? m.by : hostName; // who picked it (the host, or a guest with control)
     status = `<div class="follow-clock"><span id="followState"></span><b id="followTime"></b></div>${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}.`;
-    button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">Open it in the ${esc(name)} app</a>`;
+    button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">${isCustom() ? `Open ${esc(name)}` : `Open it in the ${esc(name)} app`}</a>`;
     help = `<p class="fine">Follow the clock by hand: press play or pause in the app when it does, and skip to the time shown. Phones and tablets can't be kept in sync automatically (that needs a browser extension, which they don't allow). iPad: put the app and this page side by side. Chat and reactions work here as usual.</p>`;
   } else if (!remote.present) {
     const copy = (text, label) => `<button class="btn sm" type="button" data-copy="${esc(text)}">${esc(label || 'Copy')}</button>`;
@@ -359,6 +366,14 @@ function renderServicePanel() {
         : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
     button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
     help = `<p class="fine">Already have it open in another tab? Just press play there and it links up.</p>`;
+    if (isCustom()) {
+      // any website the host opened: it plays inside the Watch Party window, and only the host drives it
+      status = isHost
+        ? `<b>${esc(name)}</b> opens right here for everyone. Pick a video and press play: it plays for the whole room, in sync. Only you control it.`
+        : `${esc(hostName)} opened <b>${esc(name)}</b>. Click <b>Watch here</b>: it opens in this window and plays along with ${esc(hostName)}. Only the host controls it.`;
+      button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button>`;
+      help = `<p class="fine">If the video doesn't start by itself, click play once inside it. The browser sometimes needs one click there.</p>`;
+    }
   } else {
     status = `<span class="svc-ok">Synced with your ${esc(name)} tab</span> · <span id="svcTime"></span>`;
     if (m.browsing && (isHost || canControl())) status = `<span class="svc-ok">${esc(name)} is open</span> · press play on anything and everyone follows.`;
@@ -394,7 +409,7 @@ function onRemoteUserAction(m) {
   // the tab has moved on to another title (next episode, say): that's handled by following the tab,
   // not by moving the current title around
   if (m.url && canonicalUrl(m.url) !== canonicalUrl(S.movie.url) && !S.movie.browsing && performance.now() - (remote.urlChangedAt || -1e9) < 8000) return;
-  if (!canControl()) { toast('Only people the host allows can play, pause or seek. Your tab will follow the room.', { timeout: 3500 }); return; }
+  if (!canControl()) { toast(isCustom() ? 'Only the host controls this site. Your video follows the host.' : 'Only people the host allows can play, pause or seek. Your tab will follow the room.', { timeout: 3500 }); return; }
   const t = Number(m.t);
   // (a jump that "landed": the site finished loading the new spot a moment after the room moved on,
   // so the room lines up with this screen; everyone else is close already and catches up smoothly)
@@ -532,9 +547,12 @@ $('#stageNotice').addEventListener('click', e => {
 });
 
 // --- permissions
-const canControl = () => isHost || !!S.perms.playback;
+// a custom site (any website the host opened) is the host's alone: guests watch, the host drives
+const isCustom = () => !!(S.movie && S.movie.service === 'custom');
+const canControl = () => isHost || (!!S.perms.playback && !isCustom());
 function noPerm(perm) {
   const text = { playback: 'Only people the host allows can play, pause or seek.', chat: 'The host turned off chat for you.', react: 'The host turned off reactions for you.', camera: 'The host hasn\'t allowed you to use your camera or mic.' }[perm] || 'Not allowed.';
+  if (perm === 'playback' && isCustom()) return toast('Only the host controls this site. Your video follows the host.', { timeout: 3500 });
   const actions = perm === 'playback' ? [{ label: 'Ask the host', primary: true, run: () => { conn.send({ type: 'request-control' }); toast('Asked the host for control', { timeout: 2000 }); } }] : [];
   toast(text, { actions, timeout: 4500 });
 }
@@ -1277,6 +1295,7 @@ function tailscaleBox(t) {
   if (t.trusted) cert = `<p class="fine good">Trusted certificate: friends see <b>no</b> "connection isn't private" warning on <code>${esc(t.name)}</code>.</p>`;
   else if (t.app && t.name) cert = `<div class="fix"><b>Remove the browser warning (one time):</b> in the Tailscale admin page open <b>DNS</b>, scroll to <b>HTTPS Certificates</b> and click <b>Enable HTTPS</b>. Then restart Watch Party. ${t.certError ? `<br><span class="fine">Tailscale says: ${esc(t.certError)}</span>` : ''}</div>`;
   else if (!t.app) cert = `<p class="fine">Tailscale is running (address ${esc(t.ip)}), but its command-line tool <code>tailscale.exe</code> wasn't found in <code>C:\\Program Files\\Tailscale</code>. Reinstall Tailscale from tailscale.com/download (the version from that page, not the Microsoft Store one) to get the trusted certificate and the public link.</p><p class="fine" style="font-size:11px;opacity:.7">${(t.searchNotes || []).map(esc).join('<br>')}</p>`;
+  else if (!t.online) cert = `<div class="fix"><b>Tailscale isn't connected on this PC</b>, so there's no public link yet. Watch Party tried to connect it. ${t.loginUrl ? `<div class="row" style="margin-top:8px"><a class="btn sm primary" href="${esc(t.loginUrl)}" target="_blank" rel="noopener">Sign in to Tailscale</a></div>` : 'Open <b>Tailscale</b> (its icon is near the clock, bottom right; or Start menu → Tailscale) and click <b>Connect</b>, or <b>Log in</b> if it asks.'} Watch Party notices within about 15 seconds and switches the invite to the public link by itself.<br><span class="fine">Tailscale says: ${esc(t.statusError || 'not connected')}</span></div>`;
   else if (!t.name) cert = `<p class="fine">Tailscale's tool was found (<code>${esc(t.appPath || '')}</code>) but it didn't give this PC's name. ${esc(t.statusError || 'Is Tailscale signed in?')} Once that's fixed, restart Watch Party.</p>`;
   let funnel = '';
   if (t.app && t.name) {
@@ -1638,6 +1657,27 @@ $('#streamGo').addEventListener('click', () => {
 });
 $('#streamUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#streamGo').click(); } });
 
+// ---------------------------------------------------------------- host: a custom site
+// Any website with a video. It opens inside everyone's Watch Party window (the extension's "watch
+// here" window) and only the host controls it: the host presses play, everyone plays, in sync.
+$('#customGo').addEventListener('click', () => {
+  if (!isHost) return;
+  let url = $('#customUrl').value.trim();
+  if (!url) return toast('Paste the link of the page with the video first.', { timeout: 2500 });
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  conn.send({ type: 'select-url', url, custom: true, strict: $('#customStrict').checked });
+  $('#customUrl').value = '';
+  setTab('chat');
+  // straight into the Watch Party window (without the extension, the panel shows how to add it)
+  if (remote && remote.present && !extOutdated(remote.version) && !isTheater) enterTheater();
+});
+{
+  const cb = $('#customStrict');
+  cb.checked = store.get('wp.customStrict', true);
+  cb.addEventListener('change', () => store.set('wp.customStrict', cb.checked));
+}
+$('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#customGo').click(); } });
+
 // ---------------------------------------------------------------- the pop-out party
 // A small always-on-top window (Chrome, Edge, Brave on a computer) with the cameras, chat,
 // reactions and play controls. It floats over Netflix, Prime Video and the others, even in
@@ -1881,7 +1921,25 @@ function enterTheater() {
   if (!remote || !remote.present) return;
   const url = `${location.origin}${location.pathname}#wpcid=${encodeURIComponent(clientId)}&wpname=${encodeURIComponent(S.me?.name || S.name || '')}`;
   remote.post({ type: 'theater', url });
+  // this page is replaced by the Watch Party window in a moment; still here after a few seconds = it didn't work
+  clearTimeout(enterTheater.timer);
+  enterTheater.timer = setTimeout(() => extProblem({ kind: 'theater', error: 'nothing happened' }), 4000);
 }
+// The extension is installed but isn't answering: say what to do instead of silently doing nothing.
+function extProblem(p) {
+  const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : /Brave/.test(navigator.userAgent) || navigator.brave ? 'brave://extensions' : 'chrome://extensions';
+  if (p.kind === 'stale') {
+    // the extension was reloaded after this page opened: reload the page once to reconnect
+    let tried = false; try { tried = sessionStorage.getItem('wp.staleReload') === '1'; sessionStorage.setItem('wp.staleReload', '1'); } catch { /* private window */ }
+    if (!tried) { extProblem.reloading = true; clearTimeout(enterTheater.timer); toast('The Watch Party Sync extension was reloaded. Reconnecting this page…', { timeout: 3000 }); setTimeout(() => location.reload(), 1200); return; }
+  }
+  if (extProblem.reloading) return;
+  if (extProblem.shown && Date.now() - extProblem.shown < 8000) return;
+  extProblem.shown = Date.now();
+  toast(`The Watch Party Sync extension isn't responding${p.error && p.error !== 'stale' ? ` (${p.error})` : ''}. Open ${addr}, click the reload arrow on Watch Party Sync (and send a screenshot of its Errors button if it has one), then reload this page.`,
+    { kind: 'error', timeout: 30000, actions: [{ label: 'Reload this page', primary: true, run: () => location.reload() }] });
+}
+try { if (sessionStorage.getItem('wp.staleReload') === '1') setTimeout(() => { try { sessionStorage.removeItem('wp.staleReload'); } catch {} }, 15000); } catch { /* private window */ }
 const theaterSvc = () => isTheater && kindOf(S.movie) === 'service';
 function theaterPost(msg) {
   if (!isTheater) return;
@@ -1905,7 +1963,7 @@ function theaterReport() {
   const r = stage.getBoundingClientRect();
   // a window like Invite is open: the streaming site (which sits on top of this page) steps aside so it can be seen
   const cover = !!document.querySelector('dialog[open]');
-  const msg = { wpTheater: 'stage', show, cover, linked: !!(remote && remote.linked && remote.st), browsing: !!(S.movie && S.movie.browsing), signin: !!(remote && remote.signingIn), current: remote ? canonicalUrl(remote.pageUrl) : '', url: S.movie && S.movie.url, rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } };
+  const msg = { wpTheater: 'stage', show, custom: isCustom(), strict: isCustom() && !!S.movie.strict, cover, linked: !!(remote && remote.linked && remote.st), browsing: !!(S.movie && S.movie.browsing), signin: !!(remote && remote.signingIn), current: remote ? canonicalUrl(remote.pageUrl) : '', url: S.movie && S.movie.url, rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } };
   const json = JSON.stringify(msg);
   if (json === theaterLast) return;
   theaterLast = json;
@@ -1947,6 +2005,17 @@ $('#svcGrid').addEventListener('click', e => {
   if (!b) return;
   const id = b.dataset.svcTile;
   if (id === 'youtube') { openYouTube(); return; }
+  // a guest picking the service the room is already watching: join the title that's on, don't send
+  // everyone back to the start page
+  if (!isHost && S.movie && kindOf(S.movie) === 'service' && S.movie.service === id && !S.movie.browsing) {
+    setTab('chat');
+    if (!remote || !remote.present) return; // the panel shows how to add the extension
+    if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url });
+    else if (!$('#svcNewTab').checked) enterTheater();
+    else { togglePip({ keep: true, quiet: true }); remote.openPanel(); remote.openTab(); }
+    toast(`Taking you to ${S.movie.title && S.movie.title !== serviceName(S.movie) ? `"${S.movie.title}"` : 'what the room is watching'}…`, { timeout: 3000 });
+    return;
+  }
   if (!remote || !remote.present) {
     conn.send({ type: 'select-url', url: SERVICE_HOMES[id], browsing: true }); // the panel then shows the install steps
     setTab('chat');
@@ -1983,15 +2052,23 @@ function maybeFollowTab() {
   const m = S.movie;
   if (!m || kindOf(m) !== 'service') return;
   const st = remote.st;
-  const url = canonicalUrl(st.url || '');
+  // On a custom site the video usually plays in a frame inside the page, which can't tell which page
+  // it's on: use the page the window shows.
+  const pageNow = () => (remote.st && remote.st.url) || (m.service === 'custom' ? remote.pageUrl : '') || '';
+  const url = canonicalUrl(pageNow());
   if (!url || url === canonicalUrl(m.url) || url === lastFollowUrl || url === followBase) return;
-  if (!(st.dur > 60) || st.ad) return; // nothing real is playing yet
-  if (serviceOfUrl(url) !== m.service) return; // wandered off to another site
+  if (!(st.dur > 60) || st.ad || st.paused) return; // nothing real is playing yet
+  // a home page / browse rows / profile picker / info page plays trailers by itself: never a pick
+  if (!isTitlePage(pageNow())) return;
+  // someone who just joined (and is still finding their way to the room's title, through "Who's
+  // watching?" and the home page) can't move the room; only once they've been on the room's title
+  if (!isHost && !m.browsing && !reachedTitle) return;
+  if (m.service === 'custom' ? !!serviceOfUrl(url) : serviceOfUrl(url) !== m.service) return; // wandered off to another site
   lastFollowUrl = url;
   clearTimeout(followTimer);
   followTimer = setTimeout(() => {
-    if (!remote.st || canonicalUrl(remote.st.url || '') !== url || !(isHost || canControl())) return;
-    const msg = { type: 'select-url', url, follow: true, title: remote.st.title || '', duration: remote.st.dur || 0, position: remote.currentTime, playing: !remote.st.paused || (!!remote.st.hold && !!S.state && !!S.state.playing) };
+    if (!remote.st || canonicalUrl(pageNow()) !== url || !(isHost || canControl())) return;
+    const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, title: remote.st.title || '', duration: remote.st.dur || 0, position: remote.currentTime, playing: !remote.st.paused || (!!remote.st.hold && !!S.state && !!S.state.playing) };
     conn.send(msg);
   }, 1200);
 }
@@ -2116,7 +2193,7 @@ setInterval(() => {
   if (here && here === want) reachedTitle = true;
   // someone with control who was on the title and then went browsing is picking the next thing: leave them be
   if (canControl() && reachedTitle) { keepOffSince = 0; return; }
-  const onService = here && serviceOfUrl(here) === S.movie.service;
+  const onService = here && (S.movie.service === 'custom' ? !serviceOfUrl(here) : serviceOfUrl(here) === S.movie.service);
   const fresh = remote.page && performance.now() - remote.page.at < 6000;
   if (!want || !onService || !fresh || remote.signingIn || here === want || (remote.linked && remote.st && !remote.st.ad && canonicalUrl(remote.st.url) === want)) { keepOffSince = 0; return; }
   if (!keepOffSince) { keepOffSince = Date.now(); return; }
@@ -2124,7 +2201,7 @@ setInterval(() => {
   if (Date.now() - keepOffSince < 3000 || Date.now() - keepLastGo < 15000) return;
   keepLastGo = Date.now(); keepOffSince = 0;
   toast(`Taking you to ${S.movie.title && S.movie.title !== serviceName(S.movie) ? `"${S.movie.title}"` : 'what the room is watching'}…`, { timeout: 4000 });
-  if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url });
+  if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url, custom: isCustom(), strict: isCustom() && !!S.movie.strict });
   else remote.navigate(S.movie.url);
 }, 1000);
 

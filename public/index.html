@@ -209,6 +209,13 @@
             <div class="svc-grid" id="svcGrid"></div>
             <label class="check-row"><input type="checkbox" id="svcNewTab"> Open in a separate tab instead (the party floats in a small window on top)</label>
             <label class="check-row host-only"><input type="checkbox" id="svcAutoSkip" checked> Skip intros, recaps and credits, and start the next episode right away (where the service offers it)</label>
+            <details class="stream-box host-only" id="customBox">
+              <summary><svg><use href="#i-link"/></svg><span>Custom site: any website with a video</span></summary>
+              <p class="fine">Paste the link of a page with a video. It opens inside everyone's Watch Party window, and only you control it: press play and it plays for everyone, in sync. Everyone watching needs the <b>Watch Party Sync</b> extension.</p>
+              <input id="customUrl" placeholder="https://…" autocomplete="off" spellcheck="false">
+              <label class="check-row"><input type="checkbox" id="customStrict" checked> Block cross-site ad pop-ups and pop-unders (recommended)</label>
+              <div class="row end"><button class="btn sm primary" id="customGo" type="button">Open for everyone</button></div>
+            </details>
             <details class="stream-box" id="streamBox">
               <summary><svg><use href="#i-link"/></svg><span>Or paste a link (YouTube plays right here)</span></summary>
               <input id="streamUrl" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false">

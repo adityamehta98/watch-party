@@ -181,6 +181,7 @@ export class RemoteMedia extends AdapterBase {
     if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
     if (m.type === 'hello') { this.present = true; this.version = m.version; this.onInfo(); }
+    else if (m.type === 'ext-problem') { this.onProblem && this.onProblem(m); }
     else if (m.type === 'linked') {
       this.linked = true; this.linkInfo = m; this.onInfo();
       // a newly linked tab gets the party's level right away
@@ -317,7 +318,7 @@ export const SERVICE_HOMES = {
   max: 'https://play.max.com/', disney: 'https://www.disneyplus.com/home', appletv: 'https://tv.apple.com/',
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.6.5';
+export const REQUIRED_EXT_VERSION = '1.9.3';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 export const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],
@@ -328,12 +329,31 @@ export function canonicalUrl(raw) {
   let u;
   try { u = new URL(String(raw || '')); } catch { return ''; }
   const svc = serviceOfUrl(u.toString());
-  if (!svc) return '';
+  if (!svc) {
+    // any other website (the host's custom site): the page itself, query included
+    if (!/^https?:$/.test(u.protocol)) return '';
+    return `https://${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, '')}${u.search}`;
+  }
   u.hash = '';
   if (svc === 'youtube') { const v = u.searchParams.get('v'); u.search = v ? `?v=${v}` : ''; } else u.search = '';
   let p = u.pathname.replace(/\/ref=[^/]*$/, '').replace(/\/+$/, '');
   if (svc === 'netflix') { const m = /\/watch\/(\d+)/.exec(p); if (m) p = `/watch/${m[1]}`; }
   return `https://${u.hostname.toLowerCase()}${p || '/'}${u.search}`;
+}
+// A page where a title plays: not a service's home page, browse rows, search, profile picker, sign-in or
+// a title's info page (those auto-play trailers). Only these may become what the room watches when
+// someone's tab moves on by itself.
+const NOT_A_TITLE = /^\/(?:$|browse|home|hub|search|profiles?|login|signin|sign-in|signup|account|settings|my-?stuff|my-?list|watchlist|collections?|genres?|categories|storefront|kids|title|welcome)(?:\/|$)/i;
+export function isTitlePage(raw) {
+  let u;
+  try { u = new URL(String(raw || '')); } catch { return false; }
+  const svc = serviceOfUrl(u.toString());
+  if (!svc) return /^https?:$/.test(u.protocol); // a custom site: any page of it
+  const p = u.pathname.replace(/^\/[a-z]{2}(?:-[a-z]{2})?(?=\/)/i, ''); // a language/country prefix (/us/..., /en-gb/...)
+  const home = x => NOT_A_TITLE.test(x) || /^\/(?:watch\/home|region\/[^/]+\/storefront|gp\/video\/storefront|video\/storefront)/i.test(x);
+  if (home(p) || home(u.pathname)) return false;
+  if (svc === 'netflix') return /^\/watch\/\d+/.test(p);
+  return true;
 }
 export const serviceOfUrl = url => { try { const h = new URL(url).hostname.toLowerCase(); return Object.keys(SERVICE_HOSTS).find(id => SERVICE_HOSTS[id].some(x => h === x || h.endsWith('.' + x))) || null; } catch { return null; } };
 export const SERVICE_COLORS = {
