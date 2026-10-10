@@ -1,8 +1,7 @@
 import { Connection } from './net.js';
-import { SyncPlayer } from './player.js';
+import { SyncPlayer, DEVICE } from './player.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
-import { DEVICE } from './player.js';
 
 // ---------------------------------------------------------------- helpers
 const $ = s => document.querySelector(s);
@@ -1251,7 +1250,7 @@ async function refreshInfo() {
   renderServicePanel();
   if (S.info.updatePending && !S.updateWarned) {
     S.updateWarned = true;
-    toast('An update is downloaded but not installed. Close the Watch Party window, then double-click "Start Watch Party.bat" (not WatchParty.exe).', { kind: 'error', timeout: 15000 });
+    toast('An update is downloaded but not installed. Close the Watch Party window, then double-click "refresh.bat" (not WatchParty.exe).', { kind: 'error', timeout: 15000 });
   }
 }
 function netSummary(i) {
@@ -1778,7 +1777,6 @@ window.__wp = { S, get player() { return player; }, get conn() { return conn; },
 // When you watch on Netflix, Prime Video and the others, the extension shows this party in Chrome's
 // side panel right next to the video: chat, reactions, people, cameras and the play controls.
 // This page stays the one that's connected to the room; the panel is just a view of it.
-S.chatLog = S.chatLog || [];
 const dock = { open: false, timer: null, last: '', pc: null, rtcKey: '', cams: [], pendingIce: [] };
 
 function dockSnapshot() {

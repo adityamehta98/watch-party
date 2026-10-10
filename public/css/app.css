@@ -267,7 +267,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.55) 50%, rgba(255,255,255,.55) 58%, transparent 58%, transparent 70%, rgba(255,255,255,.55) 70%, rgba(255,255,255,.55) 78%, transparent 78%); }
 .tile:hover .grip, .tile.dragging .grip { opacity: 1; }
 @media (hover: none) { .tile .grip { opacity: .8; } }
-.tile.speaking { border-color: var(--ok); box-shadow: 0 0 0 2px rgba(62,207,142,.5); }
 
 /* chat float in fullscreen */
 .chat-float { position: absolute; left: 16px; bottom: 96px; width: min(380px, 60%); display: flex; flex-direction: column; gap: 6px; pointer-events: none; z-index: 4; }
@@ -365,9 +364,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .settings h3 { font-size: 11.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin: 18px 0 2px; }
 .settings h3:first-child { margin-top: 4px; }
 .settings .field.inline { padding: 10px 0 0; }
-.tunnel-box { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--bg-2); font-size: 12.5px; color: var(--muted); }
-.tunnel-box b { color: var(--text); }
-
 /* connection */
 .net-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px 12px; background: var(--bg-2); margin-top: 8px; }
 .net-line { display: flex; gap: 9px; align-items: flex-start; font-weight: 600; }
@@ -380,7 +376,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .fix ol { margin: 6px 0 0; padding-left: 18px; }
 .fix li { margin: 4px 0; }
 .net-box .copy-row input { height: 34px; }
-.link-seg { margin-top: 14px; }
 .guest-note { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid rgba(245,181,68,.3); font-size: 13px; color: var(--muted); }
 .guest-note b { color: var(--text); }
 

@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
-const { run } = require('./tools');
+const { run, ROOT, encoderLabel } = require('./tools');
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.mov', '.webm', '.avi', '.m2ts', '.mts', '.ts', '.wmv']);
 const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text']);
@@ -86,7 +86,7 @@ function analyze(probe, item) {
     text: TEXT_SUBS.has(s.codec_name), forced: !!(s.disposition && s.disposition.forced),
     isDefault: !!(s.disposition && s.disposition.default),
   }));
-  let defaultAudio = audios.find(a => a.isDefault) || audios.find(a => a.lang === 'eng') || audios[0] || null;
+  const defaultAudio = audios.find(a => a.isDefault) || audios.find(a => a.lang === 'eng') || audios[0] || null;
   const info = {
     duration, size, bitrateMbps: Math.round(bitrate / 1e5) / 10, container: fmt.format_name || '',
     video, audios, subs, defaultAudioIndex: defaultAudio ? defaultAudio.index : null,
@@ -177,7 +177,7 @@ class Library extends EventEmitter {
     this.probing = 0;
     this.probeWaiting = [];
     this.scanning = false;
-    this.cacheDir = path.resolve(require('./tools').ROOT, config.cacheDir || 'cache');
+    this.cacheDir = path.resolve(ROOT, config.cacheDir || 'cache');
     fs.mkdirSync(this.cacheDir, { recursive: true });
     this.probeCachePath = path.join(this.cacheDir, 'probe-cache.json');
     try { this.probeCache = JSON.parse(fs.readFileSync(this.probeCachePath, 'utf8')); } catch { this.probeCache = {}; }
@@ -391,7 +391,7 @@ class Library extends EventEmitter {
     const item = this.items.get(id);
     if (!item) throw new Error('Unknown movie');
     if (!item.info) throw new Error('Movie info not loaded yet');
-    if (!this.tools.ffmpeg) throw new Error('ffmpeg was not found. Run "Start Watch Party.bat" again to install it.');
+    if (!this.tools.ffmpeg) throw new Error('ffmpeg was not found. Run "refresh.bat" again to install it.');
     if (item.job && ['queued', 'running'].includes(item.job.state)) return item.job;
     const info = item.info;
     const compress = !!opts.compress;
@@ -404,7 +404,7 @@ class Library extends EventEmitter {
     const job = {
       id, state: 'queued', percent: 0, speed: null, eta: null, error: null, proc: null,
       opts: { compress, mustEncode, targetMbps: Math.max(4, Math.min(80, Number(opts.targetMbps) || 25)), audio, audioMode, textSubs, subsOnly },
-      label: subsOnly ? 'Extracting subtitles' : (compress || mustEncode) ? `Re-encoding video (${require('./tools').encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
+      label: subsOnly ? 'Extracting subtitles' : (compress || mustEncode) ? `Re-encoding video (${encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
     };
     item.job = job;
     this.queue.push(item);
