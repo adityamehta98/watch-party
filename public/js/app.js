@@ -1,6 +1,7 @@
 import { Connection } from './net.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
+import { playbackCapabilities, deliverySources } from './capabilities.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
@@ -55,6 +56,7 @@ const S = {
 };
 
 const video = $('#video');
+const PLAYBACK = playbackCapabilities(video);
 const stage = $('#stage');
 // The media everything talks to: the <video> for your files, or a YouTube / streaming-tab adapter.
 let M = video;
@@ -98,7 +100,7 @@ if (!mode || !key) {
 function start(name) {
   S.name = name;
   screen('loading');
-  conn = new Connection(key, () => ({ type: 'hello', clientId, name: S.name }));
+  conn = new Connection(key, () => ({ type: 'hello', clientId, name: S.name, capabilities: PLAYBACK }));
   mesh = new Mesh({
     send: m => conn.send(m),
     onRemoteStream: (id, stream) => { S.remoteStreams.set(id, stream); renderCams(); },
@@ -286,7 +288,9 @@ function loadMovie(movie) {
     try { M.volume = vol; } catch {}
   }
   S.metaSent = null;
-  player.setMovie(movie, kindOf(movie) === 'file' ? `${movie.url}?k=${encodeURIComponent(key)}&c=${encodeURIComponent(clientId)}` : null, media);
+  S.fileSources = kindOf(movie) === 'file' ? deliverySources(movie, PLAYBACK, key, clientId) : [];
+  S.fileSourceIndex = 0;
+  player.setMovie(movie, S.fileSources[0] || null, media);
   if (movie && kindOf(movie) === 'file') {
     for (const s of movie.subs || []) {
       const t = document.createElement('track');
@@ -578,7 +582,15 @@ function renderNotice() {
   if (el.innerHTML !== html) el.innerHTML = html;
 }
 
-video.addEventListener('error', () => { renderNotice(); });
+video.addEventListener('error', () => {
+  const next = S.fileSources?.[++S.fileSourceIndex];
+  if (next) {
+    video.src = next;
+    video.load();
+    toast('Safari streaming was unavailable, so playback switched to the original file.', { timeout: 5000 });
+  }
+  renderNotice();
+});
 
 // "Hide" on the picture hint: don't show it again for this movie (or at all after two hides)
 function pictureHintHidden(id) {
@@ -1598,6 +1610,7 @@ function prepFormHtml(it) {
   const enc = S.info?.encoderLabel || (isHost ? 'your GPU' : 'the host\'s graphics card');
   const audioOpts = i.audios.map(a => `<option value="${a.index}" ${String(o.audioIndex ?? i.defaultAudioIndex) === String(a.index) ? 'selected' : ''}>${esc([a.lang, a.label, a.title].filter(Boolean).join(' · '))}</option>`).join('');
   const compress = !!o.compress;
+  const hls = o.hls !== false;
   const target = o.targetMbps || (i.video.width > 1920 ? 25 : 12);
   const textSubs = i.subs.filter(s => s.text).length;
   const imgSubs = i.subs.filter(s => !s.text).length;
@@ -1613,6 +1626,7 @@ function prepFormHtml(it) {
         ? `Re-encodes the video with ${esc(enc)} so it needs less upload. At 20–25 Mbps, 4K still looks close to the original.`
         : must ? `This video format has to be re-encoded with ${esc(enc)}.` : 'Video is copied bit-for-bit. Viewers get exactly what you have.'}</div></div>
     ${compress ? `<label class="opt">Target bitrate<select data-o="targetMbps">${[8, 12, 16, 20, 25, 30, 40].map(n => `<option value="${n}" ${n === +target ? 'selected' : ''}>${n} Mbps${n <= 12 ? ' (1080p-ish)' : n >= 30 ? ' (near original)' : ''}</option>`).join('')}</select></label>` : ''}
+    <label class="check-row"><input type="checkbox" data-o="hls" ${hls ? 'checked' : ''}><span><b>Optimize for Safari, iPhone and iPad</b><br>Creates segmented HLS media for steadier seeking and recovery on Apple devices. Other browsers still use the direct file.</span></label>
     <div class="hint">${textSubs ? `${textSubs} text subtitle track${textSubs > 1 ? 's' : ''} will be included.` : 'No text subtitles in this file.'}${imgSubs ? ` ${imgSubs} image subtitle track${imgSubs > 1 ? 's' : ''} (PGS) can't be shown in browsers.` : ''}</div>
     <div class="hint">The prepared copy is deleted when Watch Party stops, so it doesn't fill up your disk. Prepare it again next time (copying takes a few minutes, compressing longer).</div>
     <div class="row end" style="margin-top:0"><button class="btn sm" data-act="closeprep" data-id="${it.id}">Cancel</button><button class="btn sm primary" data-act="prepare" data-id="${it.id}">Start</button></div>
@@ -1656,7 +1670,9 @@ function renderLibrary() {
           : `<button class="btn sm primary" data-act="play" data-id="${it.id}">${icon('play')}Show in room</button>`;
         if (!S.prepOpen.has(it.id)) acts += `<button class="btn sm ghost" data-act="openprep" data-id="${it.id}">Options</button>`;
         if (isHost && it.prepared && it.prepared.mode !== 'subs' && !current) acts += `<button class="btn sm ghost" data-act="unprep" data-id="${it.id}" title="Delete the prepared copy to free up ${esc(it.prepared.sizeLabel)}">Delete copy</button>`;
-        if (it.prepared && it.prepared.mode !== 'subs') status = status || `<div class="fine">Prepared copy · ${esc(it.prepared.sizeLabel)} · ${it.prepared.bitrateMbps} Mbps · ${esc(it.prepared.audioLabel || '')}${it.prepared.compressed ? ' · compressed' : ''}</div>`;
+        if (it.prepared && it.prepared.mode !== 'subs') status = status || (it.prepared.mode === 'hls'
+          ? `<div class="fine">Optimized for Safari, iPhone and iPad · ${esc(it.prepared.sizeLabel)}</div>`
+          : `<div class="fine">Prepared copy · ${esc(it.prepared.sizeLabel)} · ${it.prepared.bitrateMbps} Mbps · ${esc(it.prepared.audioLabel || '')}${it.prepared.compressed ? ' · compressed' : ''}${it.prepared.hls ? ' · Safari HLS' : ''}</div>`);
       } else if (plan.mode === 'unsupported') {
         why = `<ul class="why">${plan.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
       } else {
@@ -1716,6 +1732,7 @@ $('#libList').addEventListener('change', e => {
   const o = S.prepOpts.get(id) || {};
   const k = e.target.dataset.o;
   if (k === 'compress') o.compress = e.target.value === '1';
+  else if (k === 'hls') o.hls = e.target.checked;
   else if (k === 'audioIndex' || k === 'targetMbps') o[k] = +e.target.value;
   else if (k) o[k] = e.target.value;
   S.prepOpts.set(id, o);

@@ -100,6 +100,7 @@ class Room {
     const perms = role === 'host' ? Object.fromEntries(PERMS.map(p => [p, true])) : { ...this.settings.defaults, ...((mem && mem.perms) || {}) };
     const client = {
       id, name, role, ws, key, perms, iceFor: ctx.iceFor || (() => []), relayOnlyFor: ctx.relayOnly || (() => true), ip: ctx.ip || '',
+      capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse },
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
       media: { cam: false, mic: false },
       status: { at: 0 }, bufferingSince: null, lastWaitCause: 0,
@@ -214,7 +215,7 @@ class Room {
     }
     return {
       kind: 'file', id: m.id, title: m.title, duration: m.duration, width: m.width, height: m.height, hdr: m.hdr, codec: m.codec,
-      mbps: m.mbps, audio: m.audio, url: `/media/${m.id}/video`,
+      mbps: m.mbps, audio: m.audio, url: `/media/${m.id}/video`, hls: m.hls ? `/media/${m.id}/hls/index.m3u8` : null,
       subs: m.subs.map(s => ({ key: s.key, label: s.label, lang: s.lang, url: `/media/${m.id}/sub/${s.key}.vtt` })),
     };
   }

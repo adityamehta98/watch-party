@@ -47,6 +47,17 @@ function fmtBytes(n) {
   return Math.round(n / 1e3) + ' KB';
 }
 
+function treeBytes(dir) {
+  let total = 0;
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      total += entry.isDirectory() ? treeBytes(file) : fs.statSync(file).size;
+    }
+  } catch { /* incomplete or already removed */ }
+  return total;
+}
+
 function analyze(probe, item) {
   const fmt = probe.format || {};
   const streams = probe.streams || [];
@@ -300,6 +311,10 @@ class Library extends EventEmitter {
     return p;
   }
 
+  goodHls(item, prepared = this.goodPrepared(item)) {
+    return prepared?.hls?.dir === `${item.id}.hls` && fs.existsSync(path.join(this.cacheDir, prepared.hls.dir, 'index.m3u8')) ? prepared.hls : null;
+  }
+
   loadPrepared(item) {
     try {
       const meta = JSON.parse(fs.readFileSync(this.preparedMetaPath(item.id), 'utf8'));
@@ -346,9 +361,19 @@ class Library extends EventEmitter {
       id, title: item.title, file, duration: (prepared && prepared.duration) || info.duration,
       width: v.width, height: v.height, hdr: v.hdr, codec: v.codec,
       mbps: (prepared && prepared.bitrateMbps) || info.bitrateMbps,
-      audio: prepared ? prepared.audioLabel : audioLabel(info.audios.find(a => a.index === info.defaultAudioIndex)),
-      subs,
+      audio: prepared?.audioLabel || audioLabel(info.audios.find(a => a.index === info.defaultAudioIndex)),
+      hls: !!this.goodHls(item, prepared), subs,
     };
+  }
+
+  hlsFile(id, name) {
+    if (!/^(index\.m3u8|init\.mp4|seg-\d{5}\.m4s)$/.test(name)) return null;
+    const item = this.items.get(id);
+    const prepared = item && this.goodPrepared(item);
+    const hls = this.goodHls(item, prepared);
+    if (!hls) return null;
+    const file = path.join(this.cacheDir, hls.dir, name);
+    return fs.existsSync(file) ? file : null;
   }
 
   subFile(id, key) {
@@ -378,7 +403,7 @@ class Library extends EventEmitter {
         },
         probeError: it.probeError,
         stalePrepared: !!(it.prepared && !this.goodPrepared(it)),
-        prepared: this.goodPrepared(it) && { mode: it.prepared.mode, sizeLabel: fmtBytes(it.prepared.outSize || 0), bitrateMbps: it.prepared.bitrateMbps, audioLabel: it.prepared.audioLabel, compressed: it.prepared.compressed, subs: (it.prepared.subs || []).length, createdAt: it.prepared.createdAt },
+        prepared: this.goodPrepared(it) && { mode: it.prepared.mode, sizeLabel: fmtBytes((it.prepared.outSize || 0) + (this.goodHls(it, it.prepared)?.bytes || 0)), bitrateMbps: it.prepared.bitrateMbps, audioLabel: it.prepared.audioLabel, compressed: it.prepared.compressed, hls: !!this.goodHls(it, it.prepared), subs: (it.prepared.subs || []).length, createdAt: it.prepared.createdAt },
         playable: !!(it.info && (this.goodPrepared(it) || it.info.plan.mode === 'direct')),
         externalSubs: this.externalSubs(it).length,
         job: it.job && { state: it.job.state, percent: it.job.percent, speed: it.job.speed, eta: it.job.eta, error: it.job.error, label: it.job.label },
@@ -395,16 +420,17 @@ class Library extends EventEmitter {
     if (item.job && ['queued', 'running'].includes(item.job.state)) return item.job;
     const info = item.info;
     const compress = !!opts.compress;
-    const mustEncode = info.plan.mode === 'transcode';
+    const hls = opts.hls !== false;
+    const mustEncode = info.plan.mode === 'transcode' || (hls && !['h264', 'hevc'].includes(info.video.codec));
     const audio = info.audios.find(a => a.index === Number(opts.audioIndex)) || info.audios.find(a => a.index === info.defaultAudioIndex) || null;
     const audioMode = opts.audioMode === 'stereo' ? 'stereo' : 'surround';
     const textSubs = info.subs.filter(s => s.text);
-    const subsOnly = info.plan.mode === 'direct' && !compress && (!audio || audio.index === info.defaultAudioIndex) && audioMode === 'surround';
-    if (subsOnly && !textSubs.length) throw new Error('This movie already plays directly and has no text subtitles to extract.');
+    const subsOnly = info.plan.mode === 'direct' && !compress && !mustEncode && (!audio || audio.index === info.defaultAudioIndex) && audioMode === 'surround';
+    if (subsOnly && !textSubs.length && !hls) throw new Error('This movie already plays directly and has no text subtitles to extract.');
     const job = {
       id, state: 'queued', percent: 0, speed: null, eta: null, error: null, proc: null,
-      opts: { compress, mustEncode, targetMbps: Math.max(4, Math.min(80, Number(opts.targetMbps) || 25)), audio, audioMode, textSubs, subsOnly },
-      label: subsOnly ? 'Extracting subtitles' : (compress || mustEncode) ? `Re-encoding video (${encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
+      opts: { compress, hls, mustEncode, targetMbps: Math.max(4, Math.min(80, Number(opts.targetMbps) || 25)), audio, audioMode, textSubs, subsOnly },
+      label: subsOnly ? (textSubs.length ? 'Extracting subtitles' : 'Optimizing for Safari') : (compress || mustEncode) ? `Re-encoding video (${encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
     };
     item.job = job;
     this.queue.push(item);
@@ -474,12 +500,14 @@ class Library extends EventEmitter {
     const job = item.job;
     const info = item.info;
     const o = job.opts;
+    const previous = this.goodPrepared(item);
     const encodeVideo = o.compress || o.mustEncode;
     job.state = 'running';
     this.emit('update');
 
     // disk space check
-    const estimate = o.subsOnly ? 50e6 : encodeVideo ? (o.targetMbps * 1e6 / 8) * info.duration * 1.2 : item.size * 1.05;
+    const outputEstimate = encodeVideo ? (o.targetMbps * 1e6 / 8) * info.duration : item.size;
+    const estimate = o.subsOnly ? (o.hls ? item.size * 1.05 : 50e6) : outputEstimate * (o.hls ? 2.1 : 1.1);
     if (fsp.statfs) {
       try {
         const s = await fsp.statfs(this.cacheDir);
@@ -490,6 +518,8 @@ class Library extends EventEmitter {
 
     const tmpVideo = path.join(this.cacheDir, `${item.id}.part.mp4`);
     const outVideo = `${item.id}.mp4`;
+    const tmpHls = path.join(this.cacheDir, `${item.id}.hls.part`);
+    const outHls = `${item.id}.hls`;
     let videoCodecOut = info.video.codec;
     let encName = null;
     let subOuts = [];
@@ -543,8 +573,8 @@ class Library extends EventEmitter {
     };
 
     const duration = info.duration || 1;
-    const runOnce = args => new Promise((resolve, reject) => {
-      const p = spawn(this.tools.ffmpeg, args, { windowsHide: true });
+    const runOnce = (args, cwd) => new Promise((resolve, reject) => {
+      const p = spawn(this.tools.ffmpeg, args, { windowsHide: true, cwd });
       job.proc = p;
       let errText = '';
       let buf = '';
@@ -585,17 +615,38 @@ class Library extends EventEmitter {
     const attempts = encodeVideo
       ? [{ hwaccel: true, software: false }, { hwaccel: false, software: false }, ...(hwEncoder ? [{ hwaccel: false, software: true }] : [])]
       : [{}];
-    for (let i = 0; i < attempts.length; i++) {
-      try {
-        await runOnce(buildArgs(attempts[i]));
-        break;
-      } catch (e) {
-        for (const f of [tmpVideo, ...subOuts.map(x => x.tmp)]) fs.rmSync(f, { force: true });
-        if (job.state === 'cancelled' || i === attempts.length - 1) throw e;
-        job.percent = 0; job.eta = null;
-        if (attempts[i + 1].software) job.label = 'Re-encoding video (CPU, slower: the graphics card could not handle this file)';
-        this.emit('update');
+    if (!o.subsOnly || o.textSubs.length) {
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          await runOnce(buildArgs(attempts[i]));
+          break;
+        } catch (e) {
+          for (const f of [tmpVideo, ...subOuts.map(x => x.tmp)]) fs.rmSync(f, { force: true });
+          fs.rmSync(tmpHls, { recursive: true, force: true });
+          if (job.state === 'cancelled' || i === attempts.length - 1) throw e;
+          job.percent = 0; job.eta = null;
+          if (attempts[i + 1].software) job.label = 'Re-encoding video (CPU, slower: the graphics card could not handle this file)';
+          this.emit('update');
+        }
       }
+    }
+
+    if (o.hls) {
+      fs.rmSync(tmpHls, { recursive: true, force: true });
+      fs.mkdirSync(tmpHls);
+      job.label = 'Segmenting for Safari, iPhone and iPad';
+      job.percent = 0; job.eta = null;
+      this.emit('update');
+      const source = o.subsOnly ? item.path : tmpVideo;
+      const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-i', source,
+        '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy'];
+      if ((o.subsOnly ? info.video.codec : videoCodecOut) === 'hevc') args.push('-tag:v', 'hvc1');
+      if (o.audio && o.audio.codec === 'aac') args.push('-c:a', 'copy');
+      else args.push('-c:a', 'aac', '-b:a', '256k');
+      args.push('-sn', '-dn', '-f', 'hls', '-hls_time', '4', '-hls_list_size', '0', '-hls_playlist_type', 'vod',
+        '-hls_segment_type', 'fmp4', '-hls_flags', 'independent_segments', '-hls_fmp4_init_filename', 'init.mp4',
+        '-hls_segment_filename', 'seg-%05d.m4s', 'index.m3u8');
+      try { await runOnce(args, tmpHls); } catch (e) { fs.rmSync(tmpHls, { recursive: true, force: true }); throw e; }
     }
 
     // finalize
@@ -609,7 +660,7 @@ class Library extends EventEmitter {
     }
     const meta = {
       id: item.id, sourcePath: item.path, sourceSize: item.size, createdAt: Date.now(),
-      mode: o.subsOnly ? 'subs' : encodeVideo ? 'encode' : 'remux', compressed: !!o.compress, subs,
+      mode: o.subsOnly ? (o.hls ? 'hls' : 'subs') : encodeVideo ? 'encode' : 'remux', compressed: !!o.compress, subs,
       duration: info.duration,
     };
     if (!o.subsOnly) {
@@ -627,6 +678,17 @@ class Library extends EventEmitter {
       meta.audioLabel = o.audio ? (MP4_AUDIO_COPY.has(o.audio.codec) && (o.audio.channels <= 2 || (o.audioMode !== 'stereo' && o.audio.channels <= 6)) ? audioLabel(o.audio) : `AAC ${ch >= 6 ? '5.1' : 'stereo'} (from ${audioLabel(o.audio)})`) : 'no audio';
     } else {
       meta.file = null;
+    }
+    if (o.hls) {
+      const finalHls = path.join(this.cacheDir, outHls);
+      fs.rmSync(finalHls, { recursive: true, force: true });
+      fs.renameSync(tmpHls, finalHls);
+      meta.hls = { dir: outHls, bytes: treeBytes(finalHls) };
+    } else {
+      fs.rmSync(path.join(this.cacheDir, outHls), { recursive: true, force: true });
+    }
+    if (o.subsOnly && previous?.file) {
+      for (const key of ['file', 'outSize', 'bitrateMbps', 'dvStripped', 'video', 'encoder', 'audioLabel']) if (previous[key] != null) meta[key] = previous[key];
     }
     // remove old prepared video if this run was subtitle-only and replaced nothing
     fs.writeFileSync(this.preparedMetaPath(item.id), JSON.stringify(meta, null, 2));
@@ -661,6 +723,7 @@ class Library extends EventEmitter {
     const meta = item.prepared;
     if (meta) {
       if (meta.file) fs.rmSync(path.join(this.cacheDir, meta.file), { force: true });
+      if (meta.hls?.dir === `${id}.hls`) fs.rmSync(path.join(this.cacheDir, meta.hls.dir), { recursive: true, force: true });
       for (const s of meta.subs || []) fs.rmSync(path.join(this.cacheDir, s.file), { force: true });
     }
     fs.rmSync(this.preparedMetaPath(id), { force: true });
@@ -676,13 +739,13 @@ class Library extends EventEmitter {
   // on the disk. Keeps only the small things: settings, certificates, the scan list and the log.
   clearPrepared() {
     let freed = 0, n = 0;
-    const isPrepared = f => /^[0-9a-f]{12}(\.json|\.mp4|\.part\.mp4|\.[^.]+\.vtt|\.[^.]+\.part\.vtt)$/i.test(f);
+    const isPrepared = f => /^[0-9a-f]{12}(\.json|\.mp4|\.part\.mp4|\.hls(?:\.part)?|\.[^.]+\.vtt|\.[^.]+\.part\.vtt)$/i.test(f);
     let names = [];
     try { names = fs.readdirSync(this.cacheDir); } catch { return { freed, n }; }
     for (const f of names) {
       if (!isPrepared(f)) continue;
       const full = path.join(this.cacheDir, f);
-      try { const st = fs.statSync(full); fs.rmSync(full, { force: true }); freed += st.size; n++; } catch { /* still open: next time */ }
+      try { const st = fs.statSync(full); freed += st.isDirectory() ? treeBytes(full) : st.size; fs.rmSync(full, { recursive: st.isDirectory(), force: true }); n++; } catch { /* still open: next time */ }
     }
     for (const it of this.items.values()) it.prepared = null;
     return { freed, n };

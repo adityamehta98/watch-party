@@ -5,7 +5,17 @@ const fs = require('fs');
 const TYPES = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/mp4',
   '.webm': 'video/webm', '.vtt': 'text/vtt; charset=utf-8',
+  '.m3u8': 'application/vnd.apple.mpegurl', '.m4s': 'video/iso.segment',
 };
+
+function authorizeHlsPlaylist(text, query) {
+  const add = uri => uri.includes('?') ? `${uri}&${query}` : `${uri}?${query}`;
+  return String(text).split(/\r?\n/).map(line => {
+    if (!line) return line;
+    if (line[0] !== '#') return add(line);
+    return line.replace(/URI="([^"]+)"/g, (_, uri) => `URI="${add(uri)}"`);
+  }).join('\n');
+}
 
 function contentTypeFor(file) {
   const m = file.toLowerCase().match(/\.[a-z0-9]+$/);
@@ -59,4 +69,4 @@ function serveFile(req, res, file, { onBytes, type, maxChunk = 0 } = {}) {
   stream.pipe(res);
 }
 
-module.exports = { serveFile, contentTypeFor };
+module.exports = { serveFile, contentTypeFor, authorizeHlsPlaylist };

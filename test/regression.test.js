@@ -139,6 +139,19 @@ test('adaptive sync tuning protects weak buffers without hiding large drift', as
   assert.equal(syncTuning({ rtt: 900 }).softEps, 0.08);
 });
 
+test('playback capabilities choose native HLS with a direct-file fallback', async () => {
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/capabilities.js')).toString('base64')}`;
+  const { playbackCapabilities, deliverySources } = await import(moduleUrl);
+  const safari = playbackCapabilities({ canPlayType: type => type.includes('mpegurl') ? 'maybe' : '' }, {});
+  assert.deepEqual(safari, { hls: true, mse: false });
+  const movie = { url: '/media/abc/video', hls: '/media/abc/hls/index.m3u8' };
+  assert.deepEqual(deliverySources(movie, safari, 'room key', 'viewer'), [
+    '/media/abc/hls/index.m3u8?k=room+key&c=viewer',
+    '/media/abc/video?k=room+key&c=viewer',
+  ]);
+  assert.deepEqual(deliverySources(movie, { hls: false }, 'key', 'viewer'), ['/media/abc/video?k=key&c=viewer']);
+});
+
 test('Apple extension links are restricted to App Store and TestFlight HTTPS URLs', () => {
   const { cleanAppleExtensionUrl } = require('../server/settings');
   assert.equal(cleanAppleExtensionUrl('https://testflight.apple.com/join/AbCd1234'), 'https://testflight.apple.com/join/AbCd1234');
@@ -194,9 +207,11 @@ test('media server supports full, HEAD, bounded, suffix, and invalid byte ranges
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-media-'));
   const file = path.join(dir, 'clip.mp4'), body = Buffer.from('0123456789');
   fs.writeFileSync(file, body);
-  const { serveFile, contentTypeFor } = require('../server/media');
+  const { serveFile, contentTypeFor, authorizeHlsPlaylist } = require('../server/media');
   assert.equal(contentTypeFor(file), 'video/mp4');
+  assert.equal(contentTypeFor('segment.m4s'), 'video/iso.segment');
   assert.equal(contentTypeFor('x.bin'), 'application/octet-stream');
+  assert.equal(authorizeHlsPlaylist('#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\nseg-00000.m4s\n', 'k=room&c=viewer'), '#EXTM3U\n#EXT-X-MAP:URI="init.mp4?k=room&c=viewer"\nseg-00000.m4s?k=room&c=viewer\n');
   const server = http.createServer((req, res) => serveFile(req, res, file, { maxChunk: 3 }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -206,6 +221,39 @@ test('media server supports full, HEAD, bounded, suffix, and invalid byte ranges
   r = await request(port, { Range: 'bytes=2-' }); assert.equal(r.status, 206); assert.equal(r.body.toString(), '234'); assert.equal(r.headers['content-range'], 'bytes 2-4/10');
   r = await request(port, { Range: 'bytes=-2' }); assert.equal(r.body.toString(), '89');
   r = await request(port, { Range: 'bytes=20-30' }); assert.equal(r.status, 416); assert.equal(r.headers['content-range'], 'bytes */10');
+});
+
+test('prepare builds and cleans a native Safari HLS package', async t => {
+  const ffmpeg = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  if (!fs.existsSync(ffmpeg)) return t.skip('bundled ffmpeg is not available on this platform');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-hls-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'source.mp4');
+  const made = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=1', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', source], { encoding: 'utf8', windowsHide: true });
+  assert.equal(made.status, 0, made.stderr);
+  const { Library } = require('../server/library');
+  const library = new Library({ config: { cacheDir: dir, folders: [] }, tools: { ffmpeg, encoders: { h264: 'libx264' } }, save() {} });
+  const id = 'a1b2c3d4e5f6';
+  const size = fs.statSync(source).size;
+  library.items.set(id, { id, path: source, rel: 'source.mp4', title: 'Source', ext: '.mp4', size, info: {
+    duration: 1, bitrateMbps: 1, video: { index: 0, codec: 'h264', width: 320, height: 180, bitDepth: 8, pixFmt: 'yuv420p' },
+    audios: [{ index: 1, codec: 'aac', channels: 2 }], defaultAudioIndex: 1, subs: [], plan: { mode: 'direct', reasons: [] },
+  }, prepared: null, job: null });
+  const job = library.prepare(id, { hls: true });
+  while (['queued', 'running'].includes(job.state)) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(job.state, 'done', job.error);
+  const playable = library.playable(id);
+  assert.equal(playable.hls, true);
+  const playlistFile = library.hlsFile(id, 'index.m3u8');
+  assert.ok(playlistFile);
+  const playlist = fs.readFileSync(playlistFile, 'utf8');
+  assert.match(playlist, /URI="init\.mp4"/);
+  assert.match(playlist, /seg-00000\.m4s/);
+  assert.doesNotMatch(playlist, /[A-Z]:[\\/]/i);
+  assert.ok(library.hlsFile(id, 'init.mp4'));
+  assert.equal(library.hlsFile(id, '../source.mp4'), null);
+  library.removePrepared(id);
+  assert.equal(fs.existsSync(path.join(dir, `${id}.hls`)), false);
 });
 
 test('self-signed certificates are valid, cover requested hosts, and are reused', () => {

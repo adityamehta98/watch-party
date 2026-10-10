@@ -12,7 +12,7 @@ const tools = require('./tools');
 const assets = require('./assets');
 const { Library } = require('./library');
 const { Room, randKey } = require('./room');
-const { serveFile } = require('./media');
+const { serveFile, authorizeHlsPlaylist } = require('./media');
 const { Tunnel } = require('./tunnel');
 const { PortMapper, localIPv4s, isPrivate } = require('./upnp');
 const { TurnServer } = require('./turn');
@@ -476,7 +476,7 @@ async function api(req, res, p) {
 function media(req, res, p, u) {
   const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
   if (!role) return notFound(req, res, 'media key');
-  const m = p.match(/^\/media\/(\w+)\/(video|sub\/(\w+)\.vtt)$/);
+  const m = p.match(/^\/media\/(\w+)\/(video|sub\/(\w+)\.vtt|hls\/(index\.m3u8|init\.mp4|seg-\d{5}\.m4s))$/);
   if (!m) return notFound(req, res, 'media path');
   const id = m[1];
   if (role !== 'host' && (!room.movie || room.movie.id !== id)) return notFound(req, res, 'not current movie');
@@ -485,6 +485,18 @@ function media(req, res, p, u) {
     const pl = (room.movie && room.movie.id === id) ? room.movie : library.playable(id);
     if (!pl) return notFound(req, res, 'no movie');
     return serveFile(req, res, pl.file, { onBytes: n => room.addBytes(clientId, n), maxChunk: config.maxChunkMB > 0 ? config.maxChunkMB * 1024 * 1024 : 0 });
+  }
+  if (m[4]) {
+    const file = library.hlsFile(id, m[4]);
+    if (!file) return notFound(req, res, 'no hls media');
+    if (m[4] !== 'index.m3u8') return serveFile(req, res, file, { onBytes: n => room.addBytes(clientId, n) });
+    try {
+      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
+      if (clientId) auth.set('c', clientId);
+      const body = authorizeHlsPlaylist(fs.readFileSync(file, 'utf8'), auth.toString());
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+      return req.method === 'HEAD' ? res.end() : res.end(body);
+    } catch { return notFound(req, res, 'no hls playlist'); }
   }
   const file = library.subFile(id, m[3]);
   if (!file) return notFound(req, res, 'no subtitle');

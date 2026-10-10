@@ -39,7 +39,8 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **Tight sync.** Everyone stays within about 50 ms, late joiners included. If one viewer falls behind, the room pauses until they catch up.
 - **Sync Observatory.** The host sees every participant's RTT, drift, buffer health, bounded correction history, stall/recovery timeline, a room confidence score, and actionable quality recommendations.
 - **Host control.** The host approves each guest and decides per person who can play/pause/seek, chat, react, and use a camera and mic.
-- **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles) with `ffmpeg`.
+- **Capability-aware delivery.** Desktop browsers use efficient byte-range playback; Safari, iPhone and iPad automatically choose authenticated, segmented HLS when the host enables Apple optimization. A failed HLS start falls back to the original file.
+- **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, package HLS) with `ffmpeg`.
 - **Streaming services.** Syncs Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, Apple TV+ and YouTube. Everyone plays from their own account and Watch Party keeps you together.
 - **Webcams and mic.** A built-in TURN relay runs on the host PC, so guests never learn each other's IP addresses. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
@@ -187,6 +188,8 @@ The server doesn't push video. Each guest's `<video>` element fetches the file f
 - seeking is instant, because the browser just asks for a different byte range,
 - the host's **upload bandwidth** is the limit: roughly *bitrate × number of guests*.
 
+When a prepared movie has **Safari / iPhone / iPad optimization**, Apple devices select native fMP4 HLS instead. The server signs every playlist reference with the room key, validates every segment filename, and keeps direct MP4 as an automatic fallback. Browsers without native HLS continue using the lower-overhead byte-range path.
+
 ### 3. Preparing files for browsers
 
 Browsers can't play every container or codec. `server/library.js` runs `ffprobe` on each file and decides whether it can play as-is. If not, **Prepare** runs an `ffmpeg` job that, depending on the file:
@@ -196,6 +199,7 @@ Browsers can't play every container or codec. `server/library.js` runs `ffprobe`
 - **strips Dolby Vision** metadata (fixes the "sound but black screen" problem),
 - **extracts text subtitles** to WebVTT (or picks up a matching `.srt` next to the movie),
 - optionally **compresses for streaming** (about 20 to 25 Mbps), using a hardware encoder when one works.
+- optionally **packages fragmented MP4 HLS** for native Apple playback without transcoding during the party.
 
 Prepared copies go in `cache/` and are deleted when the app stops, unless `keepPrepared` is `true`.
 
@@ -416,6 +420,7 @@ watch-party/
 │   ├── js/net.js           WebSocket with auto-reconnect and server clock sync
 │   ├── js/player.js        drift correction against the shared timeline
 │   ├── js/sync.js          pure adaptive sync tuning rules
+│   ├── js/capabilities.js  native playback detection and delivery selection
 │   ├── js/media.js         YouTube and remote-tab (extension) player adapters
 │   ├── js/rtc.js           WebRTC webcam/mic mesh
 │   └── ext/                built extension zip for guests (generated)
