@@ -47,15 +47,21 @@ function buildChromium() {
   return CHROMIUM_OUTPUT;
 }
 
-function buildSafari() {
+function stageSafari(target = STAGE) {
   versions();
+  assertInside(ROOT, target);
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.mkdirSync(target, { recursive: true });
+  fs.cpSync(COMMON, target, { recursive: true });
+  fs.cpSync(OVERLAY, target, { recursive: true });
+  return target;
+}
 
+function buildSafari() {
   for (const target of [STAGE_ROOT, OUTPUT]) assertInside(ROOT, target);
   fs.rmSync(STAGE_ROOT, { recursive: true, force: true });
   fs.rmSync(OUTPUT, { force: true });
-  fs.mkdirSync(STAGE, { recursive: true });
-  fs.cpSync(COMMON, STAGE, { recursive: true });
-  fs.cpSync(OVERLAY, STAGE, { recursive: true });
+  stageSafari();
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
 
   archiveDirectory(STAGE_ROOT, 'watch-party-safari', OUTPUT);
@@ -64,4 +70,4 @@ function buildSafari() {
 }
 
 if (require.main === module) console.log('built', buildSafari());
-module.exports = { archiveDirectory, buildChromium, buildSafari };
+module.exports = { archiveDirectory, buildChromium, buildSafari, stageSafari };

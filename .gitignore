@@ -13,6 +13,13 @@ secrets*.json
 *.pem
 *.p12
 *.pfx
+*.p8
+*.cer
+*.mobileprovision
+*.xcarchive
+*.ipa
+AuthKey_*.p8
+apple/Local.xcconfig
 
 # Build output and binaries (publish these as GitHub Release assets instead)
 dist/

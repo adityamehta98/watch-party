@@ -82,7 +82,7 @@ Watch Party runs in the background with no window. Closing the host page stops i
 | [ffmpeg + ffprobe](https://ffmpeg.org/download.html) | Recent build | Needed to read and prepare movies |
 | Chrome / Edge / Brave | Recent | Host page and the optional extension |
 | Safari | 15+ | Web app; signed Safari Web Extension required for streaming services |
-| Xcode on macOS | Recent | Only needed to sign/package the Safari extension |
+| Xcode on macOS | Recent | Optional: local Safari simulator/device development; App Store Connect can package the ZIP |
 | Tailscale | Optional | Only for apartments, CGNAT or trusted HTTPS |
 
 ### Steps
@@ -305,8 +305,8 @@ In **Library → Watch together on a streaming service**, click a service.
 Safari installation is selected automatically by device:
 
 - **iPhone/iPad:** the host adds the signed TestFlight or App Store link under **Room → Apple devices**. Guests install it, enable **Settings → Apps → Safari → Extensions → Watch Party Sync**, grant site access, and reload the party in Safari.
-- **Mac Safari:** install the signed app, or download the Safari source and convert it with Xcode as documented in [`apple/README.md`](apple/README.md).
-- Apple does not allow an installable iPad extension ZIP. A Mac, signing identity, and App Store/TestFlight distribution are required for the final mobile install.
+- **Mac Safari:** install the signed app, or download the Safari source and package it as documented in [`apple/README.md`](apple/README.md).
+- Apple does not allow an installable iPad extension ZIP. Use Apple's App Store Connect web packager (no Mac required) or Xcode, then distribute the containing app through TestFlight/App Store.
 
 How it behaves:
 

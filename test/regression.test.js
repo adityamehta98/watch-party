@@ -115,6 +115,17 @@ test('Safari source ZIP is the common extension plus its audited overlay', () =>
   }
 });
 
+test('Safari release tooling validates identifiers without storing signing data', () => {
+  const { parseOptions } = require('../build/build-safari-xcode');
+  assert.deepEqual(parseOptions(['--bundle-id', 'com.example.WatchPartySync', '--ios-only'], {}), { bundleId: 'com.example.WatchPartySync', platform: '--ios-only' });
+  assert.throws(() => parseOptions(['--bundle-id', 'not-valid'], {}), /reverse-DNS/);
+  assert.throws(() => parseOptions(['--bundle-id', 'com.example.App', '--ios-only', '--macos-only'], {}), /only one/);
+  const workflow = read('.github/workflows/safari-package.yml');
+  assert.match(workflow, /permissions:\s*\n\s*contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.doesNotMatch(workflow, /secrets\./);
+});
+
 test('device detection selects the correct extension installation path', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/platform.js')).toString('base64')}`;
   const { detectPlatform, installTarget } = await import(moduleUrl);
@@ -413,11 +424,11 @@ test('Safari opens streaming sites as normal top-level tabs', async () => {
 
 test('secret, authentication, and cleanup invariants remain enforced', () => {
   const ignored = read('.gitignore');
-  for (const pattern of ['.env', 'credentials*.json', 'secrets*.json', '*.key', '*.pem', '*.p12', '*.pfx']) {
+  for (const pattern of ['.env', 'credentials*.json', 'secrets*.json', '*.key', '*.pem', '*.p12', '*.pfx', '*.p8', '*.mobileprovision']) {
     assert.ok(ignored.split(/\r?\n/).includes(pattern), `${pattern} must stay ignored`);
   }
 
-  const production = ['server', 'public', 'extension', 'apple', 'build'].flatMap(dir => walk(path.join(ROOT, dir)))
+  const production = ['server', 'public', 'extension', 'apple', 'build', '.github'].flatMap(dir => walk(path.join(ROOT, dir)))
     .filter(file => !/\.(?:zip|png|ico|exe|dll)$/i.test(file));
   const secrets = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
