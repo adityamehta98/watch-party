@@ -26,6 +26,8 @@ Omit platform flags for iOS, iPadOS and macOS, or add `--ios-only` / `--macos-on
 
 In Xcode, select your development team, verify the app and extension identifiers, run on a simulator, then on a registered device, and archive for App Store Connect. Apple requires a containing app; an extension ZIP cannot be installed directly on iPhone or iPad.
 
+For a richer containing app, [`WatchPartyKit`](WatchPartyKit/README.md) adds the SwiftUI room screen, native HLS player, Picture in Picture, AirPlay and SharePlay. It remains optional: the signed Safari extension and web room work without native companion code.
+
 ## Security and privacy checklist
 
 - Never commit certificates, provisioning profiles, `.p8` App Store Connect keys, team IDs, exported archives, or a local signing configuration. The repository ignores all of them.

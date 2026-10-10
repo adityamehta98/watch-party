@@ -45,6 +45,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **Webcams and mic.** A built-in TURN relay runs on the host PC, so guests never learn each other's IP addresses. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
 - **Phones and tablets supported** for your own movies and YouTube; the signed Safari Web Extension also supports streaming-service sync on iPhone and iPad.
+- **Native Apple companion.** The optional Swift package adds AVPlayer HLS playback, Picture in Picture, AirPlay and SharePlay handoff while retaining Safari for DRM services.
 
 ---
 
@@ -425,7 +426,7 @@ watch-party/
 │   ├── js/rtc.js           WebRTC webcam/mic mesh
 │   └── ext/                built extension zip for guests (generated)
 ├── extension/              shared "Watch Party Sync" Web Extension source (MV3)
-├── apple/                  Safari manifest overlay and Xcode signing/distribution guide
+├── apple/                  Safari overlay, secure release guide and native WatchPartyKit
 ├── build/build-windows.js  builds dist/WatchParty/WatchParty.exe (Node SEA)
 ├── bin/                    ffmpeg/ffprobe binaries (not committed; see bin/README.txt)
 ├── refresh.bat             Windows launcher: installs a waiting update (from _update\), then starts Watch Party

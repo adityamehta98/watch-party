@@ -21,6 +21,7 @@ jobs:
       - run: node --version
       - run: npm ci --ignore-scripts
       - run: npm test
+      - run: swift test --package-path apple/WatchPartyKit
       - run: npm run build:safari
       - run: npm run build:safari:xcode -- --bundle-id com.watchparty.validation --ios-only
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

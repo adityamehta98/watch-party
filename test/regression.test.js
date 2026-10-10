@@ -124,6 +124,12 @@ test('Safari release tooling validates identifiers without storing signing data'
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.match(workflow, /persist-credentials: false/);
   assert.doesNotMatch(workflow, /secrets\./);
+  const nativeClient = read('apple/WatchPartyKit/Sources/WatchPartyKit/RoomClient.swift');
+  assert.match(nativeClient, /URLSessionConfiguration\.ephemeral/);
+  assert.doesNotMatch(nativeClient, /UserDefaults|Keychain|serverTrust|credential/);
+  for (const file of ['Models.swift', 'RoomClient.swift', 'ApplePlayer.swift', 'SharePlay.swift', 'CompanionView.swift']) {
+    assert.ok(fs.existsSync(path.join(ROOT, 'apple/WatchPartyKit/Sources/WatchPartyKit', file)), file);
+  }
 });
 
 test('device detection selects the correct extension installation path', async () => {
