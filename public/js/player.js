@@ -1,6 +1,8 @@
 // Keeps the local <video> locked to the room's shared timeline.
 // Every viewer plays the original file locally; this only nudges timing, it never touches quality.
 
+import { PLATFORM } from './platform.js';
+
 const HARD_SEEK = 0.9;     // seconds off before we jump
 const SOFT_EPS = 0.03;     // seconds off we tolerate
 const MAX_RATE_DELTA = 0.06;
@@ -8,11 +10,8 @@ const MAX_RATE_DELTA = 0.06;
 // iPhone / iPad (and Safari on a Mac): Safari's player doesn't like having its speed nudged up and
 // down all the time (it re-buffers), and it reports time in coarse steps. So there we keep pace with
 // small jumps every now and then instead, like the YouTube player, and tolerate a little more drift.
-export const IS_APPLE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  || (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg|Android/.test(navigator.userAgent));
-export const DEVICE = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad'
-  : /iPhone|iPod/.test(navigator.userAgent) ? 'iPhone' : /Android/.test(navigator.userAgent) ? (/Mobile/.test(navigator.userAgent) ? 'Android phone' : 'Android tablet')
-  : IS_APPLE ? 'Mac (Safari)' : /Windows/.test(navigator.userAgent) ? 'PC' : /Mac/.test(navigator.userAgent) ? 'Mac' : 'computer';
+export const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
+export const DEVICE = PLATFORM.device;
 const APPLE_PROFILE = { hardSeek: 0.35, rate: false, nudge: 0.08, pausedEps: 0.2 };
 
 export class SyncPlayer {

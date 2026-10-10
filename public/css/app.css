@@ -188,6 +188,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .stage[data-idle="true"] .controls { opacity: 0; pointer-events: none; }
 .controls.gone { display: none; }
 .stage:not(.has-movie) .controls { display: none; }
+.stage.service-setup .controls { display: none; }
 .ctrl-row { display: flex; align-items: center; gap: 2px; }
 .ctrl { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #fff; cursor: pointer; }
 .ctrl:hover { background: rgba(255,255,255,.12); }
@@ -397,6 +398,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   .room { grid-template-columns: 1fr; grid-template-rows: var(--topbar) auto minmax(320px, 1fr); grid-template-areas: "top" "stage" "side"; height: 100dvh; }
   .room.no-sidebar { grid-template-columns: 1fr; grid-template-rows: var(--topbar) 1fr 0; }
   .stage-wrap { aspect-ratio: 16 / 9; max-height: 62dvh; }
+  .service-panel { place-items: start center; padding: 24px 18px 96px; }
   .room.no-sidebar .stage-wrap { aspect-ratio: auto; max-height: none; }
   .sidebar { border-left: 0; border-top: 1px solid var(--border); }
   .brand-name { display: none; }

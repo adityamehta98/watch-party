@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { buildChromium, buildSafari } = require('./build-safari-extension');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'dist', 'WatchParty');
@@ -28,21 +29,11 @@ esbuild.buildSync({
   legalComments: 'none',
 });
 
-// 1a) the page and the extension must agree on the extension version
-{
-  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension', 'manifest.json'), 'utf8'));
-  const media = fs.readFileSync(path.join(ROOT, 'public', 'js', 'media.js'), 'utf8');
-  const m = /REQUIRED_EXT_VERSION = '([^']+)'/.exec(media);
-  if (!m || m[1] !== manifest.version) { console.error(`extension version mismatch: manifest ${manifest.version}, page expects ${m && m[1]}`); process.exit(1); }
-}
-// 1b) the browser extension: a zip guests can download from the invite page, plus the folder for the host
+// 1a) browser extensions: downloadable Chromium/Safari packages, plus the host's Chromium folder
 fs.mkdirSync(path.join(ROOT, 'public', 'ext'), { recursive: true });
-const extZip = path.join(ROOT, 'public', 'ext', 'watch-party-sync.zip');
-fs.rmSync(extZip, { force: true });
-fs.rmSync(path.join(TMP, 'watch-party-sync'), { recursive: true, force: true });
-fs.cpSync(path.join(ROOT, 'extension'), path.join(TMP, 'watch-party-sync'), { recursive: true });
-execFileSync('zip', ['-q', '-r', extZip, 'watch-party-sync'], { cwd: TMP });
+buildChromium();
 fs.cpSync(path.join(ROOT, 'extension'), path.join(OUT, 'extension'), { recursive: true });
+buildSafari();
 
 // 2) embed the web page files
 const assets = {};

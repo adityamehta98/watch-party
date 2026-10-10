@@ -251,6 +251,11 @@
           <label class="switch-row"><span><b>Use camera and mic</b></span><input type="checkbox" class="switch" data-default="camera"></label>
           <p class="fine">Change permissions for one person in the People tab.</p>
 
+          <h3>Apple devices</h3>
+          <label class="field"><span>Signed Safari extension link</span><input id="safariExtensionUrl" type="url" inputmode="url" placeholder="https://testflight.apple.com/join/…" spellcheck="false"></label>
+          <div class="row"><button class="btn sm primary" id="safariExtensionSave" type="button">Save Apple install link</button><a class="btn sm" href="/ext/watch-party-safari-source.zip" download>Download Safari source</a></div>
+          <p class="fine">Use an App Store or TestFlight link after signing the containing app on a Mac. iPad, iPhone, and desktop Safari guests then see the right install steps automatically. Never upload certificates or App Store keys here.</p>
+
           <h3>Your connection</h3>
           <div class="net-box" id="netBox"></div>
           <label class="field inline" style="margin-top:12px"><span>Home upload speed</span><span class="with-unit"><input id="uploadInput" type="number" min="0" step="1" placeholder="e.g. 40"><em>Mbps</em></span></label>

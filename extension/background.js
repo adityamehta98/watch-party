@@ -3,6 +3,7 @@
 // It never sees or touches the video stream itself, only play / pause / seek / volume.
 importScripts('services.js', 'ad-domains.js');
 
+const IS_SAFARI = !!self.WP_SAFARI;
 const parties = new Set(); // one entry per open Watch Party page
 const docks = new Set();   // one entry per open side panel
 const theaterTabs = new Set(); // tabs showing the "watch here" window (party + streaming site side by side)
@@ -110,7 +111,7 @@ function onPartyPort(port) {
   port.onMessage.addListener(async m => {
     switch (m.type) {
       case 'watch':
-        party.watch = { service: m.service, url: m.url };
+        party.watch = { service: m.service, url: m.url, blockPopups: m.blockPopups !== false };
         if (party.link) post(port, { type: 'linked', tabId: party.link.tabId, service: m.service });
         rebindDocks();
         break;
@@ -123,6 +124,11 @@ function onPartyPort(port) {
         const t = await chrome.tabs.create({ url: m.url, active: true, windowId: party.windowId });
         party.pendingTab = t.id;
         if (party.link && party.link.tabId !== t.id) unlink(party);
+        break;
+      }
+      case 'show': {
+        const tabId = party.link ? party.link.tabId : party.pendingTab;
+        if (tabId != null) chrome.tabs.update(tabId, { active: true }).catch(() => {});
         break;
       }
       case 'navigate':
@@ -217,15 +223,47 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     return true;
   }
   if (m.wp === 'theater-open' && sender.tab) {
-    // "Watch here": turn this Watch Party tab into the window with the party and the streaming site side by side
+    // Safari on iPhone/iPad cannot use Chrome's side panel or a dependable two-frame theater.
+    // Keep the party in its own tab and open the player as a normal top-level Safari tab instead.
     const url = String(m.url || '');
     if (!/^(https:\/\/[^/]+\/join\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/host\/)/.test(url)) { reply({ ok: false, error: 'not a Watch Party page' }); return; }
+    if (IS_SAFARI) {
+      const party = [...parties].find(p => p.tabId === sender.tab.id);
+      const custom = party && party.watch && party.watch.service === 'custom';
+      const site = custom && customSite(party.watch.url, originOf(url), party.watch.blockPopups);
+      if (!party || !party.watch || (!custom && !allowedUrl(party.watch.url)) || (custom && !site)) { reply({ ok: false, error: 'nothing to open' }); return; }
+      chrome.tabs.create({ url: site ? 'about:blank' : party.watch.url, active: true, windowId: party.windowId }).then(async t => {
+        party.pendingTab = t.id;
+        if (party.link && party.link.tabId !== t.id) unlink(party);
+        if (site) {
+          theaterTabs.add(t.id);
+          theaterParty.set(t.id, originOf(url));
+          customHosts.set(t.id, site);
+          await updateFrameRules();
+          await chrome.tabs.update(t.id, { url: party.watch.url });
+        }
+        reply({ ok: true, safari: true });
+      }, e => reply({ ok: false, error: String(e && e.message || e) }));
+      return true;
+    }
+    // Chromium "Watch here": turn this Watch Party tab into the window with the party and service side by side.
     theaterTabs.add(sender.tab.id);
     theaterParty.set(sender.tab.id, originOf(url));
     updateFrameRules()
       .then(() => chrome.tabs.update(sender.tab.id, { url: chrome.runtime.getURL('theater.html') + '#p=' + encodeURIComponent(url) }))
       .then(() => reply({ ok: true }), e => reply({ ok: false, error: String(e && e.message || e) }));
     return true;
+  }
+  if (m.wp === 'custom-probe' && sender.tab) {
+    reply({ custom: customHosts.has(sender.tab.id) });
+    return;
+  }
+  if (m.wp === 'custom-ready' && sender.tab && customHosts.has(sender.tab.id)) {
+    const target = { tabId: sender.tab.id, frameIds: [sender.frameId || 0] };
+    chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
+      .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
+      .catch(() => { /* page moved while the scripts were being added */ });
+    return;
   }
   if (m.wp === 'frame-allow' && sender.tab && theaterTabs.has(sender.tab.id)) {
     // the Watch Party window is about to show a custom site: let that site load inside it
@@ -263,7 +301,8 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     // a custom site may hold a known player inside it (a YouTube embed, say): in the Watch Party
     // window showing that site, any video counts
     const svc = m.st && m.st.service || m.service;
-    if (party.watch.service !== svc && !(party.watch.service === 'custom' && party.inTheater && party.tabId === tabId)) continue;
+    const customTab = party.watch.service === 'custom' && ((party.inTheater && party.tabId === tabId) || party.pendingTab === tabId);
+    if (party.watch.service !== svc && !customTab) continue;
     if (m.wp === 'status') {
       const st = m.st;
       if (!party.link) {
@@ -369,7 +408,7 @@ function closeAdTab(tabId, fromTab, fromFrame, targetUrl) {
     chrome.tabs.update(fromTab, { active: true }).catch(() => {}); // straight back to the Watch Party
   }, 400);
 }
-chrome.webNavigation.onCreatedNavigationTarget.addListener(d => closeAdTab(d.tabId, d.sourceTabId, d.sourceFrameId, d.url));
+if (chrome.webNavigation && chrome.webNavigation.onCreatedNavigationTarget) chrome.webNavigation.onCreatedNavigationTarget.addListener(d => closeAdTab(d.tabId, d.sourceTabId, d.sourceFrameId, d.url));
 // (and tabs opened any other way: whatever the Watch Party window showing a custom site opens)
 // (a new tab you open yourself, Ctrl+T, is the browser's own page and is left alone)
 chrome.tabs.onCreated.addListener(t => {

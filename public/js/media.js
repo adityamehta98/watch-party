@@ -180,7 +180,7 @@ export class RemoteMedia extends AdapterBase {
   onMessage(e) {
     if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
-    if (m.type === 'hello') { this.present = true; this.version = m.version; this.onInfo(); }
+    if (m.type === 'hello') { this.present = true; this.version = m.version; this.platform = m.platform || 'chromium'; this.onInfo(); }
     else if (m.type === 'ext-problem') { this.onProblem && this.onProblem(m); }
     else if (m.type === 'linked') {
       this.linked = true; this.linkInfo = m; this.onInfo();
@@ -249,10 +249,11 @@ export class RemoteMedia extends AdapterBase {
     this.src = `ext:${movie.service}`;
     this.st = null;
     this.seekingTarget = null;
-    this.post({ type: 'watch', service: movie.service, url: movie.url });
+    this.post({ type: 'watch', service: movie.service, url: movie.url, blockPopups: movie.strict !== false });
   }
   close() { this.movie = null; this.src = ''; this.st = null; this.post({ type: 'unwatch' }); }
   openTab() { if (this.movie) this.post({ type: 'open', service: this.movie.service, url: this.movie.url }); }
+  showTab() { this.post({ type: 'show' }); }
   navigate(url) { this.post({ type: 'navigate', url }); }
   // the page the streaming tab is on (kept across title changes, which clear the rest of the status)
   get pageUrl() { return this.lastUrl || (this.st && this.st.url) || ''; } // the freshest: status and page reports both update lastUrl
@@ -318,7 +319,7 @@ export const SERVICE_HOMES = {
   max: 'https://play.max.com/', disney: 'https://www.disneyplus.com/home', appletv: 'https://tv.apple.com/',
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.9.3';
+export const REQUIRED_EXT_VERSION = '1.10.0';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 export const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],

@@ -3,6 +3,7 @@
   if (window.__wpPartyBridge) return;
   window.__wpPartyBridge = true;
   const version = chrome.runtime.getManifest().version;
+  const platform = chrome.runtime.getURL('').startsWith('safari-web-extension:') ? 'safari' : 'chromium';
   let port = null;
   let lastWatch = null;
   const toPage = m => window.postMessage({ source: 'wp-ext', ...m }, location.origin);
@@ -32,7 +33,7 @@
     window.addEventListener('message', e => {
       if (e.source !== window || !e.data || e.data.source !== 'wp-page') return;
       const { source, ...m } = e.data;
-      if (m.type === 'ping') { toPage({ type: 'hello', version }); return; }
+      if (m.type === 'ping') { toPage({ type: 'hello', version, platform }); return; }
       // straight to the extension while the click still counts (Chrome only opens the panel after a click)
       if (m.type === 'theater') {
         ask({ wp: 'theater-open', url: m.url }, 6000).then(r => { if ((!r || !r.ok) && !(r && r.error === 'stale')) toPage({ type: 'ext-problem', kind: 'theater', error: r && r.error }); });
@@ -43,7 +44,7 @@
       if (m.type === 'unwatch') lastWatch = null;
       if (port) try { port.postMessage(m); } catch { /* reconnecting */ }
     });
-    toPage({ type: 'hello', version });
+    toPage({ type: 'hello', version, platform });
     // is the extension's background part running? (if not, nothing it does will work: say so)
     ask({ wp: 'ping' }).then(r => { if ((!r || !r.ok) && !(r && r.error === 'stale')) toPage({ type: 'ext-problem', kind: 'background', error: r && r.error }); });
     // links on the party page that open a new tab (sign-in pages, help): let them through

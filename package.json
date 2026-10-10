@@ -6,6 +6,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
+    "build:extensions": "node build/build-extensions.js",
+    "build:safari": "node build/build-safari-extension.js",
     "test": "node --test"
   },
   "engines": {

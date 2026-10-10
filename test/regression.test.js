@@ -17,7 +17,7 @@ const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : path.join(dir, e.name));
 
 test('every JavaScript file parses', () => {
-  for (const dir of ['server', 'public/js', 'extension', 'build', 'test']) {
+  for (const dir of ['server', 'public/js', 'extension', 'apple/SafariWebExtension', 'build', 'test']) {
     for (const file of walk(path.join(ROOT, dir)).filter(f => f.endsWith('.js'))) {
       const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
       assert.equal(r.status, 0, `${path.relative(ROOT, file)}: ${r.stderr}`);
@@ -45,11 +45,17 @@ test('browser DOM and icon references resolve', () => {
 
 test('manifest and HTML local assets exist and extension versions agree', () => {
   const manifest = JSON.parse(read('extension/manifest.json'));
+  const safari = JSON.parse(read('apple/SafariWebExtension/manifest.json'));
   const refs = [manifest.background.service_worker, manifest.side_panel.default_path,
     ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon),
     ...manifest.content_scripts.flatMap(x => [...(x.js || []), ...(x.css || [])])];
   for (const rel of new Set(refs)) assert.ok(fs.existsSync(path.join(ROOT, 'extension', rel)), rel);
   assert.equal(/REQUIRED_EXT_VERSION = '([^']+)'/.exec(read('public/js/media.js'))[1], manifest.version);
+  assert.equal(safari.version, manifest.version);
+  const safariRefs = [safari.background.service_worker, safari.action.default_popup,
+    ...Object.values(safari.icons), ...Object.values(safari.action.default_icon),
+    ...safari.content_scripts.flatMap(x => [...(x.js || []), ...(x.css || [])])];
+  for (const rel of new Set(safariRefs)) assert.ok(fs.existsSync(path.join(ROOT, 'apple/SafariWebExtension', rel)) || fs.existsSync(path.join(ROOT, 'extension', rel)), `Safari: ${rel}`);
   for (const html of ['public/index.html', 'extension/sidebar.html', 'extension/theater.html']) {
     const dir = path.dirname(path.join(ROOT, html));
     for (const m of read(html).matchAll(/(?:src|href)="([^"#]+)"/g)) {
@@ -90,6 +96,44 @@ test('downloadable extension is byte-identical to extension source', () => {
     assert.ok(packed, `${rel} missing from extension ZIP`);
     assert.deepEqual(packed, fs.readFileSync(file), rel);
   }
+});
+
+test('Safari source ZIP is the common extension plus its audited overlay', () => {
+  const zip = unzipEntries(path.join(ROOT, 'public/ext/watch-party-safari-source.zip'));
+  const expected = new Map();
+  for (const base of ['extension', 'apple/SafariWebExtension']) {
+    for (const file of walk(path.join(ROOT, base))) {
+      const rel = path.relative(path.join(ROOT, base), file).replaceAll('\\', '/');
+      expected.set(rel, fs.readFileSync(file));
+    }
+  }
+  assert.equal(zip.size, expected.size);
+  for (const [rel, source] of expected) {
+    const packed = zip.get(`watch-party-safari/${rel}`);
+    assert.ok(packed, `${rel} missing from Safari ZIP`);
+    assert.deepEqual(packed, source, rel);
+  }
+});
+
+test('device detection selects the correct extension installation path', async () => {
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/platform.js')).toString('base64')}`;
+  const { detectPlatform, installTarget } = await import(moduleUrl);
+  const ipad = detectPlatform({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1', platform: 'MacIntel', maxTouchPoints: 5 });
+  assert.equal(ipad.device, 'iPad'); assert.equal(ipad.safari, true); assert.equal(installTarget(ipad), 'apple-mobile-unpublished'); assert.equal(installTarget(ipad, 'https://testflight.apple.com/join/abc'), 'apple-mobile');
+  const iphoneChrome = detectPlatform({ userAgent: 'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 CriOS/130.0 Mobile/15E148 Safari/604.1' });
+  assert.equal(iphoneChrome.iphone, true); assert.equal(iphoneChrome.safari, false); assert.equal(installTarget(iphoneChrome, 'https://apps.apple.com/app/id1'), 'apple-mobile-browser');
+  const mac = detectPlatform({ userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15', platform: 'MacIntel', maxTouchPoints: 0 });
+  assert.equal(installTarget(mac), 'mac-safari-source');
+  const windows = detectPlatform({ userAgent: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/130.0 Safari/537.36' });
+  assert.equal(installTarget(windows), 'chromium');
+  assert.doesNotMatch(read('public/js/app.js'), /Phones and tablets can't run extensions/);
+});
+
+test('Apple extension links are restricted to App Store and TestFlight HTTPS URLs', () => {
+  const { cleanAppleExtensionUrl } = require('../server/settings');
+  assert.equal(cleanAppleExtensionUrl('https://testflight.apple.com/join/AbCd1234'), 'https://testflight.apple.com/join/AbCd1234');
+  assert.equal(cleanAppleExtensionUrl('https://apps.apple.com/us/app/watch-party/id123'), 'https://apps.apple.com/us/app/watch-party/id123');
+  for (const url of ['http://apps.apple.com/app/id1', 'https://apps.apple.com.evil.test/app', 'javascript:alert(1)', 'https://example.com/app']) assert.equal(cleanAppleExtensionUrl(url), '', url);
 });
 
 test('service URLs are canonicalized and custom sites cannot target private networks', () => {
@@ -196,7 +240,7 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   const { Room, randKey, PERMS, REACTIONS } = require('../server/room');
   assert.match(randKey(24), /^[A-Za-z0-9]{24}$/); assert.equal(new Set(PERMS).size, 4); assert.ok(REACTIONS.includes('👏'));
   const library = { playable: id => id === 'movie' ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] } : null, list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
-  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library, save() {} });
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {} });
   t.after(() => room.shutdown());
   assert.equal(room.roleForKey('admin-secret-key', true), 'host');
   assert.equal(room.roleForKey('admin-secret-key', false), null);
@@ -209,6 +253,7 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   room.selectUrl(host, 'https://example.com/watch?ep=2', false, { custom: true, strict: true });
   assert.equal(room.movie.service, 'custom'); assert.equal(room.movie.strict, true);
   assert.equal(room.guestLibrary().folders[0], '(the host\'s movies)'); assert.equal(room.guestLibrary().items[0].rel, 'movie.mp4');
+  assert.equal(room.publicSettings(false).safariExtensionUrl, 'https://testflight.apple.com/join/AbCd1234');
 });
 
 test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {
@@ -258,13 +303,43 @@ test('custom-site extension installs scoped ad rules and preserves same-site pop
   assert.doesNotMatch(`${read('extension/service.js')}\n${read('extension/custom-clean.js')}`, /window\.open\s*=/);
 });
 
+test('Safari opens streaming sites as normal top-level tabs', async () => {
+  const runtimeConnect = event(), runtimeMessage = event(), partyMessage = event();
+  const created = [], updated = [], rules = [];
+  const context = vm.createContext({ URL, URLSearchParams, console, self: { WP_SAFARI: true }, importScripts() {}, setTimeout, clearTimeout, chrome: {
+    runtime: { id: 'ext', onConnect: runtimeConnect, onMessage: runtimeMessage, getURL: p => `safari-web-extension://ext/${p}` },
+    tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({}), update: async (id, opts) => { updated.push([id, opts]); }, remove: async () => {}, sendMessage: async () => {}, create: async opts => { created.push(opts); return { id: 22, windowId: 3 }; } },
+    webNavigation: { onCreatedNavigationTarget: event() }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
+    declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async update => { rules.push(update); } },
+  } });
+  vm.runInContext(read('extension/services.js'), context);
+  vm.runInContext(read('extension/ad-domains.js'), context);
+  vm.runInContext(read('extension/background.js'), context);
+  const port = { name: 'party', sender: { tab: { id: 5, windowId: 3 }, frameId: 0 }, onMessage: partyMessage, onDisconnect: event(), postMessage() {} };
+  runtimeConnect.fire(port);
+  partyMessage.fire({ type: 'watch', service: 'netflix', url: 'https://www.netflix.com/watch/123', blockPopups: true });
+  let reply;
+  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { tab: { id: 5 } }, value => { reply = value; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(created.length, 1); assert.equal(created[0].url, 'https://www.netflix.com/watch/123');
+  assert.equal(reply.ok, true); assert.equal(reply.safari, true);
+  partyMessage.fire({ type: 'watch', service: 'custom', url: 'https://video.example/watch', blockPopups: true });
+  let customReply;
+  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { tab: { id: 5 } }, value => { customReply = value; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(created[1].url, 'about:blank');
+  assert.equal(updated.at(-1)[0], 22); assert.equal(updated.at(-1)[1].url, 'https://video.example/watch');
+  assert.ok(rules.at(-1).addRules.some(rule => rule.action.type === 'block'));
+  assert.equal(customReply.ok, true); assert.equal(customReply.safari, true);
+});
+
 test('secret, authentication, and cleanup invariants remain enforced', () => {
   const ignored = read('.gitignore');
   for (const pattern of ['.env', 'credentials*.json', 'secrets*.json', '*.key', '*.pem', '*.p12', '*.pfx']) {
     assert.ok(ignored.split(/\r?\n/).includes(pattern), `${pattern} must stay ignored`);
   }
 
-  const production = ['server', 'public', 'extension', 'build'].flatMap(dir => walk(path.join(ROOT, dir)))
+  const production = ['server', 'public', 'extension', 'apple', 'build'].flatMap(dir => walk(path.join(ROOT, dir)))
     .filter(file => !/\.(?:zip|png|ico|exe|dll)$/i.test(file));
   const secrets = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,

@@ -31,4 +31,7 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+apple/**/DerivedData/
+apple/**/*.xcuserdata/
+apple/build/
 _to_delete/

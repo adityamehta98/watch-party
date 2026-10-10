@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
+const { cleanAppleExtensionUrl } = require('./settings');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -78,6 +79,7 @@ const DEFAULT_CONFIG = {
                             // "auto": direct while the public link is on, relay otherwise
   cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
+  safariExtensionUrl: '',   // optional App Store or TestFlight link shown to Apple-device guests
   room: {},
   adminKey: '',             // secret in the host page address (generated)
   roomKey: '',              // secret in the invite link (generated; kept, so the link stays the same)
@@ -94,7 +96,7 @@ function loadConfig() {
     delete c.iceServers;
   }
   delete c.iceServers;
-  return { ...DEFAULT_CONFIG, ...c, version: 2 };
+  return { ...DEFAULT_CONFIG, ...c, safariExtensionUrl: cleanAppleExtensionUrl(c.safariExtensionUrl), version: 2 };
 }
 const config = loadConfig();
 const cliOriginal = {};
@@ -447,6 +449,13 @@ async function api(req, res, p) {
       printInvite();
     }
     if ('publicHost' in body) { config.publicHost = String(body.publicHost || '').trim().replace(/^https?:\/\//, '').replace(/[:/].*$/, '').replace(/[^A-Za-z0-9.-]/g, ''); delete cliOriginal.publicHost; }
+    if ('safariExtensionUrl' in body) {
+      const raw = String(body.safariExtensionUrl || '').trim();
+      const clean = cleanAppleExtensionUrl(raw);
+      if (raw && !clean) return sendJson(res, 400, { error: 'Use an apps.apple.com or testflight.apple.com HTTPS link.' });
+      config.safariExtensionUrl = clean;
+      room.broadcastSettings();
+    }
     save();
     if ('publicHost' in body) checkReachable();
     return sendJson(res, 200, await info());

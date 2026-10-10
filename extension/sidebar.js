@@ -11,7 +11,8 @@ function connect() {
   port = chrome.runtime.connect({ name: 'dock' });
   port.onMessage.addListener(onMessage);
   port.onDisconnect.addListener(() => { port = null; setTimeout(connect, 800); });
-  chrome.windows.getCurrent(w => send({ type: 'hello', windowId: w && w.id }));
+  if (chrome.windows && chrome.windows.getCurrent) chrome.windows.getCurrent(w => send({ type: 'hello', windowId: w && w.id }));
+  else send({ type: 'hello', windowId: null });
 }
 function send(m) { if (port) try { port.postMessage(m); } catch { /* reconnecting */ } }
 const act = action => send({ type: 'ui-action', action });

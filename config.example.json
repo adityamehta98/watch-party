@@ -6,6 +6,7 @@
   ],
   "cacheDir": "cache",
   "keepPrepared": false,
+  "safariExtensionUrl": "",
   "linkMode": "secure",
   "upnp": true,
   "publicHost": "",

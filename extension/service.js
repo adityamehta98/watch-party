@@ -299,7 +299,9 @@
 // faces. It talks to your Watch Party tab (or the Watch Party window), which does the real work.
 (() => {
   const SERVICE = wpServiceOf(location.hostname) || (window.__wpCustom ? 'custom' : null);
-  const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && /^chrome-extension:/.test(location.ancestorOrigins[0]));
+  let extensionOrigin = '';
+  try { extensionOrigin = new URL(chrome.runtime.getURL('/')).origin; } catch { /* reloaded */ }
+  const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && location.ancestorOrigins[0] === extensionOrigin);
   if (!SERVICE || !TOP || window.__wpBar) return;
   window.__wpBar = true;
 

@@ -195,9 +195,13 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait };
+    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '' };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
+  }
+
+  broadcastSettings() {
+    for (const c of this.clients.values()) if (c.admitted) this.send(c.ws, { type: 'settings', settings: this.publicSettings(c.role === 'host') });
   }
 
   publicMovie() {
@@ -571,7 +575,7 @@ class Room {
         if (s.defaults) for (const p of PERMS) if (p in s.defaults) this.settings.defaults[p] = !!s.defaults[p];
         this.config.room = { autoWait: this.settings.autoWait, requireApproval: this.settings.requireApproval, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults };
         this.save();
-        for (const c of this.clients.values()) if (c.admitted) this.send(c.ws, { type: 'settings', settings: this.publicSettings(c.role === 'host') });
+        this.broadcastSettings();
         return;
       }
       case 'admit': {
