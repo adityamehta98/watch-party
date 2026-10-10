@@ -132,6 +132,20 @@ test('Safari release tooling validates identifiers without storing signing data'
   }
 });
 
+test('extension archives are byte-reproducible', () => {
+  const { archiveDirectory } = require('../build/build-safari-extension');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-zip-')), source = path.join(root, 'extension');
+  try {
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, 'manifest.json'), '{"name":"test"}\n');
+    const first = path.join(root, 'first.zip'), second = path.join(root, 'second.zip');
+    archiveDirectory(root, 'extension', first);
+    fs.utimesSync(path.join(source, 'manifest.json'), new Date(), new Date());
+    archiveDirectory(root, 'extension', second);
+    assert.deepEqual(fs.readFileSync(first), fs.readFileSync(second));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('device detection selects the correct extension installation path', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/platform.js')).toString('base64')}`;
   const { detectPlatform, installTarget } = await import(moduleUrl);
@@ -198,7 +212,7 @@ test('PWA shell is installable without caching room secrets or media', () => {
   for (const forbidden of ['/join/', '/host/', '/media/', '/api/', 'index.html', 'manifest.webmanifest']) assert.doesNotMatch(sw, new RegExp(`['\"]${forbidden.replaceAll('/', '\\/')}`));
   assert.match(sw, /const cacheKey = url\.pathname/);
   assert.match(read('server/index.js'), /manifest\.webmanifest[\s\S]*private, no-store/);
-  assert.doesNotMatch(read('public/favicon.svg'), /(?:claude|anthropic|c2pa)/i);
+  assert.doesNotMatch(read('public/favicon.svg'), /<metadata|xmlns:[\w-]+=/i);
 });
 
 test('playback capabilities choose native HLS with a direct-file fallback', async () => {
