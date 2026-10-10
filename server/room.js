@@ -33,6 +33,7 @@ class Room {
     this.memory = new Map();    // clientId -> { name, perms, admitted } (survives refresh / reconnect)
     this.banned = new Set();
     this.chat = [];
+    this.bookmarks = [];
     this.syncEvents = []; // ephemeral observability only; never written to config or disk
     this.movie = null;
     this.state = { movieId: null, playing: false, position: 0, anchor: 0, seq: 0, waiting: false, waitingFor: [] };
@@ -127,7 +128,7 @@ class Room {
     this.send(client.ws, {
       type: 'welcome',
       you: { id: client.id, name: client.name, role: client.role, perms: client.perms },
-      state: this.state, movie: this.publicMovie(), chat: this.chat.slice(-60),
+      state: this.state, movie: this.publicMovie(), chat: this.chat.slice(-60), bookmarks: this.bookmarks,
       peers: this.admitted().filter(c => c !== client).map(c => ({ id: c.id, name: c.name, media: c.media })),
       settings: this.publicSettings(client.role === 'host'),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
@@ -303,7 +304,11 @@ class Room {
   }
 
   setState(patch, meta = {}) {
-    if ('movieId' in patch && patch.movieId !== this.state.movieId) this.resetObservatory();
+    if ('movieId' in patch && patch.movieId !== this.state.movieId) {
+      this.resetObservatory();
+      this.bookmarks = [];
+      this.broadcast({ type: 'bookmarks', bookmarks: [] });
+    }
     this.state = { ...this.state, waiting: false, waitingFor: [], ...patch, seq: this.state.seq + 1 };
     this.broadcast({ type: 'state', state: this.state, by: meta.by || null, byId: meta.byId || null, ref: meta.ref || null, action: meta.action || null, serverTime: Date.now() });
   }
@@ -509,7 +514,8 @@ class Room {
         if (!isHost && !client.perms.chat) return this.send(client.ws, { type: 'error', code: 'no-permission', perm: 'chat' });
         const text = String(msg.text || '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim().slice(0, 500);
         if (!text) return;
-        const m = { id: randKey(8), from: client.id, name: client.name, host: isHost, text, ts: Date.now() };
+        const m = { id: randKey(8), from: client.id, name: client.name, host: isHost, text, ts: Date.now(),
+          movieId: this.movie?.id || null, position: this.movie ? Math.round(this.currentPosition() * 10) / 10 : null };
         this.pushChat(m);
         this.broadcast({ type: 'chat', message: m });
         return;
@@ -521,7 +527,9 @@ class Room {
         client.lastReact = client.lastReact.filter(t => now - t < 3000);
         if (client.lastReact.length >= 8) return;
         client.lastReact.push(now);
-        this.broadcast({ type: 'react', emoji: msg.emoji, from: client.id, name: client.name });
+        const at = now + (this.state.playing ? 350 : 0);
+        this.broadcast({ type: 'react', id: randKey(8), emoji: msg.emoji, from: client.id, name: client.name,
+          movieId: this.movie?.id || null, position: this.movie ? Math.round(this.currentPosition(at) * 10) / 10 : null, at });
         return;
       }
       case 'media': {
@@ -564,6 +572,20 @@ class Room {
     // ---------- the host and anyone allowed to control playback: pick what the room watches ----------
     if (this.canControl(client)) {
       switch (msg.type) {
+        case 'bookmark': {
+          if (!this.movie) return;
+          if (msg.action === 'remove') {
+            const mark = this.bookmarks.find(x => x.id === msg.id);
+            if (mark && (isHost || mark.from === client.id)) this.bookmarks = this.bookmarks.filter(x => x !== mark);
+          } else {
+            const label = String(msg.label || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 80);
+            const position = Math.round(this.currentPosition() * 10) / 10;
+            this.bookmarks.push({ id: randKey(8), movieId: this.movie.id, position, label: label || `Scene at ${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`, from: client.id, name: client.name, ts: Date.now() });
+            if (this.bookmarks.length > 40) this.bookmarks.shift();
+          }
+          this.broadcast({ type: 'bookmarks', bookmarks: this.bookmarks });
+          return;
+        }
         case 'select-movie': return this.selectMovie(client, msg.id);
         case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
         case 'movie-meta': return this.movieMeta(client, msg);

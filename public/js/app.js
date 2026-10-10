@@ -49,7 +49,7 @@ if (!clientId) { clientId = randId(); store.set(isHost ? 'wp.hostId' : 'wp.clien
 const S = {
   chatLog: [],
   me: null, perms: {}, people: [], totalMbps: 0, movie: null, state: null, settings: {}, reactions: [],
-  observatory: null,
+  observatory: null, bookmarks: [],
   peers: new Map(), remoteStreams: new Map(), cam: false, mic: false, tab: 'chat', unread: 0,
   library: null, info: null, prepOpen: new Set(), prepOpts: new Map(), lastSender: null, lastSenderTs: 0,
   name: '',
@@ -177,7 +177,8 @@ function wire() {
   conn.on('movie', m => loadMovie(m.movie));
   conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; S.observatory = m.observatory || null; renderPeople(); renderObservatory(); renderNowPlaying(); renderCams(); renderNotice(); });
   conn.on('chat', m => addChat(m.message, true));
-  conn.on('react', m => floatReaction(m.emoji, m.name));
+  conn.on('react', scheduleReaction);
+  conn.on('bookmarks', m => { S.bookmarks = m.bookmarks || []; renderBookmarks(); });
   conn.on('perms', m => {
     S.perms = m.perms;
     applyPerms();
@@ -224,6 +225,7 @@ function onWelcome(m) {
   S.perms = m.you.perms;
   S.settings = m.settings || {};
   S.reactions = m.reactions || [];
+  S.bookmarks = m.bookmarks || [];
   mesh.setIceServers(m.iceServers, m.relayOnly);
   screen('room');
   $('#chatList').innerHTML = '';
@@ -238,6 +240,7 @@ function onWelcome(m) {
   player.setState(m.state);
   if (S.cam || S.mic) conn.send({ type: 'media', cam: S.cam, mic: S.mic });
   buildReactions();
+  renderBookmarks();
   applyPerms();
   renderSettings();
   renderNotice();
@@ -277,6 +280,7 @@ function loadMovie(movie) {
   renderLibraryCurrent();
   renderServicePanel();
   renderObservatory();
+  renderBookmarks();
   if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
   if (same) return;
   trackEls.clear();
@@ -632,6 +636,7 @@ function applyPerms() {
   const camOk = isHost || S.perms.camera;
   $('#camBtn').classList.toggle('denied', !camOk);
   $('#micBtn').classList.toggle('denied', !camOk);
+  renderBookmarks();
   renderPeople();
 }
 
@@ -914,6 +919,15 @@ function buildReactions() {
 }
 $('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
 $('#reactPop').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b) conn.send({ type: 'react', emoji: b.dataset.emoji }); });
+function scheduleReaction(m) {
+  const fire = () => {
+    if (m.movieId && m.movieId !== S.movie?.id) return;
+    if (m.at && conn.clock.now() - m.at > 2500) return;
+    floatReaction(m.emoji, m.name);
+  };
+  const delay = Number(m.at) - conn.clock.now();
+  if (Number.isFinite(delay) && delay > 10) setTimeout(fire, Math.min(delay, 2000)); else fire();
+}
 function floatReaction(emoji, name) {
   if (M === remote) remote.overlay({ kind: 'react', emoji, name });
   const layer = $('#reactionsLayer');
@@ -944,7 +958,7 @@ function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
 
 // ---------------------------------------------------------------- chat
 function addChat(m, live) {
-  S.chatLog.push({ name: m.name || '', text: m.text || '', ts: m.ts || Date.now(), host: !!m.host, system: !!m.system, me: m.from === clientId });
+  S.chatLog.push({ id: m.id, name: m.name || '', text: m.text || '', ts: m.ts || Date.now(), host: !!m.host, system: !!m.system, me: m.from === clientId, movieId: m.movieId || null, position: Number.isFinite(m.position) ? m.position : null });
   if (S.chatLog.length > 120) S.chatLog.splice(0, S.chatLog.length - 120);
   dockPushSoon();
   popRender(false);
@@ -960,7 +974,8 @@ function addChat(m, live) {
     S.lastSender = m.from; S.lastSenderTs = m.ts;
     el.className = 'msg' + (cont ? ' cont' : '');
     const t = new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    el.innerHTML = `${avatar(m.name)}<div><div class="who">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${esc(m.text)}</div></div>`;
+    const moment = Number.isFinite(m.position) ? `<button class="chat-time" type="button" data-chat-position="${m.position}" data-chat-movie="${esc(m.movieId || '')}" title="Jump to this moment">${fmtTime(m.position)}</button>` : '';
+    el.innerHTML = `${avatar(m.name)}<div><div class="who">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${esc(m.text)}${moment}</div></div>`;
     if (live) floatChat(m);
     if (live && M === remote) remote.overlay({ kind: 'chat', name: m.name, text: m.text });
   }
@@ -970,6 +985,32 @@ function addChat(m, live) {
   const visible = S.tab === 'chat' && !room.classList.contains('no-sidebar') && !isFs();
   if (live && !m.system && !visible && m.from !== clientId) { S.unread++; renderBadges(); }
 }
+$('#chatList').addEventListener('click', e => {
+  const b = e.target.closest('[data-chat-position]');
+  if (!b || b.dataset.chatMovie !== S.movie?.id) return;
+  sendCmd('seek', Number(b.dataset.chatPosition));
+});
+
+function renderBookmarks() {
+  const list = $('#bookmarkList');
+  const marks = (S.bookmarks || []).filter(x => x.movieId === S.movie?.id);
+  $('#momentsBar').hidden = !marks.length && !canControl();
+  list.innerHTML = marks.map(m => `<span class="moment"><button type="button" data-bookmark="${esc(m.id)}" title="${esc(m.name)} · ${fmtTime(m.position)}">${esc(m.label)} <em>${fmtTime(m.position)}</em></button>${(isHost || m.from === clientId) ? `<button type="button" data-remove-bookmark="${esc(m.id)}" aria-label="Remove ${esc(m.label)}">×</button>` : ''}</span>`).join('');
+  $('#seekMoments').innerHTML = marks.map(m => `<i style="left:${Math.max(0, Math.min(100, m.position / Math.max(1, S.movie?.duration || M.duration || 1) * 100))}%" title="${esc(m.label)} · ${fmtTime(m.position)}"></i>`).join('');
+}
+$('#bookmarkBtn').addEventListener('click', () => {
+  if (!canControl()) return noPerm('playback');
+  if (!S.movie) return;
+  const label = prompt('Name this scene (optional):', '') ?? null;
+  if (label != null) conn.send({ type: 'bookmark', label });
+});
+$('#bookmarkList').addEventListener('click', e => {
+  const remove = e.target.closest('[data-remove-bookmark]');
+  if (remove) { conn.send({ type: 'bookmark', action: 'remove', id: remove.dataset.removeBookmark }); return; }
+  const button = e.target.closest('[data-bookmark]');
+  const mark = button && S.bookmarks.find(x => x.id === button.dataset.bookmark);
+  if (mark) sendCmd('seek', mark.position);
+});
 function floatChat(m) {
   const box = $('#chatFloat');
   const el = document.createElement('div');

@@ -351,6 +351,29 @@ test('Sync Observatory keeps bounded in-memory health, corrections, and recommen
   assert.equal(config.syncEvents, undefined); assert.equal(config.metrics, undefined);
 });
 
+test('room moments anchor chat, reactions, and bookmarks to movie time in memory', t => {
+  const { Room, REACTIONS } = require('../server/room');
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library: { list: () => ({ folders: [], scanning: false, items: [] }) }, save() {} });
+  t.after(() => room.shutdown());
+  room.movie = { id: 'movie', kind: 'file', title: 'Movie', duration: 100, subs: [] };
+  room.state = { movieId: 'movie', playing: false, position: 42.25, anchor: Date.now(), seq: 1, waiting: false, waitingFor: [] };
+  const sent = [];
+  room.broadcast = message => sent.push(message);
+  const guest = { id: 'viewer1', name: 'Alex', role: 'guest', admitted: true, perms: { playback: true, chat: true, react: true }, ws: { readyState: 0 }, lastReact: [] };
+  room.onMessage(guest, { type: 'chat', text: 'Great scene' });
+  assert.equal(sent.at(-1).message.movieId, 'movie');
+  assert.equal(sent.at(-1).message.position, 42.3);
+  room.onMessage(guest, { type: 'react', emoji: REACTIONS[0] });
+  assert.equal(sent.at(-1).movieId, 'movie');
+  assert.equal(sent.at(-1).position, 42.3);
+  assert.ok(sent.at(-1).at >= Date.now() - 20);
+  room.onMessage(guest, { type: 'bookmark', label: '<Finale>' });
+  assert.equal(room.bookmarks.length, 1);
+  assert.equal(room.bookmarks[0].label, 'Finale');
+  assert.equal(sent.at(-1).type, 'bookmarks');
+  assert.equal(room.config.bookmarks, undefined);
+});
+
 test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {
   const tools = require('../server/tools');
   assert.equal(tools.encoderLabel('hevc_nvenc'), 'NVIDIA GPU'); assert.equal(tools.encoderLabel(null), 'none');

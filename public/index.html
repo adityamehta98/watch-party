@@ -37,6 +37,7 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3.5h12v17l-6-4-6 4z"/></symbol>
     <symbol id="i-back10" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 3.5V9H9"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
     <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6M20.5 3.5V9H15"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
     <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="15" rx="2.5"/><rect x="12" y="11" width="7" height="5.5" rx="1.2" fill="currentColor" stroke="none"/></symbol>
@@ -144,6 +145,7 @@
               <div class="seek-buffered" id="seekBuffered"></div>
               <div class="seek-played" id="seekPlayed"></div>
               <div class="seek-thumb" id="seekThumb"></div>
+              <div class="seek-moments" id="seekMoments"></div>
             </div>
             <div class="seek-tip" id="seekTip">0:00</div>
           </div>
@@ -186,6 +188,7 @@
       </nav>
 
       <section class="panel" data-panel="chat">
+        <div class="moments-bar" id="momentsBar"><button class="btn sm ghost ctl-only" id="bookmarkBtn" type="button"><svg><use href="#i-bookmark"/></svg>Save scene</button><div class="moment-list" id="bookmarkList"></div></div>
         <div class="chat-list" id="chatList"></div>
         <form class="chat-form" id="chatForm">
           <input id="chatInput" maxlength="500" placeholder="Message everyone" autocomplete="off">
