@@ -37,6 +37,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **No outside services.** Guests connect straight to the host's PC over an encrypted link. The movie, chat, reactions and webcams all go between the host's PC and the guests.
 - **Original quality.** Each viewer's browser plays the actual movie file, so 4K stays 4K and the sound always matches the picture. Nothing is screen-captured or re-encoded live.
 - **Tight sync.** Everyone stays within about 50 ms, late joiners included. If one viewer falls behind, the room pauses until they catch up.
+- **Sync Observatory.** The host sees every participant's RTT, drift, buffer health, bounded correction history, stall/recovery timeline, a room confidence score, and actionable quality recommendations.
 - **Host control.** The host approves each guest and decides per person who can play/pause/seek, chat, react, and use a camera and mic.
 - **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles) with `ffmpeg`.
 - **Streaming services.** Syncs Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, Apple TV+ and YouTube. Everyone plays from their own account and Watch Party keeps you together.
@@ -202,8 +203,9 @@ Prepared copies go in `cache/` and are deleted when the app stops, unless `keepP
 
 - **Clock sync** (`public/js/net.js`): every client keeps measuring the offset between its clock and the server's over the WebSocket, NTP-style.
 - **Shared timeline** (`server/room.js`): the room stores *"position P was playing at server time T, at rate 1.0"* (or *paused at P*). Play, pause and seek update that state and broadcast it, with a short start delay so every player starts on the same tick.
-- **Drift correction** (`public/js/player.js`): each player compares its `currentTime` with where the timeline says it should be. Small drift is fixed by adjusting `playbackRate` slightly. Large drift triggers a seek. Late joiners just compute "where should I be now" and jump there.
+- **Adaptive drift correction** (`public/js/player.js`, `public/js/sync.js`): each player compares its `currentTime` with the shared timeline. An RTT-aware deadband and smoothed drift prevent oscillation; low-buffer players avoid aggressive speed-ups and repeated seeks. Large drift still triggers a decisive seek. Late joiners compute the current room position and jump there.
 - **Buffering:** if a viewer stalls, the room waits for them and then everyone resumes together.
+- **Sync Observatory:** the Room's **Sync** tab renders live RTT rings, drift, buffer health, recent correction decisions, synchronization confidence, stall/recovery markers, and suggestions such as preparing a 720p copy for a struggling guest. Telemetry is bounded in memory, resets with the movie, and is never written to disk.
 
 ### 5. Webcams and mic
 
@@ -413,6 +415,7 @@ watch-party/
 │   ├── js/app.js           UI: library, room, people, chat, reactions, invite
 │   ├── js/net.js           WebSocket with auto-reconnect and server clock sync
 │   ├── js/player.js        drift correction against the shared timeline
+│   ├── js/sync.js          pure adaptive sync tuning rules
 │   ├── js/media.js         YouTube and remote-tab (extension) player adapters
 │   ├── js/rtc.js           WebRTC webcam/mic mesh
 │   └── ext/                built extension zip for guests (generated)

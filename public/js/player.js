@@ -2,10 +2,7 @@
 // Every viewer plays the original file locally; this only nudges timing, it never touches quality.
 
 import { PLATFORM } from './platform.js';
-
-const HARD_SEEK = 0.9;     // seconds off before we jump
-const SOFT_EPS = 0.03;     // seconds off we tolerate
-const MAX_RATE_DELTA = 0.06;
+import { syncTuning } from './sync.js';
 
 // iPhone / iPad (and Safari on a Mac): Safari's player doesn't like having its speed nudged up and
 // down all the time (it re-buffers), and it reports time in coarse steps. So there we keep pace with
@@ -34,6 +31,12 @@ export class SyncPlayer {
     this.autoMuted = false;
     this.lastStatusJson = '';
     this.lastStatusAt = 0;
+    this.correctionId = 0;
+    this.corrections = [];
+    this.driftEma = 0;
+    this.lastDriftAt = 0;
+    this.lastRateCorrection = 0;
+    this.lastRateDirection = 0;
 
     this.aligned = false;
     this.videoFailed = false;
@@ -108,6 +111,11 @@ export class SyncPlayer {
     this.aligned = false;
     this.lastHardSeek = 0;
     this.stalls = 0;
+    this.corrections = [];
+    this.driftEma = 0;
+    this.lastDriftAt = 0;
+    this.lastRateCorrection = 0;
+    this.lastRateDirection = 0;
     this.videoFailed = false;
     this.vfCheck = null;
     this.sawPicture = false;
@@ -142,14 +150,37 @@ export class SyncPlayer {
 
   clearStart() { clearTimeout(this.startTimer); this.startTimer = null; this.startTimerSeq = -1; }
 
-  setRate(r) {
-    if (Math.abs(this.v.playbackRate - r) > 0.001) this.v.playbackRate = r;
+  recordCorrection(type, drift = this.drift, value = null) {
+    const now = performance.now();
+    if (type === this.lastCorrectionType && now - (this.lastCorrectionAt || 0) < 500) return;
+    this.lastCorrectionType = type;
+    this.lastCorrectionAt = now;
+    const item = { id: ++this.correctionId, type, drift: Math.round((Number(drift) || 0) * 1000), at: Math.round(this.clock.now()) };
+    if (Number.isFinite(value)) item.value = Math.round(value * 1000) / 1000;
+    this.corrections.push(item);
+    if (this.corrections.length > 20) this.corrections.shift();
   }
 
-  seekTo(t) {
+  setRate(r) {
+    const before = this.v.playbackRate || 1;
+    if (Math.abs(before - r) <= 0.001) return;
+    this.v.playbackRate = r;
+    const direction = Math.sign(r - 1);
+    const now = performance.now();
+    if (!direction) this.lastRateDirection = 0;
+    if (direction && (direction !== this.lastRateDirection || now - this.lastRateCorrection > 1500)) {
+      this.lastRateDirection = direction;
+      this.lastRateCorrection = now;
+      this.recordCorrection('rate', this.drift, r);
+    }
+  }
+
+  seekTo(t, type = 'seek') {
     const v = this.v;
     if (!isFinite(t)) return;
     this.lastHardSeek = performance.now();
+    this.driftEma = 0;
+    this.recordCorrection(type, this.drift, t);
     try { v.currentTime = Math.max(0, t); } catch { /* not ready */ }
   }
 
@@ -197,7 +228,7 @@ export class SyncPlayer {
       if (!v.paused) v.pause();
       this.setRate(1);
       this.drift = v.currentTime - s.position;
-      if (!v.seeking && Math.abs(this.drift) > pausedEps) this.seekTo(s.position);
+      if (!v.seeking && Math.abs(this.drift) > pausedEps) this.seekTo(s.position, 'frame');
       else if (!v.seeking && !this.aligned) { this.aligned = true; this.onChange(); }
       return;
     }
@@ -206,7 +237,7 @@ export class SyncPlayer {
       // Scheduled start: park on the frame, then start at the same instant as everyone else.
       if (!v.paused) v.pause();
       this.setRate(1);
-      if (!v.seeking && Math.abs(v.currentTime - s.position) > pausedEps) this.seekTo(s.position);
+      if (!v.seeking && Math.abs(v.currentTime - s.position) > pausedEps) this.seekTo(s.position, 'schedule');
       if (this.startTimerSeq !== s.seq) {
         clearTimeout(this.startTimer);
         this.startTimerSeq = s.seq;
@@ -224,17 +255,22 @@ export class SyncPlayer {
 
     const diff = v.currentTime - target;
     this.drift = diff;
+    const driftNow = performance.now();
+    this.driftEma = !this.lastDriftAt || driftNow - this.lastDriftAt > 1200 || Math.abs(diff - this.driftEma) > 0.5 ? diff : this.driftEma * 0.65 + diff * 0.35;
+    this.lastDriftAt = driftNow;
     const sinceSeek = (performance.now() - this.lastHardSeek) / 1000;
 
     const prof = this.profile;
-    const hardSeek = prof.hardSeek || HARD_SEEK;
+    const ahead = v.isAdapter ? null : this.bufferedAhead();
+    const tuning = syncTuning({ drift: this.driftEma, ahead, rtt: this.clock.rtt || 0, profile: prof });
+    const hardSeek = tuning.hardSeek;
     if (Math.abs(diff) > hardSeek) {
       // Far from the room (just joined, or fell behind): jump there first and only start playing once
       // we've arrived, so a late joiner never hears the movie from the beginning.
       // While waiting for data after a jump, don't keep re-seeking; it throws away buffer.
       if (!this.lastHardSeek || sinceSeek > 3 || (sinceSeek > 1.2 && v.readyState >= 3)) {
         if (!v.paused && !this.aligned) v.pause();
-        this.seekTo(target + Math.min(this.seekLatency, 1));
+        this.seekTo(target + Math.min(this.seekLatency, 1), 'seek');
         this.setRate(1);
       }
       return;
@@ -254,14 +290,15 @@ export class SyncPlayer {
       if (prof.nudge && Math.abs(diff) > prof.nudge && v.readyState >= 3 && t - (this.lastNudge || 0) > 4000 && sinceSeek > 2 && !this.nudgePending) {
         this.lastNudge = t;
         this.nudgePending = true;
-        this.seekTo(this.expected(this.clock.now()) + (this.nudgeComp == null ? Math.min(this.seekLatency, 0.5) : this.nudgeComp));
+        this.seekTo(this.expected(this.clock.now()) + (this.nudgeComp == null ? Math.min(this.seekLatency, 0.5) : this.nudgeComp), 'nudge');
       }
       return;
     }
-    if (Math.abs(diff) > (prof.softEps || SOFT_EPS)) {
+    const controlDiff = this.driftEma;
+    if (Math.abs(controlDiff) > tuning.softEps) {
       // bigger gaps (like right after someone else presses play) close faster, small ones gently
-      const cap = Math.abs(diff) > 0.12 ? 0.1 : MAX_RATE_DELTA;
-      const delta = Math.max(-cap, Math.min(cap, diff * 0.8));
+      const cap = tuning.maxRateDelta;
+      const delta = Math.max(-cap, Math.min(cap, controlDiff * 0.8));
       this.setRate(1 - delta);
     } else {
       this.setRate(1);
@@ -314,23 +351,27 @@ export class SyncPlayer {
     const now = this.clock.now();
     const intendPlaying = !!(s && s.playing && now >= s.anchor);
     const nearTarget = s ? Math.abs(v.currentTime - this.expected(now)) < 1.5 : false;
+    const buffering = loaded && intendPlaying && (v.seeking || v.readyState < 3);
+    const ahead = v.isAdapter ? null : Math.round(this.bufferedAhead() * 10) / 10;
+    const health = !intendPlaying ? (loaded ? 100 : 0) : buffering ? 0 : ahead == null ? (v.readyState >= 3 ? 90 : 35) : Math.round(Math.max(0, Math.min(100, ahead / 12 * 100)));
     return {
       loaded,
-      buffering: loaded && intendPlaying && (v.seeking || v.readyState < 3),
+      buffering,
       ready: loaded && this.clock.synced && v.readyState >= 3 && !v.seeking && nearTarget,
       blocked: this.blocked,
-      ahead: v.isAdapter ? null : Math.round(this.bufferedAhead() * 10) / 10, // YouTube/streaming: not known
+      ahead, health, rtt: Math.round(this.clock.rtt || 0),
       drift: Math.round(this.drift * 1000),
       seq: s ? s.seq : -1,
       error: v.error ? v.error.code : (this.videoFailed ? 98 : 0),
       stalls: this.stalls || 0, dev: DEVICE, rate: Math.round((v.playbackRate || 1) * 100) / 100,
+      correction: this.corrections[this.corrections.length - 1] || null,
     };
   }
 
   report(force) {
     if (!this.movie || !this.state) return;
     const st = this.status();
-    const key = JSON.stringify([st.loaded, st.buffering, st.ready, st.blocked, st.seq, st.error]);
+    const key = JSON.stringify([st.loaded, st.buffering, st.ready, st.blocked, st.seq, st.error, st.correction && st.correction.id]);
     const now = performance.now();
     if (!force && key === this.lastStatusJson && now - this.lastStatusAt < 2000) return;
     if (force && key === this.lastStatusJson && now - this.lastStatusAt < 150) return;

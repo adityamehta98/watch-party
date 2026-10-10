@@ -48,6 +48,7 @@ if (!clientId) { clientId = randId(); store.set(isHost ? 'wp.hostId' : 'wp.clien
 const S = {
   chatLog: [],
   me: null, perms: {}, people: [], totalMbps: 0, movie: null, state: null, settings: {}, reactions: [],
+  observatory: null,
   peers: new Map(), remoteStreams: new Map(), cam: false, mic: false, tab: 'chat', unread: 0,
   library: null, info: null, prepOpen: new Set(), prepOpts: new Map(), lastSender: null, lastSenderTs: 0,
   name: '',
@@ -172,7 +173,7 @@ function wire() {
     }
   });
   conn.on('movie', m => loadMovie(m.movie));
-  conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; renderPeople(); renderNowPlaying(); renderCams(); renderNotice(); });
+  conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; S.observatory = m.observatory || null; renderPeople(); renderObservatory(); renderNowPlaying(); renderCams(); renderNotice(); });
   conn.on('chat', m => addChat(m.message, true));
   conn.on('react', m => floatReaction(m.emoji, m.name));
   conn.on('perms', m => {
@@ -262,6 +263,7 @@ function mediaFor(movie) {
 
 function loadMovie(movie) {
   const same = S.movie && movie && S.movie.id === movie.id;
+  if (!same) S.observatory = null;
   S.movie = movie;
   stage.classList.toggle('has-movie', !!movie);
   stage.dataset.kind = kindOf(movie);
@@ -272,6 +274,7 @@ function loadMovie(movie) {
   bringAlong(movie);
   renderLibraryCurrent();
   renderServicePanel();
+  renderObservatory();
   if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
   if (same) return;
   trackEls.clear();
@@ -1252,6 +1255,51 @@ function renderPeople() {
   }
   if (isHost && !guests.length) html += `<p class="fine" style="margin-top:12px">No one else is here yet. <button class="btn sm" data-invite>Invite people</button></p>`;
   el.innerHTML = html;
+}
+
+function renderObservatory() {
+  if (!isHost) return;
+  const el = $('#observatory');
+  if (!el) return;
+  const obs = S.observatory || { confidence: null, timeline: [], recommendations: [] };
+  if (!S.movie || obs.confidence == null) {
+    el.innerHTML = `<div class="obs-empty"><b>Sync Observatory</b><p class="fine">Start a movie or streaming service to see live room timing.</p></div>`;
+    return;
+  }
+  const tone = value => value >= 85 ? 'good' : value >= 65 ? 'warn' : 'bad';
+  const score = Math.max(0, Math.min(100, Number(obs.confidence) || 0));
+  const people = S.people.filter(p => p.admitted);
+  const participants = people.map(p => {
+    const st = p.status || {};
+    const rtt = Math.max(0, Number(st.rtt) || 0);
+    const health = Math.max(0, Math.min(100, Number(st.health) || 0));
+    const drift = Number(st.drift) || 0;
+    const ring = Math.min(360, rtt / 600 * 360);
+    const latencyTone = rtt <= 120 ? 'good' : rtt <= 280 ? 'warn' : 'bad';
+    const corrections = (st.corrections || []).slice(-6).map(c => `<span class="obs-correction ${esc(c.type)}" title="${esc(`${c.type} correction at ${new Date(c.at).toLocaleTimeString()}`)}">${esc(c.type)} ${c.drift > 0 ? '+' : ''}${Math.round(c.drift || 0)}ms</span>`).join('');
+    return `<article class="obs-person">
+      <div class="latency-ring ${latencyTone}" style="--latency:${ring}deg"><b>${rtt || '—'}</b><small>ms RTT</small></div>
+      <div class="obs-person-main"><div class="obs-person-name">${esc(p.name)}${p.id === clientId ? ' <span>(you)</span>' : ''}</div>
+        <div class="obs-metrics"><span><b>${drift > 0 ? '+' : ''}${Math.round(drift)}</b> ms drift</span><span><b>${Math.round(health)}</b>% buffer</span><span><b>${Number(st.rate || 1).toFixed(2)}×</b> rate</span></div>
+        <div class="obs-health"><i style="width:${health}%"></i></div>
+        <div class="obs-corrections">${corrections || '<span class="fine">No corrections needed</span>'}</div>
+      </div></article>`;
+  }).join('');
+  const duration = Number(S.movie.duration) || 0;
+  const events = (obs.timeline || []).slice(-40);
+  const firstAt = events.length ? events[0].at : Date.now() - 300000;
+  const timeSpan = Math.max(1, Date.now() - firstAt);
+  const markers = events.map(event => {
+    const pct = duration ? Math.max(0, Math.min(100, Number(event.position) / duration * 100)) : Math.max(0, Math.min(100, (event.at - firstAt) / timeSpan * 100));
+    return `<i class="${event.type}" style="left:${pct}%" title="${esc(`${event.name} ${event.type === 'stall' ? 'stalled' : 'recovered'} at ${fmtTime(event.position)}`)}"></i>`;
+  }).join('');
+  const recent = events.slice(-4).reverse().map(event => `<li><span class="obs-event ${event.type}"></span>${esc(event.name)} ${event.type === 'stall' ? 'stalled' : 'recovered'} <time>${fmtTime(event.position)}</time></li>`).join('');
+  const recommendations = (obs.recommendations || []).map(r => `<div class="obs-recommendation ${r.level === 'urgent' ? 'urgent' : ''}">${icon('film')}<span>${esc(r.text)}</span></div>`).join('');
+  el.innerHTML = `<div class="obs-head"><div class="confidence-ring ${tone(score)}" style="--score:${score * 3.6}deg"><b>${score}</b><small>sync confidence</small></div><div><h3>Sync Observatory</h3><p>Live timing across ${people.length} participant${people.length === 1 ? '' : 's'}</p></div></div>
+    ${recommendations ? `<div class="obs-recommendations">${recommendations}</div>` : ''}
+    <div class="section-label">Participants</div>${participants || '<p class="fine">Waiting for player telemetry…</p>'}
+    <div class="section-label">Room timeline</div><div class="obs-timeline"><span></span>${markers}</div>${recent ? `<ul class="obs-events">${recent}</ul>` : '<p class="fine">No stalls. The room has been steady.</p>'}
+    <p class="obs-privacy">Live only · metrics stay in memory and are erased when the room closes.</p>`;
 }
 $('#peopleList').addEventListener('click', e => {
   const t = e.target;

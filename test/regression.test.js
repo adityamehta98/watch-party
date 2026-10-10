@@ -129,6 +129,16 @@ test('device detection selects the correct extension installation path', async (
   assert.doesNotMatch(read('public/js/app.js'), /Phones and tablets can't run extensions/);
 });
 
+test('adaptive sync tuning protects weak buffers without hiding large drift', async () => {
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/sync.js')).toString('base64')}`;
+  const { syncTuning } = await import(moduleUrl);
+  assert.equal(syncTuning({ drift: -0.2, ahead: 8 }).hardSeek, 0.9);
+  assert.equal(syncTuning({ drift: -0.2, ahead: 1 }).hardSeek, 1.15);
+  assert.equal(syncTuning({ drift: -0.2, ahead: 1 }).maxRateDelta, 0.025);
+  assert.equal(syncTuning({ drift: 0.3, ahead: 8 }).maxRateDelta, 0.1);
+  assert.equal(syncTuning({ rtt: 900 }).softEps, 0.08);
+});
+
 test('Apple extension links are restricted to App Store and TestFlight HTTPS URLs', () => {
   const { cleanAppleExtensionUrl } = require('../server/settings');
   assert.equal(cleanAppleExtensionUrl('https://testflight.apple.com/join/AbCd1234'), 'https://testflight.apple.com/join/AbCd1234');
@@ -254,6 +264,26 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   assert.equal(room.movie.service, 'custom'); assert.equal(room.movie.strict, true);
   assert.equal(room.guestLibrary().folders[0], '(the host\'s movies)'); assert.equal(room.guestLibrary().items[0].rel, 'movie.mp4');
   assert.equal(room.publicSettings(false).safariExtensionUrl, 'https://testflight.apple.com/join/AbCd1234');
+});
+
+test('Sync Observatory keeps bounded in-memory health, corrections, and recommendations', t => {
+  const { Room } = require('../server/room');
+  const config = { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: { autoWait: false } };
+  const room = new Room({ config, library: { list: () => ({ folders: [], scanning: false, items: [] }) }, save() {} });
+  t.after(() => room.shutdown());
+  room.movie = { id: 'movie', kind: 'file', title: 'Movie', duration: 3600, height: 1080, mbps: 12 };
+  room.state = { movieId: 'movie', playing: false, position: 120, anchor: Date.now(), seq: 1, waiting: false, waitingFor: [] };
+  const guest = { id: 'alex01', name: 'Alex', role: 'guest', admitted: true, perms: {}, ws: { readyState: 0 }, status: { at: 0 }, bufferingSince: null, lastWaitCause: 0, metrics: { corrections: [], lastCorrection: '' }, mbps: 6, bytes: 0, lastBytes: 0 };
+  room.clients.set(guest.id, guest);
+  room.onMessage(guest, { type: 'status', status: { loaded: true, ready: false, buffering: true, health: 8, rtt: 240, drift: -420, stalls: 3, rate: 1, correction: { id: 1, type: 'seek', drift: -420, at: Date.now(), value: 120 } } });
+  room.onMessage(guest, { type: 'status', status: { loaded: true, ready: true, buffering: false, health: 45, rtt: 180, drift: -35, stalls: 3, rate: 1.02, correction: { id: 2, type: 'rate', drift: -35, at: Date.now(), value: 1.02 } } });
+  const obs = room.observatory();
+  assert.ok(obs.confidence >= 0 && obs.confidence <= 100);
+  assert.deepEqual(obs.timeline.map(e => e.type), ['stall', 'recover']);
+  assert.match(obs.recommendations[0].text, /720p.*Alex.*buffering/);
+  const publicGuest = room.people(true).find(p => p.id === guest.id);
+  assert.equal(publicGuest.status.corrections.length, 2);
+  assert.equal(config.syncEvents, undefined); assert.equal(config.metrics, undefined);
 });
 
 test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {

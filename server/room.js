@@ -33,6 +33,7 @@ class Room {
     this.memory = new Map();    // clientId -> { name, perms, admitted } (survives refresh / reconnect)
     this.banned = new Set();
     this.chat = [];
+    this.syncEvents = []; // ephemeral observability only; never written to config or disk
     this.movie = null;
     this.state = { movieId: null, playing: false, position: 0, anchor: 0, seq: 0, waiting: false, waitingFor: [] };
     this.waitStart = 0;
@@ -102,6 +103,7 @@ class Room {
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
       media: { cam: false, mic: false },
       status: { at: 0 }, bufferingSince: null, lastWaitCause: 0,
+      metrics: { corrections: [], lastCorrection: '' },
       bytes: 0, lastBytes: 0, mbps: 0, joinedAt: Date.now(), lastReact: [],
     };
     this.clients.set(id, client);
@@ -226,8 +228,10 @@ class Room {
         id: c.id, name: c.name, role: c.role, admitted: c.admitted, perms: c.perms, media: c.media, ip: forHost && c.role !== 'host' ? c.ip : undefined,
         status: forHost ? {
           buffering: !!st.buffering, blocked: !!st.blocked, ahead: st.ahead, drift: st.drift,
+          health: st.health, rtt: st.rtt, rate: st.rate,
           loaded: !!st.loaded, error: st.error || 0, stale: Date.now() - (st.at || 0) > 6000,
           stalls: st.stalls || 0, dev: st.dev || '', waits: c.waits ? c.waits.length : 0, noWait: !!(c.noWaitUntil && c.noWaitUntil > Date.now()),
+          corrections: (c.metrics && c.metrics.corrections || []).slice(-12),
         } : { buffering: !!st.buffering, noWait: !!(c.noWaitUntil && c.noWaitUntil > Date.now()) },
         mbps: forHost ? Math.round(c.mbps * 10) / 10 : undefined,
       });
@@ -237,15 +241,56 @@ class Room {
 
   broadcastPeople(force) {
     const hostList = this.people(true);
-    const json = JSON.stringify(hostList);
+    const observatory = this.observatory();
+    const json = JSON.stringify([hostList, observatory]);
     if (!force && json === this.lastPeopleJson) return;
     this.lastPeopleJson = json;
     const guestMsg = JSON.stringify({ type: 'people', people: this.people(false) });
-    const hostMsg = JSON.stringify({ type: 'people', people: hostList, totalMbps: Math.round(hostList.filter(p => p.role !== 'host').reduce((s, p) => s + (p.mbps || 0), 0) * 10) / 10 });
+    const hostMsg = JSON.stringify({ type: 'people', people: hostList, totalMbps: Math.round(hostList.filter(p => p.role !== 'host').reduce((s, p) => s + (p.mbps || 0), 0) * 10) / 10, observatory });
     for (const c of this.clients.values()) {
       if (!c.admitted || c.ws.readyState !== 1) continue;
       try { c.ws.send(c.role === 'host' ? hostMsg : guestMsg); } catch {}
     }
+  }
+
+  observatory() {
+    if (!this.movie) return { confidence: null, timeline: [], recommendations: [] };
+    const now = Date.now();
+    const watchers = this.admitted().filter(c => c.status && c.status.loaded);
+    const scores = watchers.map(c => {
+      const st = c.status;
+      let score = 100;
+      if (now - (st.at || 0) > 6000) score -= 45;
+      if (st.buffering) score -= 35;
+      if (!st.ready) score -= 10;
+      score -= Math.min(25, Math.abs(st.drift || 0) / 20);
+      score -= Math.min(12, Math.max(0, (st.rtt || 0) - 80) / 35);
+      score -= Math.min(18, Math.max(0, 60 - (st.health == null ? 60 : st.health)) * 0.3);
+      return Math.max(0, score);
+    });
+    const confidence = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const recommendations = [];
+    if (this.movie.kind === 'file') {
+      const currentHeight = Number(this.movie.height) || 2160;
+      const currentMbps = Number(this.movie.mbps) || 0;
+      const profiles = [{ h: 2160, mbps: 22 }, { h: 1080, mbps: 8 }, { h: 720, mbps: 4 }, { h: 480, mbps: 2 }];
+      for (const c of watchers) {
+        const st = c.status;
+        if (c.role === 'host' || !(st.buffering || st.stalls >= 2 || st.health < 30)) continue;
+        const budget = c.mbps > 0.3 ? c.mbps * 0.7 : currentMbps ? currentMbps * 0.55 : 4;
+        const target = profiles.find(p => p.h < currentHeight && p.mbps <= budget);
+        const text = target
+          ? `A ${target.h}p streaming copy should prevent ${c.name} from buffering.`
+          : `${c.name} should close downloads or switch to a faster connection.`;
+        recommendations.push({ clientId: c.id, level: st.buffering ? 'urgent' : 'suggestion', text });
+      }
+    }
+    return { confidence, timeline: this.syncEvents.slice(-60), recommendations };
+  }
+
+  resetObservatory() {
+    this.syncEvents = [];
+    for (const c of this.clients.values()) c.metrics = { corrections: [], lastCorrection: '' };
   }
 
   // ---------------- timeline ----------------
@@ -257,6 +302,7 @@ class Room {
   }
 
   setState(patch, meta = {}) {
+    if ('movieId' in patch && patch.movieId !== this.state.movieId) this.resetObservatory();
     this.state = { ...this.state, waiting: false, waitingFor: [], ...patch, seq: this.state.seq + 1 };
     this.broadcast({ type: 'state', state: this.state, by: meta.by || null, byId: meta.byId || null, ref: meta.ref || null, action: meta.action || null, serverTime: Date.now() });
   }
@@ -432,12 +478,29 @@ class Room {
       case 'cmd': return this.command(client, msg);
       case 'status': {
         const st = msg.status || {};
+        const previous = client.status || {};
+        const now = Date.now();
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
         client.status = {
           buffering: !!st.buffering, ready: !!st.ready, loaded: !!st.loaded, blocked: !!st.blocked,
-          ahead: st.ahead == null ? null : Number(st.ahead) || 0, drift: Number(st.drift) || 0, error: Number(st.error) || 0, seq: st.seq, at: Date.now(),
+          ahead: st.ahead == null ? null : clamp(st.ahead, 0, 3600), drift: clamp(st.drift, -60000, 60000), error: clamp(st.error, 0, 999), seq: st.seq, at: now,
+          health: clamp(st.health, 0, 100), rtt: clamp(st.rtt, 0, 10000), rate: clamp(st.rate || 1, 0.25, 4),
           stalls: Math.min(9999, Number(st.stalls) || 0), dev: String(st.dev || '').slice(0, 24),
         };
-        if (client.status.buffering) { if (!client.bufferingSince) client.bufferingSince = Date.now(); } else client.bufferingSince = null;
+        if (client.status.buffering) { if (!client.bufferingSince) client.bufferingSince = now; } else client.bufferingSince = null;
+        if ((previous.at && previous.buffering !== client.status.buffering) || (!previous.at && client.status.buffering)) {
+          this.syncEvents.push({ at: now, clientId: client.id, name: client.name, type: client.status.buffering ? 'stall' : 'recover', position: Math.round(this.currentPosition(now) * 10) / 10 });
+          if (this.syncEvents.length > 120) this.syncEvents.splice(0, this.syncEvents.length - 120);
+        }
+        const correction = st.correction || {};
+        if (!client.metrics) client.metrics = { corrections: [], lastCorrection: '' };
+        const correctionType = ['seek', 'nudge', 'rate', 'frame', 'schedule'].includes(correction.type) ? correction.type : '';
+        const correctionKey = correctionType && `${Number(correction.id) || 0}:${correctionType}:${Number(correction.at) || 0}`;
+        if (correctionKey && correctionKey !== client.metrics.lastCorrection) {
+          client.metrics.lastCorrection = correctionKey;
+          client.metrics.corrections.push({ at: now, type: correctionType, drift: clamp(correction.drift, -60000, 60000), value: clamp(correction.value, -86400, 86400) });
+          if (client.metrics.corrections.length > 12) client.metrics.corrections.shift();
+        }
         this.checkWait();
         return;
       }
