@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "method": "deterministic controller simulation",
+  "seed": "0x5eedc0de",
+  "tickMs": 200,
+  "simulatedMinutes": 72,
+  "viewersPerTrial": 8,
+  "samples": 168000,
+  "p50Ms": 14,
+  "p95Ms": 36,
+  "p99Ms": 53,
+  "maxMs": 2596,
+  "profiles": {
+    "wired desktop": {
+      "p50Ms": 18,
+      "p95Ms": 29,
+      "p99Ms": 31,
+      "maxMs": 2376
+    },
+    "Wi-Fi laptop": {
+      "p50Ms": 11,
+      "p95Ms": 22,
+      "p99Ms": 26,
+      "maxMs": 2589
+    },
+    "Wi-Fi iPad": {
+      "p50Ms": 18,
+      "p95Ms": 44,
+      "p99Ms": 58,
+      "maxMs": 2594
+    },
+    "mobile iPhone": {
+      "p50Ms": 12,
+      "p95Ms": 39,
+      "p99Ms": 79,
+      "maxMs": 2596
+    }
+  }
+}

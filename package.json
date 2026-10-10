@@ -9,6 +9,7 @@
     "build:extensions": "node build/build-extensions.js",
     "build:safari": "node build/build-safari-extension.js",
     "build:safari:xcode": "node build/build-safari-xcode.js",
+    "benchmark:sync": "node benchmark/sync-benchmark.js --write",
     "test": "node --test"
   },
   "engines": {

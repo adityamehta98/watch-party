@@ -156,6 +156,15 @@ test('adaptive sync tuning protects weak buffers without hiding large drift', as
   assert.equal(syncTuning({ rtt: 900 }).softEps, 0.08);
 });
 
+test('synchronization benchmark results and README badge are reproducible', () => {
+  const result = spawnSync(process.execPath, ['benchmark/sync-benchmark.js', '--check'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const measured = JSON.parse(read('benchmark/results.json'));
+  assert.ok(measured.samples > 100000);
+  assert.ok(measured.p50Ms <= measured.p95Ms && measured.p95Ms <= measured.p99Ms);
+  assert.match(read('README.md'), /\.github\/badges\/sync\.svg/);
+});
+
 test('visual policy disables costly effects for accessibility and constrained devices', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/visuals.js')).toString('base64')}`;
   const { visualPolicy } = await import(moduleUrl);

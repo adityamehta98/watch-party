@@ -6,6 +6,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518.17-339933)
 ![Extension](https://img.shields.io/badge/Chrome%20extension-MV3-4285F4)
 ![Safari](https://img.shields.io/badge/Safari-Web%20Extension-006CFF)
+[![Sync benchmark](.github/badges/sync.svg)](benchmark/README.md)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 Watch Party is a small self-hosted server that runs on the host's Windows PC. Guests open an invite link in their browser and the movie streams straight from the host's disk to each guest. A shared clock keeps every player within about 50 ms of each other. It also has chat, emoji reactions and webcams, and it can sync Netflix, YouTube, Prime Video and other streaming services, with each person watching on their own account.
@@ -37,6 +38,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **No outside services.** Guests connect straight to the host's PC over an encrypted link. The movie, chat, reactions and webcams all go between the host's PC and the guests.
 - **Original quality.** Each viewer's browser plays the actual movie file, so 4K stays 4K and the sound always matches the picture. Nothing is screen-captured or re-encoded live.
 - **Tight sync.** Everyone stays within about 50 ms, late joiners included. If one viewer falls behind, the room pauses until they catch up.
+- **Reproducible sync benchmark.** The checked-in p50/p95 badge is generated from the real adaptive tuning policy under deterministic desktop, Wi-Fi, iPad, mobile, jitter, buffer, and stall profiles; [`benchmark/README.md`](benchmark/README.md) documents the limits.
 - **Sync Observatory.** The host sees every participant's RTT, drift, buffer health, bounded correction history, stall/recovery timeline, a room confidence score, and actionable quality recommendations.
 - **Shared moments.** Reactions are scheduled for the same movie timestamp, chat carries a clickable scene time, and controllers can save named scene bookmarks that appear on the seek bar.
 - **Adaptive theater visuals.** Host-owned movies can tint the player edges from tiny local frame samples; no frame or color telemetry leaves the browser. Reduced-motion, data-saver, low-memory, low-battery, and manual battery-saver modes automatically remove costly effects. QR invitations animate only when a guest actually reaches the room.
