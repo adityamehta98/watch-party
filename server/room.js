@@ -25,7 +25,10 @@ class Room {
     this.save = save;
     this.ytSearch = ytSearch || null;
     this.jobOwner = new Map(); // movie id -> who started preparing it
-    this.roomKey = randKey(24); // new secret link every time the app starts (about 140 bits: unguessable)
+    // The secret in the invite link (about 140 bits: unguessable). It's kept in config.json, so the
+    // link stays the same every time Watch Party starts; "Make a new invite link" replaces it.
+    if (!/^[A-Za-z0-9]{16,64}$/.test(String(config.roomKey || ''))) { config.roomKey = randKey(24); if (save) save(); }
+    this.roomKey = config.roomKey;
     this.clients = new Map();   // clientId -> client
     this.memory = new Map();    // clientId -> { name, perms, admitted } (survives refresh / reconnect)
     this.banned = new Set();
@@ -169,7 +172,9 @@ class Room {
     for (const c of this.clients.values()) if (c.role === 'host') this.send(c.ws, msg);
   }
   // the host, and guests the host lets control playback (they can also pick what the room watches)
-  canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback)); }
+  // While a custom site is on, only the host controls it (and only the host can change what's on).
+  canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback && !this.customOn())); }
+  customOn() { return !!(this.movie && this.movie.service === 'custom'); }
   broadcastControllers(msg) {
     for (const c of this.clients.values()) if (this.canControl(c)) this.send(c.ws, msg);
   }
@@ -199,7 +204,7 @@ class Room {
     if (!this.movie) return null;
     const m = this.movie;
     if (m.kind !== 'file') {
-      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null };
+      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict };
     }
     return {
       kind: 'file', id: m.id, title: m.title, duration: m.duration, width: m.width, height: m.height, hdr: m.hdr, codec: m.codec,
@@ -254,7 +259,7 @@ class Room {
 
   command(client, msg) {
     if (!this.movie) return;
-    if (client.role !== 'host' && !client.perms.playback) {
+    if (!this.canControl(client)) {
       this.send(client.ws, { type: 'error', code: 'no-permission', perm: 'playback' });
       return;
     }
@@ -313,14 +318,21 @@ class Room {
   // something on Netflix, say), so the room follows it, starting from where that tab already is.
   selectUrl(client, url, inTabs, opts = {}) {
     if (!this.canControl(client)) return;
-    const info = services.identify(url);
-    if (!info) { if (!opts.follow) this.toast(client, 'That link isn\'t from a supported service. Paste the link of the show or movie page.', 'error'); return; }
+    // a custom site: only the host picks one, and the room follows the host's window around that site
+    const custom = client.role === 'host' && (!!opts.custom || (!!opts.follow && this.customOn()));
+    const info = services.identify(url, { custom });
+    if (!info) {
+      if (!opts.follow) this.toast(client, opts.custom ? 'That address can\'t be used. Paste the full https:// link of the page with the video.' : 'That link isn\'t from a supported service. Paste the link of the show or movie page.', 'error');
+      return;
+    }
     const kind = info.service === 'youtube' && !inTabs ? 'youtube' : 'service';
-    const id = 'u' + crypto.createHash('sha1').update(info.url).digest('hex').slice(0, 11);
+    // a custom site is locked down in everyone's window (no pop-ups, no new tabs) unless the host turned that off
+    const strict = info.service === 'custom' ? (opts.custom ? opts.strict !== false : !(this.movie && this.movie.strict === false)) : false;
+    const id = 'u' + crypto.createHash('sha1').update(info.url + (info.service === 'custom' && !strict ? '#loose' : '')).digest('hex').slice(0, 11);
     if (this.movie && this.movie.id === id) return;
     const browsing = !!opts.browsing; // the service's front page: the host is picking something
     const title = String(opts.title || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140);
-    this.movie = { id, kind, service: info.service, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name };
+    this.movie = { id, kind, service: info.service, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name, strict };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
     const pos = Math.max(0, Number(opts.position) || 0);
     this.setState({ movieId: id, playing: !!opts.playing && pos >= 0, position: pos, anchor: Date.now() + (opts.playing ? 300 : 0) }, { by: client.name, action: 'load' });
@@ -485,7 +497,7 @@ class Room {
     if (this.canControl(client)) {
       switch (msg.type) {
         case 'select-movie': return this.selectMovie(client, msg.id);
-        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
+        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
         case 'movie-meta': return this.movieMeta(client, msg);
         case 'lib-list': if (!isHost) this.send(client.ws, { type: 'library', library: this.guestLibrary() }); return;
         case 'lib-prepare': {
@@ -581,6 +593,8 @@ class Room {
       }
       case 'rotate-link': {
         this.roomKey = randKey(24);
+        this.config.roomKey = this.roomKey;
+        this.save();
         this.banned.clear();
         for (const c of [...this.clients.values()]) {
           if (c.role === 'host') continue;

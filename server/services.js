@@ -23,13 +23,30 @@ function youtubeId(u) {
   return m ? ok(m[1]) : null;
 }
 
-function identify(raw) {
+// Addresses a "custom site" may never point at: the guests' own computers and home networks.
+function privateHost(host) {
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || !host.includes('.')) return true;
+  if (/^\[|:/.test(host)) return true; // IPv6 literals
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+}
+
+// opts.custom: the host's "custom site" (any website with a video, played inside the Watch Party window).
+function identify(raw, opts = {}) {
   let u;
   try { u = new URL(String(raw || '').trim()); } catch { return null; }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   const host = u.hostname.toLowerCase();
   const svc = SERVICES.find(s => s.hosts.some(h => host === h || host.endsWith('.' + h)));
-  if (!svc) return null;
+  if (!svc) {
+    if (!opts.custom || privateHost(host) || u.username || u.password) return null;
+    u.hash = '';
+    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+    // (the query stays: on most sites it's what picks the episode)
+    return { service: 'custom', name: host.replace(/^www\./, ''), url: u.toString(), custom: true };
+  }
   u.protocol = 'https:';
   u.hash = '';
   // trim tracking bits (keep in step with wpCanonicalUrl in the extension and canonicalUrl in the page)
