@@ -1,0 +1,291 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+const vm = require('node:vm');
+const zlib = require('node:zlib');
+const { EventEmitter } = require('node:events');
+const { spawnSync } = require('node:child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : path.join(dir, e.name));
+
+test('every JavaScript file parses', () => {
+  for (const dir of ['server', 'public/js', 'extension', 'build', 'test']) {
+    for (const file of walk(path.join(ROOT, dir)).filter(f => f.endsWith('.js'))) {
+      const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+      assert.equal(r.status, 0, `${path.relative(ROOT, file)}: ${r.stderr}`);
+    }
+  }
+});
+
+test('browser DOM and icon references resolve', () => {
+  const page = read('public/index.html');
+  const app = read('public/js/app.js');
+  const ids = new Set([...`${page}\n${app}`.matchAll(/\bid=["']([^"']+)/g)].map(m => m[1]));
+  const used = [...app.matchAll(/(?:\$\(['"]#|getElementById\(['"])([\w-]+)/g)].map(m => m[1]);
+  assert.deepEqual([...new Set(used.filter(id => !ids.has(id)))], []);
+  const symbols = new Set([...page.matchAll(/<symbol\s+id="i-([^"]+)/g)].map(m => m[1]));
+  const icons = [...app.matchAll(/\bicon\(['"]([^'"]+)/g)].map(m => m[1]);
+  assert.deepEqual([...new Set(icons.filter(name => !symbols.has(name)))], []);
+
+  for (const [htmlFile, jsFile] of [['extension/sidebar.html', 'extension/sidebar.js'], ['extension/theater.html', 'extension/theater.js']]) {
+    const html = read(htmlFile), js = read(jsFile);
+    const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)/g)].map(m => m[1]));
+    const jsIds = [...js.matchAll(/(?:\$\(['"]#|getElementById\(['"])([\w-]+)/g)].map(m => m[1]);
+    assert.deepEqual([...new Set(jsIds.filter(id => !htmlIds.has(id)))], [], jsFile);
+  }
+});
+
+test('manifest and HTML local assets exist and extension versions agree', () => {
+  const manifest = JSON.parse(read('extension/manifest.json'));
+  const refs = [manifest.background.service_worker, manifest.side_panel.default_path,
+    ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon),
+    ...manifest.content_scripts.flatMap(x => [...(x.js || []), ...(x.css || [])])];
+  for (const rel of new Set(refs)) assert.ok(fs.existsSync(path.join(ROOT, 'extension', rel)), rel);
+  assert.equal(/REQUIRED_EXT_VERSION = '([^']+)'/.exec(read('public/js/media.js'))[1], manifest.version);
+  for (const html of ['public/index.html', 'extension/sidebar.html', 'extension/theater.html']) {
+    const dir = path.dirname(path.join(ROOT, html));
+    for (const m of read(html).matchAll(/(?:src|href)="([^"#]+)"/g)) {
+      if (!/^(?:https?:|\/)/.test(m[1])) assert.ok(fs.existsSync(path.resolve(dir, m[1])), `${html}: ${m[1]}`);
+    }
+  }
+});
+
+function unzipEntries(file) {
+  const b = fs.readFileSync(file);
+  let end = b.length - 22;
+  while (end >= 0 && b.readUInt32LE(end) !== 0x06054b50) end--;
+  assert.ok(end >= 0, 'zip end record');
+  const count = b.readUInt16LE(end + 10), out = new Map();
+  let at = b.readUInt32LE(end + 16);
+  for (let i = 0; i < count; i++) {
+    assert.equal(b.readUInt32LE(at), 0x02014b50);
+    const method = b.readUInt16LE(at + 10), compressed = b.readUInt32LE(at + 20);
+    const nameLen = b.readUInt16LE(at + 28), extraLen = b.readUInt16LE(at + 30), commentLen = b.readUInt16LE(at + 32);
+    const name = b.toString('utf8', at + 46, at + 46 + nameLen), local = b.readUInt32LE(at + 42);
+    if (!name.endsWith('/')) {
+      const localName = b.readUInt16LE(local + 26), localExtra = b.readUInt16LE(local + 28);
+      const start = local + 30 + localName + localExtra, data = b.subarray(start, start + compressed);
+      out.set(name, method === 8 ? zlib.inflateRawSync(data) : Buffer.from(data));
+    }
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+test('downloadable extension is byte-identical to extension source', () => {
+  const zip = unzipEntries(path.join(ROOT, 'public/ext/watch-party-sync.zip'));
+  const files = walk(path.join(ROOT, 'extension'));
+  assert.equal(zip.size, files.length);
+  for (const file of files) {
+    const rel = path.relative(path.join(ROOT, 'extension'), file).replaceAll('\\', '/');
+    const packed = zip.get(`watch-party-sync/${rel}`);
+    assert.ok(packed, `${rel} missing from extension ZIP`);
+    assert.deepEqual(packed, fs.readFileSync(file), rel);
+  }
+});
+
+test('service URLs are canonicalized and custom sites cannot target private networks', () => {
+  const { identify } = require('../server/services');
+  assert.deepEqual(identify('https://youtu.be/dQw4w9WgXcQ?t=2').videoId, 'dQw4w9WgXcQ');
+  assert.equal(identify('https://www.netflix.com/watch/123?trackId=7').url, 'https://www.netflix.com/watch/123');
+  assert.equal(identify('https://amazon.com/', {}), null);
+  assert.equal(identify('https://example.com/watch?ep=3#x', { custom: true }).url, 'https://example.com/watch?ep=3');
+  for (const u of ['http://localhost/x', 'http://127.0.0.1/x', 'http://2130706433/x', 'http://192.168.1.2/x', 'http://[::1]/x', 'https://user:pass@example.com/x']) {
+    assert.equal(identify(u, { custom: true }), null, u);
+  }
+});
+
+test('front-door guard normalizes addresses, limits connections, and blocks repeated guesses', () => {
+  const { Guard, norm, isLoopback, isLan } = require('../server/guard');
+  assert.equal(norm('::ffff:192.0.2.1'), '192.0.2.1');
+  assert.ok(isLoopback('::1'));
+  assert.ok(isLan('192.168.4.2'));
+  assert.ok(isLan('fd00::1'));
+  assert.ok(!isLan('8.8.8.8'));
+  const old = process.env.WP_TEST_NO_EXEMPT;
+  process.env.WP_TEST_NO_EXEMPT = '1';
+  try {
+    const g = new Guard({ maxStrikes: 2, maxConnPerIp: 1 });
+    const a = Object.assign(new EventEmitter(), { remoteAddress: '203.0.113.4' });
+    const b = Object.assign(new EventEmitter(), { remoteAddress: '203.0.113.4' });
+    assert.ok(g.admit(a)); assert.ok(!g.admit(b)); a.emit('close'); assert.ok(g.admit(b));
+    g.strike('203.0.113.4', 'bad'); g.strike('203.0.113.4', 'bad');
+    assert.ok(g.isBlocked('203.0.113.4'));
+    g.unblockAll(); assert.ok(!g.isBlocked('203.0.113.4'));
+  } finally {
+    if (old === undefined) delete process.env.WP_TEST_NO_EXEMPT; else process.env.WP_TEST_NO_EXEMPT = old;
+  }
+});
+
+function request(port, headers = {}, method = 'GET') {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ port, host: '127.0.0.1', path: '/', method, headers }, res => {
+      const chunks = [];
+      res.on('data', x => chunks.push(x));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
+test('media server supports full, HEAD, bounded, suffix, and invalid byte ranges', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-media-'));
+  const file = path.join(dir, 'clip.mp4'), body = Buffer.from('0123456789');
+  fs.writeFileSync(file, body);
+  const { serveFile, contentTypeFor } = require('../server/media');
+  assert.equal(contentTypeFor(file), 'video/mp4');
+  assert.equal(contentTypeFor('x.bin'), 'application/octet-stream');
+  const server = http.createServer((req, res) => serveFile(req, res, file, { maxChunk: 3 }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const port = server.address().port;
+  let r = await request(port); assert.equal(r.status, 200); assert.deepEqual(r.body, body);
+  r = await request(port, {}, 'HEAD'); assert.equal(r.status, 200); assert.equal(r.body.length, 0); assert.equal(r.headers['content-length'], '10');
+  r = await request(port, { Range: 'bytes=2-' }); assert.equal(r.status, 206); assert.equal(r.body.toString(), '234'); assert.equal(r.headers['content-range'], 'bytes 2-4/10');
+  r = await request(port, { Range: 'bytes=-2' }); assert.equal(r.body.toString(), '89');
+  r = await request(port, { Range: 'bytes=20-30' }); assert.equal(r.status, 416); assert.equal(r.headers['content-range'], 'bytes */10');
+});
+
+test('self-signed certificates are valid, cover requested hosts, and are reused', () => {
+  const { X509Certificate } = crypto;
+  const { makeCert, loadOrCreate } = require('../server/cert');
+  const made = makeCert({ ips: ['192.168.1.5'], names: ['watch.local'], days: 30 });
+  const x = new X509Certificate(made.cert);
+  assert.match(x.subjectAltName, /DNS:localhost/);
+  assert.match(x.subjectAltName, /DNS:watch\.local/);
+  assert.match(x.subjectAltName, /IP Address:192\.168\.1\.5/);
+  require('node:tls').createSecureContext({ cert: made.cert, key: made.key });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-cert-')), file = path.join(dir, 'cert.json');
+  const first = loadOrCreate(file, ['10.0.0.2']), second = loadOrCreate(file, ['10.0.0.2']);
+  assert.equal(second.cert, first.cert);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('assets reject traversal and YouTube result parsing survives both layouts', () => {
+  const assets = require('../server/assets');
+  assert.match(assets.get('index.html').type, /text\/html/);
+  for (const p of ['', '../config.json', 'js/../index.html', 'js//app.js']) assert.equal(assets.get(p), null, p);
+  const { parsePage } = require('../server/youtube');
+  const data = { a: { videoRenderer: { videoId: 'abcdefghijk', title: { simpleText: 'One' }, ownerText: { runs: [{ text: 'Channel' }] }, lengthText: { simpleText: '1:23' }, thumbnail: { thumbnails: [{ url: 'https://img/1' }] } } }, b: { lockupViewModel: { contentId: 'lmnopqrstuv', contentType: 'VIDEO', metadata: { lockupMetadataViewModel: { title: { content: 'Two' } } } } } };
+  const out = parsePage(`<script>var ytInitialData = ${JSON.stringify(data)};</script>`);
+  assert.deepEqual(out.map(x => x.id), ['abcdefghijk', 'lmnopqrstuv']);
+  assert.equal(out[0].title, 'One');
+});
+
+test('library analysis preserves direct, remux, transcode, title, and audio decisions', () => {
+  const { analyze, computePlan, cleanTitle, audioLabel } = require('../server/library');
+  assert.equal(cleanTitle('Some.Movie.2024.2160p.REMUX.mkv'), 'Some Movie (2024)');
+  assert.equal(audioLabel({ codec: 'truehd', title: 'Atmos', channels: 8 }), 'TrueHD Atmos 7.1');
+  const base = { duration: 120, size: 1000, bitrateMbps: 1, container: 'mov,mp4', video: { codec: 'h264', bitDepth: 8, pixFmt: 'yuv420p' }, audios: [{ index: 1, codec: 'aac', channels: 2 }], defaultAudioIndex: 1 };
+  assert.equal(computePlan(base, '.mp4').mode, 'direct');
+  assert.equal(computePlan({ ...base, container: 'matroska' }, '.mkv').mode, 'remux');
+  assert.equal(computePlan({ ...base, video: { codec: 'vc1', bitDepth: 8, pixFmt: 'yuv420p' } }, '.mkv').mode, 'transcode');
+  const info = analyze({ format: { duration: '10', size: '1000', format_name: 'mov,mp4' }, streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, pix_fmt: 'yuv420p' }, { index: 1, codec_type: 'audio', codec_name: 'aac', channels: 2, disposition: { default: 1 } }] }, { size: 1000, ext: '.mp4' });
+  assert.equal(info.plan.mode, 'direct'); assert.equal(info.defaultAudioIndex, 1);
+});
+
+test('room keys, permissions, URL selection, public data, and timeline commands work', t => {
+  const { Room, randKey, PERMS, REACTIONS } = require('../server/room');
+  assert.match(randKey(24), /^[A-Za-z0-9]{24}$/); assert.equal(new Set(PERMS).size, 4); assert.ok(REACTIONS.includes('👏'));
+  const library = { playable: id => id === 'movie' ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] } : null, list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library, save() {} });
+  t.after(() => room.shutdown());
+  assert.equal(room.roleForKey('admin-secret-key', true), 'host');
+  assert.equal(room.roleForKey('admin-secret-key', false), null);
+  assert.equal(room.roleForKey('guestsecretkey1234'), 'guest');
+  const host = { id: 'host01', name: 'Host', role: 'host', admitted: true, perms: Object.fromEntries(PERMS.map(p => [p, true])), ws: { readyState: 0 } };
+  room.selectMovie(host, 'movie');
+  assert.equal(room.publicMovie().file, undefined); assert.equal(room.publicMovie().url, '/media/movie/video');
+  room.command(host, { action: 'seek', position: 500 }); assert.equal(room.state.position, 100);
+  room.selectUrl(host, 'http://127.0.0.1/private', false, { custom: true }); assert.equal(room.movie.kind, 'file');
+  room.selectUrl(host, 'https://example.com/watch?ep=2', false, { custom: true, strict: true });
+  assert.equal(room.movie.service, 'custom'); assert.equal(room.movie.strict, true);
+  assert.equal(room.guestLibrary().folders[0], '(the host\'s movies)'); assert.equal(room.guestLibrary().items[0].rel, 'movie.mp4');
+});
+
+test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {
+  const tools = require('../server/tools');
+  assert.equal(tools.encoderLabel('hevc_nvenc'), 'NVIDIA GPU'); assert.equal(tools.encoderLabel(null), 'none');
+  assert.deepEqual(await tools.detectEncoders(null), { hevc: null, h264: null, hevcSoftware: false, h264Software: false, list: [] });
+  assert.equal(await tools.hasDoviStrip(null), false);
+  const ran = await tools.run(process.execPath, ['-e', 'process.stdout.write("ok")']); assert.equal(ran.code, 0); assert.equal(ran.out, 'ok');
+  const { isPrivate, PortMapper } = require('../server/upnp');
+  assert.ok(isPrivate('100.64.0.1')); assert.ok(!isPrivate('8.8.8.8')); assert.equal(new PortMapper().state.status, 'idle');
+  const { Tunnel } = require('../server/tunnel'); assert.equal(new Tunnel(null, 8765).status, 'missing');
+  const { TurnServer } = require('../server/turn');
+  const turn = new TurnServer({ port: 0, username: 'u', password: 'p', localIps: ['10.0.0.2'] });
+  assert.equal(turn.advertisedIp(), '10.0.0.2'); assert.ok(turn.isOurIp('127.0.0.1'));
+  await turn.start(); t.after(() => turn.stop()); assert.ok(turn.sock.address().port > 0);
+});
+
+function event() { const listeners = []; return { addListener(fn) { listeners.push(fn); }, fire(...a) { return listeners.map(fn => fn(...a)); } }; }
+
+test('custom-site extension installs scoped ad rules and preserves same-site popup buttons', async () => {
+  const updates = [], removed = [], activated = [], timers = [];
+  const runtimeMessage = event();
+  const context = vm.createContext({ URL, URLSearchParams, console, self: {}, importScripts() {}, setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; }, clearTimeout() {}, chrome: {
+    runtime: { id: 'ext', onConnect: event(), onMessage: runtimeMessage, getURL: p => `chrome-extension://ext/${p}` },
+    sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
+    tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({}), update: async (id, x) => { activated.push([id, x]); }, remove: async id => { removed.push(id); }, sendMessage: async () => {}, create: async () => ({ id: 2 }) },
+    webNavigation: { onCreatedNavigationTarget: event() }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
+    declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async x => { updates.push(x); } },
+  } });
+  vm.runInContext(read('extension/services.js'), context);
+  vm.runInContext(read('extension/ad-domains.js'), context);
+  vm.runInContext(read('extension/background.js'), context);
+  assert.ok(context.self.WP_AD_DOMAINS.length >= 80);
+  let reply;
+  runtimeMessage.fire({ wp: 'theater-hello', party: 'https://party.example/join/key', custom: 'https://video.example/watch', blockPopups: true }, { tab: { id: 7 } }, x => { reply = x; });
+  await new Promise(resolve => setImmediate(resolve));
+  const rules = updates.at(-1).addRules;
+  assert.equal(rules.map(r => r.id).join(','), '1,2,3');
+  assert.equal(rules[2].action.type, 'block'); assert.ok(rules[2].condition.resourceTypes.includes('script')); assert.ok(rules[2].condition.resourceTypes.includes('media'));
+  assert.equal(reply.ok, true);
+  context.closeAdTab(20, 7, -1, 'https://cdn.video.example/next'); assert.equal(timers.length, 0);
+  context.closeAdTab(21, 7, -1, 'https://popup.example/ad'); assert.equal(timers.at(-1).ms, 400);
+  timers.at(-1).fn(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(removed, [21]); assert.equal(activated.at(-1)[0], 7);
+  const theater = read('extension/theater.js');
+  assert.match(theater, /removeAttribute\('sandbox'\)/); assert.doesNotMatch(read('extension/theater.html'), /\ssandbox=/);
+  assert.doesNotMatch(`${read('extension/service.js')}\n${read('extension/custom-clean.js')}`, /window\.open\s*=/);
+});
+
+test('secret, authentication, and cleanup invariants remain enforced', () => {
+  const ignored = read('.gitignore');
+  for (const pattern of ['.env', 'credentials*.json', 'secrets*.json', '*.key', '*.pem', '*.p12', '*.pfx']) {
+    assert.ok(ignored.split(/\r?\n/).includes(pattern), `${pattern} must stay ignored`);
+  }
+
+  const production = ['server', 'public', 'extension', 'build'].flatMap(dir => walk(path.join(ROOT, dir)))
+    .filter(file => !/\.(?:zip|png|ico|exe|dll)$/i.test(file));
+  const secrets = [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+    /\bAKIA[0-9A-Z]{16}\b/,
+    /\bgh[pousr]_[A-Za-z0-9]{30,255}\b/,
+    /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+    /\bsk_live_[A-Za-z0-9]{16,}\b/,
+    /\bAIza[0-9A-Za-z_-]{35}\b/,
+    /https?:\/\/[^\s/@:]+:[^\s/@]+@/,
+  ];
+  for (const file of production) {
+    const source = fs.readFileSync(file, 'utf8');
+    for (const secret of secrets) assert.doesNotMatch(source, secret, path.relative(ROOT, file));
+  }
+
+  const index = read('server/index.js');
+  assert.doesNotMatch(index, /searchParams\.get\(['"]admin['"]\)/);
+  assert.match(index, /headers\['x-admin-key'\]/);
+  assert.match(index, /FromBase64String/);
+  assert.doesNotMatch(index, /-Message \$\{JSON\.stringify/);
+  assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.html')));
+  assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.js')));
+  assert.doesNotMatch(`${read('public/css/app.css')}\n${read('README.md')}\n${read('bin/README.txt')}`, /tunnel-box|link-seg|tile\.speaking|Start Watch Party\.bat/);
+});
