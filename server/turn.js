@@ -64,11 +64,6 @@ function encXorAddr(ip, port) {
   ip.split('.').map(Number).forEach((n, i) => { b[4 + i] = n ^ ((MAGIC >>> (24 - 8 * i)) & 0xff); });
   return b;
 }
-function encAddr(ip, port) {
-  const b = Buffer.alloc(8); b[1] = 0x01; b.writeUInt16BE(port, 2);
-  ip.split('.').map(Number).forEach((n, i) => { b[4 + i] = n; });
-  return b;
-}
 
 function build(method, cls, tid, attrs, key) {
   const parts = [];

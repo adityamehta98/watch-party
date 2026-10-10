@@ -75,10 +75,11 @@ const DEFAULT_CONFIG = {
   webcamMode: 'auto',       // "relay": webcams only through this PC's own relay (nobody sees anyone's address)
                             // "direct": webcams connect browser to browser (works over the public link; people see each other's internet address)
                             // "auto": direct while the public link is on, relay otherwise
-  cloudflareTurn: null,
-  keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
+  cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
+  keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
   room: {},
-  adminKey: '',
+  adminKey: '',             // secret in the host page address (generated)
+  roomKey: '',              // secret in the invite link (generated; kept, so the link stays the same)
 };
 
 function loadConfig() {
@@ -153,10 +154,14 @@ function publicHost() {
 // can reach it at its Tailscale address, even when your internet provider blocks incoming connections.
 function tailscaleIp() {
   if (process.env.WP_TEST_TS_IP) return process.env.WP_TEST_TS_IP; // tests only
+  // Only while Tailscale is really connected. Other things on a PC (virtual machines, VPNs, some
+  // internet providers) use 100.64-127.x addresses too, and a link to those reaches nobody.
+  if (ts.present && !ts.online) return null;
   const ifs = localIPv4s();
+  const own = ts.ip && ifs.find(i => i.address === ts.ip);
   const named = ifs.find(i => /tailscale/i.test(i.name));
-  const range = ifs.find(i => { const p = i.address.split('.').map(Number); return p[0] === 100 && p[1] >= 64 && p[1] <= 127; });
-  return (named || range || {}).address || null;
+  const range = ts.online && ifs.find(i => { const p = i.address.split('.').map(Number); return p[0] === 100 && p[1] >= 64 && p[1] <= 127; });
+  return (own || named || range || {}).address || (ts.online && ts.ip) || null;
 }
 // With a trusted certificate the link uses the PC's Tailscale name (no browser warning); otherwise its address.
 const tailscaleBase = () => { const ip = tailscaleIp(); if (!ip) return null; return ts.cert && ts.name ? `https://${ts.name}:${config.port}` : `https://${ip}:${config.port}`; };
@@ -235,8 +240,8 @@ async function info() {
     linkMode: config.linkMode,
     network: {
       ...mapper.state, upnpEnabled: config.upnp, reachable, publicHost: config.publicHost, port: config.port,
-      tailscale: tailscaleIp() ? { ip: tailscaleIp(), name: ts.name, url: `${tailscaleBase()}/join/${room.roomKey}`, inUse: (joinUrl() || '').startsWith(tailscaleBase()),
-        trusted: !!ts.cert, certError: ts.certError, app: ts.present, appPath: ts.bin, online: ts.online, statusError: ts.statusError, searchNotes: ts.searchNotes,
+      tailscale: (tailscaleIp() || ts.present) ? { ip: tailscaleIp(), name: ts.name, url: tailscaleIp() ? `${tailscaleBase()}/join/${room.roomKey}` : null, inUse: !!tailscaleIp() && (joinUrl() || '').startsWith(tailscaleBase()),
+        trusted: !!ts.cert, certError: ts.certError, app: ts.present, appPath: ts.bin, online: ts.online, statusError: ts.upError || ts.statusError, loginUrl: ts.loginUrl || null, searchNotes: ts.searchNotes,
         funnel: { wanted: !!config.publicLink, on: !!ts.funnel.on, url: ts.funnel.url, error: ts.funnel.error, enableLink: ts.funnel.enableLink || null, busy: !!ts.funnel.busy, inUse: !!funnelBase() } } : null,
       tcpExternal: tcpMapping() ? tcpMapping().external : null, udpExternal: udpMapping() ? udpMapping().external : null,
       webcamRelay: turnOk,
@@ -275,7 +280,24 @@ async function checkReachable() {
 async function startTailscale() {
   if (!ts.present) return;
   await ts.refresh();
-  if (!ts.online) return;
+  if (!ts.online && !startTailscale.tried) {
+    startTailscale.tried = true;
+    await ts.up(); // connect it now; it's disconnected again when Watch Party stops
+    await ts.refresh();
+  }
+  if (!ts.online) {
+    // Not connected yet (Tailscale closed, or signed out): look again now and then, and carry on by
+    // itself the moment it's connected (the public link switches on without restarting Watch Party).
+    const again = setInterval(async () => {
+      await ts.refresh().catch(() => {});
+      if (!ts.online) return;
+      clearInterval(again);
+      console.log('  Tailscale is connected now.');
+      room.broadcastHosts({ type: 'network' });
+      startTailscale().catch(e => console.log('  ! Tailscale:', e.message)).finally(() => printInvite());
+    }, 15000);
+    return;
+  }
   if (await ts.ensureCert()) useTrustedCert();
   await ts.refreshFunnel();
   if (!config.publicLink && ts.funnel.on) await ts.setFunnel(false); // switched off in the Room tab earlier
@@ -724,7 +746,9 @@ async function shutdown() {
   }
   turn.stop();
   // close the router port and the public link again (best effort, quick); the public link comes back next start
-  await Promise.race([Promise.all([mapper.stop(), ts.funnel.on ? ts.setFunnel(false).then(() => { ts.funnel.on = false; }) : null]), new Promise(r => setTimeout(r, 4000))]);
+  // and disconnect Tailscale (it's connected again next start)
+  const tsOff = (ts.funnel.on ? ts.setFunnel(false).then(() => { ts.funnel.on = false; }) : Promise.resolve()).then(() => ts.down());
+  await Promise.race([Promise.all([mapper.stop(), ts.present ? tsOff : null]), new Promise(r => setTimeout(r, 6000))]);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

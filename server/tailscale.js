@@ -6,7 +6,6 @@
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const tools = require('./tools');
 
 const IS_WIN = process.platform === 'win32';
 
@@ -67,6 +66,36 @@ class Tailscale {
   }
 
   get present() { return !!this.bin; }
+
+  // Connect Tailscale when Watch Party starts (it's disconnected again when Watch Party stops), so the
+  // public link is there from the start. Opens the Tailscale app too, in case it isn't running.
+  async up() {
+    if (!this.bin) return false;
+    if (IS_WIN) {
+      const gui = path.join(path.dirname(this.bin), 'tailscale-ipn.exe');
+      try { if (fs.existsSync(gui)) spawn(gui, [], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref(); } catch { /* not there */ }
+    }
+    const login = /https:\/\/login\.tailscale\.com\/\S+/;
+    let r = { code: 1, out: '', err: '' };
+    // the app's background service may still be starting: try a few times
+    for (let i = 0; i < 4; i++) {
+      r = await run(this.bin, ['up'], 30000, login);
+      if (r.code === 0 || login.test(r.out + r.err)) break;
+      await new Promise(res => setTimeout(res, 3000));
+    }
+    const m = login.exec(r.out + r.err);
+    this.loginUrl = m ? m[0] : null;
+    if (r.code !== 0) this.upError = this.loginUrl ? 'Tailscale needs you to sign in.' : ((r.err || r.out || '').trim().split('\n')[0].slice(0, 200) || 'Tailscale didn\'t connect.');
+    else this.upError = null;
+    if (r.code === 0) this.log('  Tailscale connected.');
+    else this.log(`  ! Tailscale: ${this.upError}`);
+    return r.code === 0;
+  }
+
+  async down() {
+    if (!this.bin) return;
+    await run(this.bin, ['down'], 8000);
+  }
 
   async refresh() {
     if (!this.bin) return;
