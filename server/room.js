@@ -113,7 +113,7 @@ class Room {
     if (role === 'guest') console.log(`  ${client.admitted ? 'Joined' : 'Waiting to join'}: "${name}" from ${client.ip}`);
     if (!client.admitted) {
       this.send(ws, { type: 'pending', you: { id, name } });
-      this.broadcastHosts({ type: 'toast', kind: 'knock', text: `${name} wants to join`, clientId: id });
+      this.broadcastHosts({ type: 'toast', kind: 'knock', text: `${name} wants to join`, name, clientId: id });
       this.broadcastPeople(true);
       return client;
     }

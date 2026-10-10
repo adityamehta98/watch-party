@@ -42,6 +42,8 @@
     <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6M20.5 3.5V9H15"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
     <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="15" rx="2.5"/><rect x="12" y="11" width="7" height="5.5" rx="1.2" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.9-2.6L2.8 15a1.5 1.5 0 0 1 2.4-1.8L8 16"/></symbol>
+    <symbol id="i-glow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+    <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="6" width="17" height="12" rx="2.5"/><path d="M21.5 10v4M6 9v6"/></symbol>
   </defs>
 </svg>
 
@@ -100,6 +102,7 @@
     <main class="stage-wrap">
       <div class="stage" id="stage" data-idle="false">
         <video id="video" playsinline preload="auto"></video>
+        <div class="ambient-light" id="ambientLight" aria-hidden="true"></div>
         <div class="yt-host" id="ytHost"></div>
         <div class="click-layer" id="clickLayer"></div>
         <div class="service-panel" id="servicePanel" hidden></div>
@@ -170,6 +173,8 @@
               <div class="popover menu" id="ccPop" hidden></div>
             </div>
             <button class="ctrl" id="pipBtn" type="button" title="Pop out cameras: float them over other windows, like Netflix" aria-label="Pop out cameras"><svg><use href="#i-pip"/></svg></button>
+            <button class="ctrl hide-sm" id="ambientBtn" type="button" title="Ambient theater lighting" aria-label="Toggle ambient theater lighting" aria-pressed="true"><svg><use href="#i-glow"/></svg></button>
+            <button class="ctrl hide-sm" id="ecoBtn" type="button" title="Battery saver" aria-label="Toggle battery saver" aria-pressed="false"><svg><use href="#i-battery"/></svg></button>
             <button class="ctrl fs-only" id="quickChatBtn" type="button" title="Chat (Enter)" aria-label="Chat"><svg><use href="#i-chat"/></svg></button>
             <button class="ctrl" id="fsBtn" type="button" title="Fullscreen (F)" aria-label="Fullscreen"><svg><use href="#i-fs"/></svg></button>
           </div>
@@ -280,6 +285,7 @@
       <p class="muted">Send this link or have them scan the code. Anyone with the link can join, so only share it with people you trust.</p>
       <div class="invite-kind" id="inviteKind" hidden></div>
       <div class="qr" id="inviteQr"></div>
+      <div class="handoff-status" id="handoffStatus" role="status" hidden></div>
       <div class="copy-row">
         <input id="inviteUrl" readonly>
         <button class="btn primary" type="button" id="copyInvite"><svg><use href="#i-copy"/></svg>Copy</button>

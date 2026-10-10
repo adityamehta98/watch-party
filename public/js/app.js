@@ -2,6 +2,7 @@ import { Connection } from './net.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources } from './capabilities.js';
+import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
@@ -187,9 +188,9 @@ function wire() {
   });
   conn.on('settings', m => { S.settings = m.settings; renderSettings(); renderPeople(); renderServicePanel(); });
   conn.on('toast', m => {
-    if (m.kind === 'knock') toast(m.text, { kind: 'knock', timeout: 30000, actions: [
+    if (m.kind === 'knock') { animateHandoff(m.name); toast(m.text, { kind: 'knock', timeout: 30000, actions: [
       { label: 'Let in', primary: true, run: () => conn.send({ type: 'admit', clientId: m.clientId }) },
-      { label: 'Deny', run: () => conn.send({ type: 'deny', clientId: m.clientId }) }] });
+      { label: 'Deny', run: () => conn.send({ type: 'deny', clientId: m.clientId }) }] }); }
     else if (m.kind === 'request') toast(m.text, { kind: 'request', timeout: 20000, actions: [
       { label: 'Allow', primary: true, run: () => conn.send({ type: 'set-perm', clientId: m.clientId, perm: 'playback', value: true }) },
       { label: 'Not now', run: () => {} }] });
@@ -207,7 +208,7 @@ function wire() {
     // reconnect the cameras with the new settings; the host starts it so both sides don't collide
     if (isHost) for (const id of S.peers.keys()) mesh.call(id).catch(() => {});
   });
-  conn.on('peer-join', m => { S.peers.set(m.peer.id, m.peer); renderCams(); });
+  conn.on('peer-join', m => { S.peers.set(m.peer.id, m.peer); animateHandoff(m.peer.name); renderCams(); });
   conn.on('peer-leave', m => { S.peers.delete(m.id); mesh.closePeer(m.id); renderCams(); });
   conn.on('peer-media', m => { const p = S.peers.get(m.id); if (p) p.media = m.media; renderCams(); });
   conn.on('peer-rename', m => { const p = S.peers.get(m.id); if (p) p.name = m.name; if (m.id === clientId && S.me) S.me.name = m.name; renderCams(); });
@@ -261,6 +262,70 @@ function teardownMedia() {
 const trackEls = new Map();
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
+
+// Visual effects are local-only: policy inputs, sampled colors and preferences never leave this browser.
+const visualPrefs = { ambient: store.get('wp.ambient', true), saver: store.get('wp.saver', false) };
+let visuals = visualPolicy({ forcedSaver: visualPrefs.saver });
+const ambientCanvas = Object.assign(document.createElement('canvas'), { width: 12, height: 7 });
+const ambientContext = ambientCanvas.getContext('2d', { willReadFrequently: true });
+let ambientFrame = 0, ambientTimer = 0, ambientSampleAt = 0;
+
+function canUseAmbient() {
+  return !!(visualPrefs.ambient && visuals.ambient && S.movie && kindOf(S.movie) === 'file' && video.readyState >= 2 && document.visibilityState === 'visible');
+}
+function renderVisualControls() {
+  const ambient = $('#ambientBtn'), eco = $('#ecoBtn');
+  const active = visualPrefs.ambient && visuals.ambient;
+  ambient.classList.toggle('on', active);
+  ambient.setAttribute('aria-pressed', String(active));
+  ambient.title = active ? 'Ambient theater lighting is on' : `Ambient theater lighting is off${visuals.reasons.length ? ` (${visuals.reasons.join(', ')})` : ''}`;
+  eco.classList.toggle('on', visuals.saver);
+  eco.setAttribute('aria-pressed', String(visualPrefs.saver));
+  eco.title = visuals.saver ? `Battery saver is on${visuals.reasons.length ? ` (${visuals.reasons.join(', ')})` : ''}` : 'Turn on battery saver';
+  app.classList.toggle('motion-off', !visuals.motion);
+}
+function stopAmbientSampling() {
+  if (ambientFrame) video.cancelVideoFrameCallback?.(ambientFrame);
+  clearTimeout(ambientTimer);
+  ambientFrame = ambientTimer = 0;
+}
+function sampleAmbient(now = performance.now()) {
+  ambientFrame = ambientTimer = 0;
+  if (!canUseAmbient()) return syncAmbient();
+  if (now - ambientSampleAt >= 650 && ambientContext) {
+    ambientSampleAt = now;
+    try {
+      ambientContext.drawImage(video, 0, 0, ambientCanvas.width, ambientCanvas.height);
+      const pixels = ambientContext.getImageData(0, 0, ambientCanvas.width, ambientCanvas.height).data;
+      let r = 0, g = 0, b = 0, weight = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const w = Math.max(0.15, (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 765);
+        r += pixels[i] * w; g += pixels[i + 1] * w; b += pixels[i + 2] * w; weight += w;
+      }
+      stage.style.setProperty('--ambient-rgb', `${Math.round(r / weight)},${Math.round(g / weight)},${Math.round(b / weight)}`);
+    } catch { stopAmbientSampling(); return; }
+  }
+  scheduleAmbientSample();
+}
+function scheduleAmbientSample() {
+  if (!canUseAmbient() || video.paused || ambientFrame || ambientTimer) return;
+  if (video.requestVideoFrameCallback) ambientFrame = video.requestVideoFrameCallback(sampleAmbient);
+  else ambientTimer = setTimeout(sampleAmbient, 700);
+}
+function syncAmbient() {
+  const available = canUseAmbient();
+  $('#ambientLight').classList.toggle('on', available);
+  if (available) scheduleAmbientSample(); else stopAmbientSampling();
+  renderVisualControls();
+}
+function applyVisualPolicy(next) { visuals = next; syncAmbient(); }
+
+const visualWatcher = observeVisualPolicy(applyVisualPolicy, () => visualPrefs.saver);
+$('#ambientBtn').addEventListener('click', () => { visualPrefs.ambient = !visualPrefs.ambient; store.set('wp.ambient', visualPrefs.ambient); syncAmbient(); });
+$('#ecoBtn').addEventListener('click', () => { visualPrefs.saver = !visualPrefs.saver; store.set('wp.saver', visualPrefs.saver); visualWatcher.refresh(); });
+for (const event of ['play', 'pause', 'loadeddata', 'emptied']) video.addEventListener(event, syncAmbient);
+document.addEventListener('visibilitychange', syncAmbient);
+
 function mediaFor(movie) {
   const k = kindOf(movie);
   return k === 'youtube' ? ytMedia : k === 'service' ? remote : video;
@@ -270,6 +335,7 @@ function loadMovie(movie) {
   const same = S.movie && movie && S.movie.id === movie.id;
   if (!same) S.observatory = null;
   S.movie = movie;
+  syncAmbient();
   stage.classList.toggle('has-movie', !!movie);
   stage.dataset.kind = kindOf(movie);
   $('#ytOpen').hidden = !((isHost || canControl()) && kindOf(movie) === 'youtube');
@@ -1052,7 +1118,11 @@ function setTab(t) {
   if (t === 'chat') { S.unread = 0; renderBadges(); const l = $('#chatList'); l.scrollTop = l.scrollHeight; }
   if (t === 'library') loadLibrary();
 }
-for (const b of $$('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
+function transitionTab(t) {
+  if (visuals.motion && document.startViewTransition && S.tab !== t) document.startViewTransition(() => setTab(t));
+  else setTab(t);
+}
+for (const b of $$('.tab')) b.addEventListener('click', () => transitionTab(b.dataset.tab));
 for (const b of $$('[data-open-tab]')) b.addEventListener('click', () => { room.classList.remove('no-sidebar'); setTab(b.dataset.openTab); });
 setTab('chat');
 if (store.get('wp.sidebar', true) === false) room.classList.add('no-sidebar');
@@ -1482,8 +1552,33 @@ function renderInvite() {
   $('#lanLink').innerHTML = i.lanJoinUrl ? `Someone on your home Wi-Fi? They can use <code>${esc(i.lanJoinUrl)}</code>` : '';
 }
 let invitePoll = null;
+let lastHandoff = { name: '', at: 0 };
+let handoffTimer = 0;
+function animateHandoff(name) {
+  const d = $('#inviteDialog'), status = $('#handoffStatus');
+  if (!isHost || !d.open || !name) return;
+  const now = Date.now();
+  if (lastHandoff.name === name && now - lastHandoff.at < 5000) return;
+  lastHandoff = { name, at: now };
+  status.textContent = `${name}'s device reached the room`;
+  status.hidden = false;
+  clearTimeout(handoffTimer);
+  if (visuals.motion) {
+    $('#inviteQr').animate([
+      { transform: 'scale(1)', opacity: 1 },
+      { transform: 'scale(.94)', opacity: .55, offset: .45 },
+      { transform: 'scale(1)', opacity: 1 },
+    ], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    status.animate([
+      { transform: 'translateY(8px)', opacity: 0 },
+      { transform: 'translateY(0)', opacity: 1 },
+    ], { duration: 260, easing: 'ease-out' });
+  }
+  handoffTimer = setTimeout(() => { status.hidden = true; }, 6000);
+}
 function openInvite() {
   const d = $('#inviteDialog');
+  $('#handoffStatus').hidden = true;
   renderInvite();
   if (!d.open) d.showModal();
   refreshInfo();

@@ -156,6 +156,28 @@ test('adaptive sync tuning protects weak buffers without hiding large drift', as
   assert.equal(syncTuning({ rtt: 900 }).softEps, 0.08);
 });
 
+test('visual policy disables costly effects for accessibility and constrained devices', async () => {
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/visuals.js')).toString('base64')}`;
+  const { visualPolicy } = await import(moduleUrl);
+  assert.deepEqual(visualPolicy({}), { ambient: true, motion: true, saver: false, reasons: [] });
+  assert.equal(visualPolicy({ reducedMotion: true }).ambient, false);
+  assert.equal(visualPolicy({ reducedMotion: true }).motion, false);
+  assert.equal(visualPolicy({ saveData: true }).saver, true);
+  assert.equal(visualPolicy({ batteryLevel: .15, charging: false }).ambient, false);
+  assert.equal(visualPolicy({ batteryLevel: .15, charging: true }).ambient, true);
+  assert.equal(visualPolicy({ deviceMemory: 4 }).ambient, false);
+  assert.equal(visualPolicy({ forcedSaver: true }).motion, false);
+});
+
+test('visual effects are local, bounded, and compositor-friendly', () => {
+  const app = read('public/js/app.js'), room = read('server/room.js');
+  assert.match(app, /kindOf\(S\.movie\) === 'file'/);
+  assert.match(app, /document\.visibilityState === 'visible'/);
+  assert.doesNotMatch(app, /ambientCanvas\.(?:toDataURL|toBlob)/);
+  assert.match(room, /kind: 'knock'.*name, clientId/);
+  for (const body of app.matchAll(/\.animate\(\[([\s\S]*?)\],\s*\{/g)) assert.doesNotMatch(body[1], /(?:width|height|top|left|background|filter)\s*:/);
+});
+
 test('playback capabilities choose native HLS with a direct-file fallback', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/capabilities.js')).toString('base64')}`;
   const { playbackCapabilities, deliverySources } = await import(moduleUrl);

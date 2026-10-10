@@ -39,6 +39,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **Tight sync.** Everyone stays within about 50 ms, late joiners included. If one viewer falls behind, the room pauses until they catch up.
 - **Sync Observatory.** The host sees every participant's RTT, drift, buffer health, bounded correction history, stall/recovery timeline, a room confidence score, and actionable quality recommendations.
 - **Shared moments.** Reactions are scheduled for the same movie timestamp, chat carries a clickable scene time, and controllers can save named scene bookmarks that appear on the seek bar.
+- **Adaptive theater visuals.** Host-owned movies can tint the player edges from tiny local frame samples; no frame or color telemetry leaves the browser. Reduced-motion, data-saver, low-memory, low-battery, and manual battery-saver modes automatically remove costly effects. QR invitations animate only when a guest actually reaches the room.
 - **Host control.** The host approves each guest and decides per person who can play/pause/seek, chat, react, and use a camera and mic.
 - **Capability-aware delivery.** Desktop browsers use efficient byte-range playback; Safari, iPhone and iPad automatically choose authenticated, segmented HLS when the host enables Apple optimization. A failed HLS start falls back to the original file.
 - **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, package HLS) with `ffmpeg`.
@@ -213,6 +214,7 @@ Prepared copies go in `cache/` and are deleted when the app stops, unless `keepP
 - **Buffering:** if a viewer stalls, the room waits for them and then everyone resumes together.
 - **Sync Observatory:** the Room's **Sync** tab renders live RTT rings, drift, buffer health, recent correction decisions, synchronization confidence, stall/recovery markers, and suggestions such as preparing a 720p copy for a struggling guest. Telemetry is bounded in memory, resets with the movie, and is never written to disk.
 - **Shared moments:** the server timestamps reactions slightly ahead so every synced screen animates them on the same movie frame. Chat messages carry their movie position, and scene bookmarks are bounded to the current title. These moment records stay in room memory and are never written to configuration or disk.
+- **Adaptive visuals:** ambient theater colors come from a 12×7 local sample of host-owned video at most a few times per second; samples are neither transmitted nor stored. Effects stop in background tabs and are disabled for reduced-motion, data-saver, low-memory, low-battery, or manual battery-saver modes. Sidebar and QR handoff motion uses only compositor-friendly transforms and opacity.
 
 ### 5. Webcams and mic
 
