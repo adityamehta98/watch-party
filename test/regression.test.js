@@ -178,6 +178,20 @@ test('visual effects are local, bounded, and compositor-friendly', () => {
   for (const body of app.matchAll(/\.animate\(\[([\s\S]*?)\],\s*\{/g)) assert.doesNotMatch(body[1], /(?:width|height|top|left|background|filter)\s*:/);
 });
 
+test('PWA shell is installable without caching room secrets or media', () => {
+  const { manifest } = require('../server/pwa');
+  const m = manifest('/join/abc123');
+  assert.equal(m.start_url, '/join/abc123');
+  assert.equal(m.display, 'standalone');
+  assert.ok(m.icons.some(icon => icon.sizes === '512x512' && icon.purpose.includes('maskable')));
+  assert.throws(() => manifest('/join/not-valid!'));
+  const sw = read('public/sw.js');
+  for (const forbidden of ['/join/', '/host/', '/media/', '/api/', 'index.html', 'manifest.webmanifest']) assert.doesNotMatch(sw, new RegExp(`['\"]${forbidden.replaceAll('/', '\\/')}`));
+  assert.match(sw, /const cacheKey = url\.pathname/);
+  assert.match(read('server/index.js'), /manifest\.webmanifest[\s\S]*private, no-store/);
+  assert.doesNotMatch(read('public/favicon.svg'), /(?:claude|anthropic|c2pa)/i);
+});
+
 test('playback capabilities choose native HLS with a direct-file fallback', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/capabilities.js')).toString('base64')}`;
   const { playbackCapabilities, deliverySources } = await import(moduleUrl);

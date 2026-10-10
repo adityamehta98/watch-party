@@ -6,8 +6,13 @@
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0a0b0e">
 <meta name="watch-party-app" content="1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Watch Party">
 <title>Watch Party</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
@@ -94,6 +99,7 @@
           <button class="ctrl" id="tbMic" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
         </span>
         <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
+        <button class="btn sm" id="installBtn" type="button" hidden>Install</button>
         <button class="btn primary sm host-only" id="inviteBtn" type="button"><svg><use href="#i-link"/></svg><span>Invite</span></button>
         <button class="icon-btn" id="sidebarBtn" type="button" title="Show or hide the side panel" aria-label="Toggle side panel"><svg><use href="#i-panel"/></svg></button>
       </div>

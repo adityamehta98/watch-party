@@ -66,6 +66,19 @@ let pipWin = null; // pop-out camera window
 const room = $('#room');
 let conn = null, player = null, mesh = null;
 
+// Installable shell: room HTML, invite URLs, media and messages always stay network-only.
+const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+const installBtn = $('#installBtn');
+let installPrompt = null;
+if (!isTheater && !standalone && PLATFORM.appleMobile && PLATFORM.safari) installBtn.hidden = false;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; if (!isTheater && !standalone) installBtn.hidden = false; });
+window.addEventListener('appinstalled', () => { installPrompt = null; installBtn.hidden = true; });
+installBtn.addEventListener('click', async () => {
+  if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; installBtn.hidden = true; }
+  else toast('In Safari, tap Share, then Add to Home Screen.', { timeout: 6000 });
+});
+if (!isTheater && 'serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+
 function screen(name) { app.dataset.screen = name; }
 
 function showDenied(title, text) {

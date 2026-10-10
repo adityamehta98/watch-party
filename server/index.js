@@ -22,6 +22,7 @@ const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
 const { cleanAppleExtensionUrl } = require('./settings');
+const pwa = require('./pwa');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -546,6 +547,11 @@ async function handler(req, res) {
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
     // page files (css/js): only for this PC or someone who opened a valid invite link
     if (!local && !safeEq(cookieKey(req), room.roomKey)) return notFound(req, res, 'asset without invite');
+    if (p === '/manifest.webmanifest') {
+      const startUrl = local ? `/host/${config.adminKey}` : `/join/${room.roomKey}`;
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' });
+      return res.end(JSON.stringify(pwa.manifest(startUrl)));
+    }
     return serveStatic(req, res, p.slice(1));
   } catch (e) {
     console.error(e);

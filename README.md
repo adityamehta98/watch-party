@@ -40,6 +40,7 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **Sync Observatory.** The host sees every participant's RTT, drift, buffer health, bounded correction history, stall/recovery timeline, a room confidence score, and actionable quality recommendations.
 - **Shared moments.** Reactions are scheduled for the same movie timestamp, chat carries a clickable scene time, and controllers can save named scene bookmarks that appear on the seek bar.
 - **Adaptive theater visuals.** Host-owned movies can tint the player edges from tiny local frame samples; no frame or color telemetry leaves the browser. Reduced-motion, data-saver, low-memory, low-battery, and manual battery-saver modes automatically remove costly effects. QR invitations animate only when a guest actually reaches the room.
+- **Installable PWA shell.** Install the room on a phone, tablet, or desktop for standalone chat, room controls, reactions, and the manual-sync clock. Only static UI code is cached; invite pages, keys, messages, metrics, and media stay network-only.
 - **Host control.** The host approves each guest and decides per person who can play/pause/seek, chat, react, and use a camera and mic.
 - **Capability-aware delivery.** Desktop browsers use efficient byte-range playback; Safari, iPhone and iPad automatically choose authenticated, segmented HLS when the host enables Apple optimization. A failed HLS start falls back to the original file.
 - **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, package HLS) with `ffmpeg`.
@@ -321,6 +322,7 @@ How it behaves:
 - **Ads:** when one person gets an ad, the room waits for them.
 - **Android:** streaming services use the live manual-sync clock because Android browsers do not support this Safari/Chromium extension.
 - **iPhone/iPad:** Safari uses the signed Web Extension; before it is published, the same live manual-sync clock remains available.
+- **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; DRM playback still opens in the streaming service's Safari tab.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
 - **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
 - The extension's sync script only runs on those sites, on Watch Party pages, and on a custom site the host opened inside the Watch Party window (a tiny check runs on other pages and stops right away). It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
