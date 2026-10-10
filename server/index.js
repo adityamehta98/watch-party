@@ -51,8 +51,9 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
 
 // A message box, for the few things you need to know when there's no window to print them in.
 function notify(text) {
-  if (process.platform !== 'win32' || !require('./tools').IS_SEA) return;
-  const ps = `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(${JSON.stringify(text).replace(/\$/g, '`$')}, 'Watch Party') | Out-Null`;
+  if (process.platform !== 'win32' || !tools.IS_SEA) return;
+  const msg = Buffer.from(String(text), 'utf8').toString('base64');
+  const ps = `Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${msg}')), 'Watch Party') | Out-Null`;
   try { spawn('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {}
 }
 
@@ -90,7 +91,6 @@ function loadConfig() {
   // Upgrade settings from the first version (Cloudflare tunnel, local-only listening, outside STUN servers).
   if (Object.keys(c).length && !c.version) {
     if (c.bind === '127.0.0.1') delete c.bind;
-    if (c.tunnel === 'cloudflare') delete c.tunnel;
     delete c.iceServers;
   }
   delete c.iceServers;
@@ -126,7 +126,8 @@ const bins = { ffmpeg: tools.findBin('ffmpeg'), ffprobe: tools.findBin('ffprobe'
 const toolState = { ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, encoders: null };
 const library = new Library({ config, tools: toolState, save });
 // YouTube search for guests with control (the host's page asks through /api/youtube/search)
-const ytSearchFn = q => youtube.search(q, process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: async () => require(process.env.WP_TEST_YT_HTML) }) : undefined);
+const ytFetch = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: () => fs.promises.readFile(process.env.WP_TEST_YT_HTML, 'utf8') }) : undefined;
+const ytSearchFn = q => youtube.search(q, ytFetch);
 const room = new Room({ config, library, save, ytSearch: ytSearchFn });
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
@@ -401,7 +402,7 @@ const safeEq = (a, b) => typeof a === 'string' && typeof b === 'string' && a.len
 
 async function api(req, res, p) {
   // The host controls work only from this PC, never over the internet.
-  const key = req.headers['x-admin-key'] || new URL(req.url, 'http://x').searchParams.get('k');
+  const key = req.headers['x-admin-key'];
   if (!isLocal(req) || !safeEq(key, config.adminKey)) return notFound(req, res, 'api');
   if (req.method === 'POST' && !/^application\/json/.test(req.headers['content-type'] || '')) return sendJson(res, 415, { error: 'json only' });
   const body = req.method === 'POST' ? await readBody(req) : {};
@@ -410,9 +411,7 @@ async function api(req, res, p) {
   if (p === '/api/youtube/search') {
     const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
     try {
-      // tests only: a saved results page instead of the internet
-      const fake = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: async () => require(process.env.WP_TEST_YT_HTML) }) : undefined;
-      return sendJson(res, 200, { results: await youtube.search(q, fake) });
+      return sendJson(res, 200, { results: await ytSearchFn(q) });
     } catch (e) { return sendJson(res, 502, { error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` }); }
   }
   if (p === '/api/library') return sendJson(res, 200, library.list());
@@ -685,7 +684,7 @@ front.listen(config.port, config.bind, async () => {
   console.log('  Your host page (keep this private):\n    ' + hostUrl + '\n');
   console.log('  Watch Party runs in the background. It stops by itself a few seconds after you close its');
   console.log('  page. Double-click WatchParty.exe again any time to reopen the page.\n');
-  if (updatePending()) console.log('  ! An update is waiting but is not installed yet. Close this window and\n    double-click "Start Watch Party.bat" (not WatchParty.exe) to install it.\n');
+  if (updatePending()) console.log('  ! An update is waiting but is not installed yet. Close this window and\n    double-click "refresh.bat" (not WatchParty.exe) to install it.\n');
   if (!bins.ffmpeg || !bins.ffprobe) console.log('  ! ffmpeg was not found in the "bin" folder. MKV files will not work.\n');
   openBrowser(hostUrl);
   try { await turn.start(); turnOk = true; } catch (e) { console.log(`  ! Webcam relay could not start on UDP ${config.port}: ${e.message}`); }

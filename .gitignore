@@ -4,6 +4,15 @@ node_modules/
 # Personal settings and secrets (admin key, local folders, TLS keys)
 config.json
 cache/
+.env
+.env.*
+!.env.example
+credentials*.json
+secrets*.json
+*.key
+*.pem
+*.p12
+*.pfx
 
 # Build output and binaries (publish these as GitHub Release assets instead)
 dist/
