@@ -23,11 +23,15 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin || !SHELL.has(url.pathname)) return;
   event.respondWith(caches.open(CACHE).then(async cache => {
     const cacheKey = url.pathname;
-    const cached = await cache.match(cacheKey);
-    const fresh = fetch(request).then(response => {
+    // Network first: after an update every device gets the new page code at once; the cache is only an offline fallback.
+    try {
+      const response = await fetch(request, { cache: 'no-store' });
       if (response.ok) cache.put(cacheKey, response.clone());
       return response;
-    }).catch(() => cached);
-    return cached || fresh;
+    } catch (error) {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+      throw error;
+    }
   }));
 });
