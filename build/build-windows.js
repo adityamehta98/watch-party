@@ -44,6 +44,8 @@ const assets = {};
     else assets['public/' + path.relative(path.join(ROOT, 'public'), full).split(path.sep).join('/')] = full;
   }
 })(path.join(ROOT, 'public'));
+assets['public/vendor/hls.min.js'] = path.join(ROOT, 'node_modules', 'hls.js', 'dist', 'hls.light.min.js');
+assets['public/vendor/hls.LICENSE.txt'] = path.join(ROOT, 'node_modules', 'hls.js', 'LICENSE');
 const seaConfig = {
   main: path.join(TMP, 'app.js'), output: path.join(TMP, 'sea.blob'),
   disableExperimentalSEAWarning: true, useSnapshot: false, useCodeCache: false, assets,

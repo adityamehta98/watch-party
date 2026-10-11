@@ -176,6 +176,50 @@ function srtToVtt(text) {
     .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
 }
 
+function buildHlsArgs({ source, info, options, videoCodec, stripDv, copyAudio = false,
+  sourceStreams = options.subsOnly, videoArgs = null, audioEncoder = 'aac', inputArgs = [] }) {
+  const o = options;
+  const videoMap = sourceStreams ? `0:${info.video.index}` : '0:v:0';
+  const audioMap = sourceStreams && o.audio ? `0:${o.audio.index}` : '0:a:0?';
+  // Source MKV files often use timestamps whose first video packet is slightly before the first
+  // audio packet. We stream-copy video and re-encode audio, so without the fixes below the two
+  // tracks start on different clocks: the picture plays while the sound drifts seconds behind.
+  // MKV sources often have small timing hiccups. Without these fixes the stream-copied
+  // video keeps the source PTS while the re-encoded audio starts at 0, so the picture plays
+  // while the sound drifts seconds behind as the movie goes on.
+  // MKV sources often have small timing hiccups between tracks. +genpts rebuilds timestamps,
+  // and the -af aresample filter below keeps the re-encoded audio locked to the video clock
+  // so sound doesn't drift behind the picture over the length of a long movie.
+  const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats',
+    '-fflags', '+genpts+discardcorrupt', ...inputArgs, '-i', source,
+    '-map', videoMap, '-map', audioMap];
+  if (videoArgs?.length) args.push(...videoArgs, '-force_key_frames', 'expr:gte(t,n_forced*4)');
+  else args.push('-c:v', 'copy');
+  if (videoCodec === 'hevc') args.push('-tag:v', 'hvc1');
+  const videoFilters = [];
+  if (stripDv) videoFilters.push('dovi_rpu=strip=1');
+  // MKV HEVC commonly stores the parameter sets only in hvcC extradata. Rebuild them before the
+  // fragmented-MP4 muxer writes its init segment or iOS can wait forever on an undecodable stream.
+  if (sourceStreams && !videoArgs?.length && videoCodec === 'hevc') videoFilters.push('hevc_mp4toannexb', 'extract_extradata');
+  if (videoFilters.length) args.push('-bsf:v', videoFilters.join(','));
+  if (copyAudio) args.push('-c:a', 'copy');
+  else {
+    const channels = o.audio?.channels || 2;
+    const outChannels = o.audioMode === 'stereo' || channels < 6 ? 2 : 6;
+    args.push('-c:a', audioEncoder, '-b:a', outChannels > 2 ? '640k' : '256k');
+    if (channels !== outChannels) args.push('-ac', String(outChannels));
+    // Keep audio locked to the video clock even for very long movies. async=1 inserts tiny
+    // silence or drops samples when the source has gaps so playback never drifts.
+    args.push('-af', 'aresample=async=1:min_hard_comp=0.100');
+  }
+  // EVENT playlists are allowed to grow while ffmpeg is running. temp_file makes every playlist
+  // entry atomic: a player never sees a segment until ffmpeg has finished writing it.
+  args.push('-sn', '-dn', '-f', 'hls', '-hls_time', '4', '-hls_list_size', '0', '-hls_playlist_type', 'event',
+    '-hls_segment_type', 'fmp4', '-hls_flags', 'independent_segments+temp_file', '-hls_fmp4_init_filename', 'init.mp4',
+    '-hls_segment_filename', 'seg-%05d.m4s', 'index.m3u8');
+  return args;
+}
+
 class Library extends EventEmitter {
   constructor({ config, tools, save }) {
     super();
@@ -312,7 +356,22 @@ class Library extends EventEmitter {
   }
 
   goodHls(item, prepared = this.goodPrepared(item)) {
+    if (item.info?.video?.dv && prepared?.hls?.dvStripped !== true) return null;
     return prepared?.hls?.dir === `${item.id}.hls` && fs.existsSync(path.join(this.cacheDir, prepared.hls.dir, 'index.m3u8')) ? prepared.hls : null;
+  }
+
+  // While ffmpeg is still appending segments, expose only a playlist which already references two
+  // completely-written segments. This lets a movie start in seconds without treating a
+  // half-created package as a durable prepared copy.
+  liveHls(item) {
+    const hls = item?.job?.hls;
+    if (!hls?.ready || item.job.state !== 'running' || hls.dir !== `${item.id}.hls.part`) return null;
+    const dir = path.join(this.cacheDir, hls.dir);
+    return fs.existsSync(path.join(dir, 'index.m3u8')) && fs.existsSync(path.join(dir, 'init.mp4')) ? hls : null;
+  }
+
+  availableHls(item, prepared = this.goodPrepared(item)) {
+    return this.liveHls(item) || this.goodHls(item, prepared);
   }
 
   loadPrepared(item) {
@@ -347,11 +406,12 @@ class Library extends EventEmitter {
     const subs = [];
     let file = null;
     const prepared = this.goodPrepared(item);
+    const hls = this.availableHls(item, prepared);
     if (prepared && prepared.file) {
       file = path.join(this.cacheDir, prepared.file);
     } else if (info.plan.mode === 'direct') {
       file = item.path;
-    } else {
+    } else if (!hls) {
       return null;
     }
     if (prepared) for (const s of prepared.subs || []) subs.push({ key: s.key, label: String(s.label || '').replace(/^(.+) · \1$/i, '$1'), lang: s.lang, file: path.join(this.cacheDir, s.file) });
@@ -362,7 +422,7 @@ class Library extends EventEmitter {
       width: v.width, height: v.height, hdr: v.hdr, codec: v.codec,
       mbps: (prepared && prepared.bitrateMbps) || info.bitrateMbps,
       audio: prepared?.audioLabel || audioLabel(info.audios.find(a => a.index === info.defaultAudioIndex)),
-      hls: !!this.goodHls(item, prepared), subs,
+      hls: !!hls, progressive: !!this.liveHls(item), subs,
     };
   }
 
@@ -370,7 +430,7 @@ class Library extends EventEmitter {
     if (!/^(index\.m3u8|init\.mp4|seg-\d{5}\.m4s)$/.test(name)) return null;
     const item = this.items.get(id);
     const prepared = item && this.goodPrepared(item);
-    const hls = this.goodHls(item, prepared);
+    const hls = item && this.availableHls(item, prepared);
     if (!hls) return null;
     const file = path.join(this.cacheDir, hls.dir, name);
     return fs.existsSync(file) ? file : null;
@@ -404,9 +464,10 @@ class Library extends EventEmitter {
         probeError: it.probeError,
         stalePrepared: !!(it.prepared && !this.goodPrepared(it)),
         prepared: this.goodPrepared(it) && { mode: it.prepared.mode, sizeLabel: fmtBytes((it.prepared.outSize || 0) + (this.goodHls(it, it.prepared)?.bytes || 0)), bitrateMbps: it.prepared.bitrateMbps, audioLabel: it.prepared.audioLabel, compressed: it.prepared.compressed, hls: !!this.goodHls(it, it.prepared), subs: (it.prepared.subs || []).length, createdAt: it.prepared.createdAt },
-        playable: !!(it.info && (this.goodPrepared(it) || it.info.plan.mode === 'direct')),
+        playable: !!(it.info && (this.goodPrepared(it) || it.info.plan.mode === 'direct' || this.liveHls(it))),
         externalSubs: this.externalSubs(it).length,
-        job: it.job && { state: it.job.state, percent: it.job.percent, speed: it.job.speed, eta: it.job.eta, error: it.job.error, label: it.job.label },
+        job: it.job && { state: it.job.state, percent: it.job.percent, speed: it.job.speed, eta: it.job.eta,
+          error: it.job.error, label: it.job.label, ready: !!it.job.hls?.ready },
       })),
     };
   }
@@ -420,8 +481,8 @@ class Library extends EventEmitter {
     if (item.job && ['queued', 'running'].includes(item.job.state)) return item.job;
     const info = item.info;
     const compress = !!opts.compress;
-    const hls = opts.hls !== false;
-    const mustEncode = info.plan.mode === 'transcode' || (hls && !['h264', 'hevc'].includes(info.video.codec));
+    const hls = opts.hls === true;
+    const mustEncode = info.plan.mode === 'transcode' || (hls && (!['h264', 'hevc'].includes(info.video.codec) || (info.video.dv && !this.tools.dovi)));
     const audio = info.audios.find(a => a.index === Number(opts.audioIndex)) || info.audios.find(a => a.index === info.defaultAudioIndex) || null;
     const audioMode = opts.audioMode === 'stereo' ? 'stereo' : 'surround';
     const textSubs = info.subs.filter(s => s.text);
@@ -430,7 +491,7 @@ class Library extends EventEmitter {
     const job = {
       id, state: 'queued', percent: 0, speed: null, eta: null, error: null, proc: null,
       opts: { compress, hls, mustEncode, targetMbps: Math.max(4, Math.min(80, Number(opts.targetMbps) || 25)), audio, audioMode, textSubs, subsOnly },
-      label: subsOnly ? (textSubs.length ? 'Extracting subtitles' : 'Optimizing for Safari') : (compress || mustEncode) ? `Re-encoding video (${encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
+      label: hls ? 'Preparing instant stream' : subsOnly ? 'Extracting subtitles' : (compress || mustEncode) ? `Re-encoding video (${encoderLabel(this.pickEncoder(info, compress).enc)})` : 'Repackaging (video copied as-is)',
     };
     item.job = job;
     this.queue.push(item);
@@ -523,6 +584,8 @@ class Library extends EventEmitter {
     let videoCodecOut = info.video.codec;
     let encName = null;
     let subOuts = [];
+    const copiesAudio = !!o.audio && MP4_AUDIO_COPY.has(o.audio.codec)
+      && (o.audioMode !== 'stereo' || (o.audio.channels || 2) <= 2) && (o.audio.channels || 2) <= 6;
     const buildArgs = attempt => {
     subOuts = [];
     const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats'];
@@ -545,11 +608,11 @@ class Library extends EventEmitter {
       if (o.audio) {
         const ch = o.audio.channels || 2;
         const stereo = o.audioMode === 'stereo';
-        if (MP4_AUDIO_COPY.has(o.audio.codec) && (!stereo || ch <= 2) && ch <= 6) {
+        if (copiesAudio) {
           args.push('-c:a', 'copy');
         } else {
           const outCh = stereo || ch < 6 ? 2 : 6;
-          args.push('-c:a', 'aac', '-b:a', outCh > 2 ? '640k' : '256k');
+          args.push('-c:a', attempt.softwareAudio ? 'aac' : (this.tools.encoders?.aac || 'aac'), '-b:a', outCh > 2 ? '640k' : '256k');
           if (ch !== outCh) args.push('-ac', String(outCh));
         }
       }
@@ -573,12 +636,13 @@ class Library extends EventEmitter {
     };
 
     const duration = info.duration || 1;
-    const runOnce = (args, cwd) => new Promise((resolve, reject) => {
+    const runOnce = (args, cwd, onTick) => new Promise((resolve, reject) => {
       const p = spawn(this.tools.ffmpeg, args, { windowsHide: true, cwd });
       job.proc = p;
       let errText = '';
       let buf = '';
       const started = Date.now();
+      const tick = onTick && setInterval(onTick, 100);
       p.stdout.on('data', d => {
         buf += d;
         const lines = buf.split(/\r?\n/);
@@ -601,8 +665,10 @@ class Library extends EventEmitter {
         }
       });
       p.stderr.on('data', d => { errText = (errText + d).slice(-4000); });
-      p.on('error', reject);
+      p.on('error', e => { if (tick) clearInterval(tick); reject(e); });
       p.on('close', code => {
+        if (tick) clearInterval(tick);
+        if (onTick) onTick();
         job.proc = null;
         if (job.state === 'cancelled') return reject(new Error('cancelled'));
         if (code !== 0) return reject(new Error(errText.trim().split('\n').slice(-3).join(' ') || `ffmpeg exited with code ${code}`));
@@ -615,38 +681,122 @@ class Library extends EventEmitter {
     const attempts = encodeVideo
       ? [{ hwaccel: true, software: false }, { hwaccel: false, software: false }, ...(hwEncoder ? [{ hwaccel: false, software: true }] : [])]
       : [{}];
-    if (!o.subsOnly || o.textSubs.length) {
+    if (o.audio && !copiesAudio && this.tools.encoders?.aac && this.tools.encoders.aac !== 'aac') {
+      attempts.push({ hwaccel: false, software: hwEncoder, softwareAudio: true });
+    }
+    if (o.hls) {
+      // Build the append-only HLS stream first, directly from the source. The old pipeline waited
+      // for a complete MP4 and then read that multi-gigabyte file a second time, so nobody could
+      // watch until both full passes finished. Two closed segments are enough to start safely.
+      fs.rmSync(tmpHls, { recursive: true, force: true });
+      fs.mkdirSync(tmpHls);
+      job.hls = { dir: `${item.id}.hls.part`, ready: false, complete: false, readyAt: null };
+      job.label = 'Creating the first streaming segments';
+      job.percent = 0; job.eta = null;
+      this.emit('update');
+      const markHlsReady = () => {
+        if (job.hls?.ready) return;
+        try {
+          const playlist = fs.readFileSync(path.join(tmpHls, 'index.m3u8'), 'utf8');
+          const segments = [...playlist.matchAll(/^\s*(seg-\d{5}\.m4s)\s*$/gm)].map(m => m[1]);
+          if (segments.length < 2 || !fs.existsSync(path.join(tmpHls, 'init.mp4'))
+            || !segments.slice(0, 2).every(name => fs.existsSync(path.join(tmpHls, name)))) return;
+          job.hls.ready = true;
+          job.hls.readyAt = Date.now();
+          job.label = 'Ready to watch - finishing the full movie in the background';
+          this.emit('update');
+          this.emit('ready', { id: item.id });
+        } catch { /* playlist is being atomically replaced; try again on the next tick */ }
+      };
+      for (let i = 0; i < attempts.length; i++) {
+        const attempt = attempts[i];
+        try {
+          let videoArgs = null;
+          if (encodeVideo) {
+            const ve = this.videoEncodeArgs(info, o.compress, o.targetMbps, attempt.software);
+            videoArgs = ve.args;
+            videoCodecOut = ve.hevc ? 'hevc' : 'h264';
+            encName = ve.enc;
+          }
+          const args = buildHlsArgs({
+            source: item.path, info, options: o, videoCodec: videoCodecOut,
+            sourceStreams: true, videoArgs, inputArgs: encodeVideo && attempt.hwaccel ? ['-hwaccel', 'auto'] : [],
+            stripDv: !!(!encodeVideo && info.video.dv && this.tools.dovi),
+            copyAudio: copiesAudio && o.audio?.codec === 'aac',
+            audioEncoder: attempt.softwareAudio ? 'aac' : (this.tools.encoders?.aac || 'aac'),
+          });
+          await runOnce(args, tmpHls, markHlsReady);
+          markHlsReady();
+          job.hls.complete = true;
+          break;
+        } catch (e) {
+          fs.rmSync(tmpHls, { recursive: true, force: true });
+          if (job.state === 'cancelled' || i === attempts.length - 1) { job.hls = null; throw e; }
+          fs.mkdirSync(tmpHls);
+          job.hls.ready = false; job.hls.readyAt = null;
+          job.percent = 0; job.eta = null;
+          if (attempts[i + 1].software) job.label = 'Re-encoding video (CPU, slower: the graphics card could not handle this file)';
+          this.emit('update');
+        }
+      }
+
+      if (!o.subsOnly) {
+        // The expensive codec work is already in HLS. Turn those finished fragments into the
+        // conventional MP4 with stream-copy only, while extracting text subtitles from the source.
+        subOuts = [];
+        // Read init + segments as one continuous fragmented MP4, not through the HLS demuxer. Each
+        // fragment stores its video before its audio; when segments run past 10 s (sources with
+        // sparse keyframes), ffmpeg takes that backwards jump as a timestamp break and starts the
+        // whole audio track one segment late in the finished MP4.
+        const playlist = fs.readFileSync(path.join(tmpHls, 'index.m3u8'), 'utf8');
+        const segments = [...playlist.matchAll(/^\s*(seg-\d{5}\.m4s)\s*$/gm)].map(m => m[1]);
+        fs.writeFileSync(path.join(tmpHls, 'segments.txt'), ['init.mp4', ...segments].join('\n') + '\n');
+        const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats',
+          '-f', 'mp4', '-i', 'concatf:segments.txt', '-i', item.path,
+          '-map', '0:v:0', '-map', '0:a:0?', '-map_metadata', '-1', '-map_chapters', '-1', '-c', 'copy'];
+        if (videoCodecOut === 'hevc') args.push('-tag:v', 'hvc1');
+        args.push('-sn', '-dn', '-max_muxing_queue_size', '4096', '-f', 'mp4', tmpVideo);
+        for (const s of o.textSubs) {
+          const key = 's' + s.index;
+          const file = `${item.id}.${key}.vtt`;
+          const tmp = path.join(this.cacheDir, `${item.id}.${key}.part.vtt`);
+          args.push('-map', `1:${s.index}`, '-c:s', 'webvtt', '-f', 'webvtt', tmp);
+          let label = s.title || langName(s.lang) || `Subtitle ${s.index}`;
+          if (s.title && s.lang && s.title.toLowerCase() !== langName(s.lang).toLowerCase()) label = `${langName(s.lang)} · ${s.title}`;
+          if (s.forced && !/forced/i.test(label)) label += ' (forced)';
+          subOuts.push({ key, file, tmp, label, lang: s.lang });
+        }
+        job.label = 'Ready to watch - finalizing the direct-browser copy';
+        job.percent = 0; job.eta = null;
+        this.emit('update');
+        try { await runOnce(args, tmpHls); } catch (e) {
+          for (const f of [tmpVideo, ...subOuts.map(x => x.tmp)]) fs.rmSync(f, { force: true });
+          fs.rmSync(tmpHls, { recursive: true, force: true });
+          job.hls = null;
+          throw e;
+        }
+        fs.rmSync(path.join(tmpHls, 'segments.txt'), { force: true });
+      } else if (o.textSubs.length) {
+        try { await runOnce(buildArgs({})); } catch (e) {
+          for (const f of subOuts.map(x => x.tmp)) fs.rmSync(f, { force: true });
+          fs.rmSync(tmpHls, { recursive: true, force: true });
+          job.hls = null;
+          throw e;
+        }
+      }
+    } else if (!o.subsOnly || o.textSubs.length) {
       for (let i = 0; i < attempts.length; i++) {
         try {
           await runOnce(buildArgs(attempts[i]));
           break;
         } catch (e) {
           for (const f of [tmpVideo, ...subOuts.map(x => x.tmp)]) fs.rmSync(f, { force: true });
-          fs.rmSync(tmpHls, { recursive: true, force: true });
           if (job.state === 'cancelled' || i === attempts.length - 1) throw e;
           job.percent = 0; job.eta = null;
           if (attempts[i + 1].software) job.label = 'Re-encoding video (CPU, slower: the graphics card could not handle this file)';
           this.emit('update');
         }
       }
-    }
-
-    if (o.hls) {
-      fs.rmSync(tmpHls, { recursive: true, force: true });
-      fs.mkdirSync(tmpHls);
-      job.label = 'Segmenting for Safari, iPhone and iPad';
-      job.percent = 0; job.eta = null;
-      this.emit('update');
-      const source = o.subsOnly ? item.path : tmpVideo;
-      const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-i', source,
-        '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy'];
-      if ((o.subsOnly ? info.video.codec : videoCodecOut) === 'hevc') args.push('-tag:v', 'hvc1');
-      if (o.audio && o.audio.codec === 'aac') args.push('-c:a', 'copy');
-      else args.push('-c:a', 'aac', '-b:a', '256k');
-      args.push('-sn', '-dn', '-f', 'hls', '-hls_time', '4', '-hls_list_size', '0', '-hls_playlist_type', 'vod',
-        '-hls_segment_type', 'fmp4', '-hls_flags', 'independent_segments', '-hls_fmp4_init_filename', 'init.mp4',
-        '-hls_segment_filename', 'seg-%05d.m4s', 'index.m3u8');
-      try { await runOnce(args, tmpHls); } catch (e) { fs.rmSync(tmpHls, { recursive: true, force: true }); throw e; }
     }
 
     // finalize
@@ -670,12 +820,12 @@ class Library extends EventEmitter {
       meta.file = outVideo;
       meta.outSize = outSize;
       meta.bitrateMbps = Math.round((outSize * 8 / Math.max(1, info.duration)) / 1e5) / 10;
-      const stripped = !!(info.video.dv && this.tools.dovi);
+      const stripped = !!(info.video.dv && (this.tools.dovi || encodeVideo));
       meta.dvStripped = stripped;
       meta.video = { ...info.video, dv: stripped ? null : info.video.dv, codec: videoCodecOut, bitDepth: encodeVideo && videoCodecOut === 'h264' ? 8 : info.video.bitDepth, hdr: (encodeVideo && videoCodecOut === 'h264') ? null : (stripped ? info.video.baseHdr : info.video.hdr) };
       meta.encoder = encName;
       const ch = o.audio ? ((o.audioMode === 'stereo' || (o.audio.channels || 2) < 6) ? 2 : 6) : 0;
-      meta.audioLabel = o.audio ? (MP4_AUDIO_COPY.has(o.audio.codec) && (o.audio.channels <= 2 || (o.audioMode !== 'stereo' && o.audio.channels <= 6)) ? audioLabel(o.audio) : `AAC ${ch >= 6 ? '5.1' : 'stereo'} (from ${audioLabel(o.audio)})`) : 'no audio';
+      meta.audioLabel = o.audio ? (copiesAudio ? audioLabel(o.audio) : `AAC ${ch >= 6 ? '5.1' : 'stereo'} (from ${audioLabel(o.audio)})`) : 'no audio';
     } else {
       meta.file = null;
     }
@@ -683,7 +833,7 @@ class Library extends EventEmitter {
       const finalHls = path.join(this.cacheDir, outHls);
       fs.rmSync(finalHls, { recursive: true, force: true });
       fs.renameSync(tmpHls, finalHls);
-      meta.hls = { dir: outHls, bytes: treeBytes(finalHls) };
+      meta.hls = { dir: outHls, bytes: treeBytes(finalHls), dvStripped: !info.video.dv || !o.subsOnly || !!this.tools.dovi };
     } else {
       fs.rmSync(path.join(this.cacheDir, outHls), { recursive: true, force: true });
     }
@@ -703,7 +853,8 @@ class Library extends EventEmitter {
     const now = Date.now();
     if (item._lastEmit && now - item._lastEmit < 700) return;
     item._lastEmit = now;
-    this.emit('progress', { id: item.id, job: { state: item.job.state, percent: item.job.percent, speed: item.job.speed, eta: item.job.eta, label: item.job.label } });
+    this.emit('progress', { id: item.id, job: { state: item.job.state, percent: item.job.percent, speed: item.job.speed,
+      eta: item.job.eta, label: item.job.label, ready: !!item.job.hls?.ready } });
   }
 
   cancel(id) {
@@ -757,4 +908,4 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-module.exports = { Library, analyze, computePlan, cleanTitle, audioLabel };
+module.exports = { Library, analyze, computePlan, cleanTitle, audioLabel, buildHlsArgs };

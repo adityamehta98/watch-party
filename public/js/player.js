@@ -105,7 +105,9 @@ export class SyncPlayer {
       this.attach(media);
     }
     this.movie = movie;
-    this.seekLatency = this.v.isAdapter ? 0.6 : 0.25;
+    // HLS streams need a longer initial seek estimate (fetching + decoding a 4-10s segment).
+    // The real latency is learned from the seeked event; this is just a starting guess.
+    this.seekLatency = this.v.isAdapter ? 0.6 : (movie && movie.hls) ? 1.2 : 0.25;
     this.clearStart();
     this.drift = 0;
     this.aligned = false;
@@ -124,7 +126,8 @@ export class SyncPlayer {
     if (v.isAdapter) { if (movie) v.open(movie); else v.close(); this.onChange(); return; }
     for (const t of [...v.querySelectorAll('track')]) t.remove();
     if (!movie) { v.removeAttribute('src'); v.load(); this.onChange(); return; }
-    v.src = srcUrl;
+    if (srcUrl) v.src = typeof srcUrl === 'string' ? srcUrl : srcUrl.url;
+    else v.removeAttribute('src');
     v.preload = 'auto';
     v.load();
     this.onChange();
@@ -276,7 +279,10 @@ export class SyncPlayer {
       return;
     }
     if (v.paused && !this.blocked) this.tryPlay();
-    if (!this.aligned && Math.abs(diff) < 0.3 && !v.paused) { this.aligned = true; this.onChange(); }
+    // HLS gets a larger alignment window: the real drift keeps correcting itself with
+    // the rate controller below, but the user shouldn't see "Catching up" forever.
+    const alignEps = (this.movie && this.movie.hls) ? 0.8 : 0.3;
+    if (!this.aligned && Math.abs(diff) < alignEps && !v.paused) { this.aligned = true; this.onChange(); }
     if (v.readyState < 3) { this.setRate(1); return; }
     if (prof.rate === false) {
       // this player can't change speed smoothly: instead, a small precise jump now and then (at most

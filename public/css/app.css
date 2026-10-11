@@ -400,15 +400,22 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .folders summary::-webkit-details-marker { display: none; }
 .folders summary svg { width: 17px; height: 17px; color: var(--accent); }
 .folders[open] { padding-bottom: 12px; }
-.lib-list { display: grid; gap: 8px; }
+.lib-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.lib-list > *, .movie .prep-form, .movie .prep-form * { min-width: 0; }
+.movie .why, .movie .warnline, .movie .fine, .movie .hint { overflow-wrap: anywhere; }
+.movie .progress-meta { gap: 8px; }
+.movie .progress-meta [data-pm] { flex-shrink: 0; white-space: nowrap; }
+.movie .progress.ready > div { background: var(--ok); }
 .movie { border: 1px solid var(--border); background: var(--bg-2); border-radius: var(--radius); padding: 11px 12px; }
 .movie.current { border-color: rgba(245,181,68,.55); box-shadow: inset 0 0 0 1px rgba(245,181,68,.2); }
 .movie-top { display: flex; gap: 10px; align-items: flex-start; }
 .movie .mt { font-weight: 650; line-height: 1.3; }
 .movie .mf { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; font-family: var(--mono); }
 .movie .chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
-.movie .why { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; padding-left: 16px; }
-.movie .why li { margin: 2px 0; }
+.chip.why-tag { cursor: pointer; font-family: inherit; appearance: none; gap: 4px; }
+.chip.why-tag::after { content: "?"; display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; border: 1px solid currentColor; font-size: 9px; opacity: .75; }
+.chip.why-tag:hover, .chip.why-tag:focus-visible { filter: brightness(1.25); outline: none; }
+.why-pop { position: fixed; z-index: 1000; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 12px 32px rgba(0,0,0,.5); }
 .movie .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .movie .warnline { font-size: 12.5px; color: var(--warn); margin-top: 8px; }
 .progress { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }

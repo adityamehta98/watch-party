@@ -221,21 +221,112 @@ test('PWA shell is installable without caching room secrets or media', () => {
   const sw = read('public/sw.js');
   for (const forbidden of ['/join/', '/host/', '/media/', '/api/', 'index.html', 'manifest.webmanifest']) assert.doesNotMatch(sw, new RegExp(`['\"]${forbidden.replaceAll('/', '\\/')}`));
   assert.match(sw, /const cacheKey = url\.pathname/);
+  assert.match(sw, /['"]\/vendor\/hls\.min\.js['"]/);
+  assert.match(sw, /['"]\/js\/file-playback\.js['"]/);
   assert.match(read('server/index.js'), /manifest\.webmanifest[\s\S]*private, no-store/);
+  assert.match(read('server/index.js'), /worker-src 'self' blob:/);
   assert.doesNotMatch(read('public/favicon.svg'), /<metadata|xmlns:[\w-]+=/i);
 });
 
-test('playback capabilities choose native HLS with a direct-file fallback', async () => {
+test('playback capabilities select native or MSE HLS and allow a growing HLS-only movie', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/capabilities.js')).toString('base64')}`;
-  const { playbackCapabilities, deliverySources } = await import(moduleUrl);
+  const { playbackCapabilities, deliverySources, reconcileDeliverySources } = await import(moduleUrl);
   const safari = playbackCapabilities({ canPlayType: type => type.includes('mpegurl') ? 'maybe' : '' }, {});
-  assert.deepEqual(safari, { hls: true, mse: false });
+  assert.deepEqual(safari, { hls: true, mse: false, nativeHlsPreferred: false });
+  const chromeVideo = { canPlayType: type => type.includes('mpegurl') ? 'maybe' : '' };
+  const chrome = playbackCapabilities(chromeVideo, { MediaSource: class {} }, { safari: false, appleMobile: false });
+  assert.deepEqual(deliverySources({ hls: '/media/abc/hls/index.m3u8', progressive: true }, chrome, 'key'), [
+    { type: 'hls-js', url: '/media/abc/hls/index.m3u8?k=key' },
+  ], 'Chrome reports native HLS, but its player cannot follow a growing playlist');
+  const appleSafari = playbackCapabilities(chromeVideo, { ManagedMediaSource: class {} }, { safari: true, appleMobile: true });
+  assert.deepEqual(deliverySources({ hls: '/media/abc/hls/index.m3u8', progressive: true }, appleSafari, 'key'), [
+    { type: 'native-hls', url: '/media/abc/hls/index.m3u8?k=key' },
+    { type: 'hls-js', url: '/media/abc/hls/index.m3u8?k=key' },
+  ], 'Safari keeps its own HLS player first, with hls.js as the fallback');
   const movie = { url: '/media/abc/video', hls: '/media/abc/hls/index.m3u8' };
   assert.deepEqual(deliverySources(movie, safari, 'room key', 'viewer'), [
-    '/media/abc/hls/index.m3u8?k=room+key&c=viewer',
-    '/media/abc/video?k=room+key&c=viewer',
+    { type: 'direct', url: '/media/abc/video?k=room+key&c=viewer' },
+    { type: 'native-hls', url: '/media/abc/hls/index.m3u8?k=room+key&c=viewer' },
   ]);
-  assert.deepEqual(deliverySources(movie, { hls: false }, 'key', 'viewer'), ['/media/abc/video?k=key&c=viewer']);
+  assert.deepEqual(deliverySources(movie, { hls: false, mse: false }, 'key', 'viewer'), [{ type: 'direct', url: '/media/abc/video?k=key&c=viewer' }]);
+  assert.deepEqual(deliverySources({ hls: movie.hls, progressive: true }, { hls: false, mse: true }, 'key', 'viewer'), [
+    { type: 'hls-js', url: '/media/abc/hls/index.m3u8?k=key&c=viewer' },
+  ]);
+  assert.deepEqual(deliverySources({ hls: movie.hls }, { hls: true, mse: false }, 'key'), [
+    { type: 'native-hls', url: '/media/abc/hls/index.m3u8?k=key' },
+  ]);
+  const direct = { type: 'direct', url: '/media/abc/video?k=key' };
+  const hls = { type: 'native-hls', url: '/media/abc/hls/index.m3u8?k=key' };
+  assert.deepEqual(reconcileDeliverySources([hls, direct], direct, false), {
+    sources: [direct, hls], activate: null,
+  }, 'a working direct source stays attached when progressive HLS appears');
+  assert.deepEqual(reconcileDeliverySources([direct, hls], hls, false), {
+    sources: [hls, direct], activate: null,
+  }, 'a working HLS source stays attached when the final direct copy appears');
+  assert.deepEqual(reconcileDeliverySources([hls, direct], direct, true), {
+    sources: [hls, direct], activate: hls,
+  }, 'a failed source switches to the newly available alternative');
+  assert.deepEqual(reconcileDeliverySources([direct], hls, false), {
+    sources: [direct], activate: direct,
+  }, 'a removed active source switches to the remaining format');
+  assert.deepEqual(reconcileDeliverySources([hls], hls, true), {
+    sources: [hls], activate: hls,
+  }, 'a failed sole source can be retried after its metadata changes');
+  const app = read('public/js/app.js');
+  assert.match(app, /function nativeHlsViewerHere\(\).*status\?\.hls/);
+  assert.match(app, /case 'quickprep':[\s\S]{0,80}const opts = \{ hls: true \}/);
+  assert.match(app, /case 'prepare':[\s\S]{0,80}const o = \{ hls: true,/);
+  assert.match(app, /setTimeout\([\s\S]{0,160}video\.readyState < 2[\s\S]{0,80}20000/);
+  assert.match(app, /Instant start on phones, tablets and computers/);
+  assert.match(app, /Ready to watch · still preparing in background/);
+  assert.match(app, /if \(same\)[\s\S]{0,220}refreshFileSources\(movie\)/);
+});
+
+test('file playback owns HLS attachment, recovery, fallback, and stale loads', async () => {
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/file-playback.js')).toString('base64')}`;
+  const { FilePlayback } = await import(moduleUrl);
+  const instances = [];
+  class FakeHls {
+    static Events = { MEDIA_ATTACHED: 'attached', MANIFEST_PARSED: 'manifest', FRAG_BUFFERED: 'fragment', ERROR: 'error' };
+    static ErrorTypes = { NETWORK_ERROR: 'network', MEDIA_ERROR: 'media' };
+    static isSupported() { return true; }
+    constructor(options) { this.options = options; this.events = new Map(); instances.push(this); }
+    on(name, callback) { this.events.set(name, callback); }
+    emit(name, data) { this.events.get(name)?.(name, data); }
+    attachMedia(video) { this.video = video; this.emit(FakeHls.Events.MEDIA_ATTACHED); }
+    loadSource(url) { this.url = url; }
+    startLoad(at) { this.startedAt = at; this.starts = (this.starts || 0) + 1; }
+    recoverMediaError() { this.recoveries = (this.recoveries || 0) + 1; }
+    destroy() { this.destroyed = true; }
+  }
+  const video = {
+    currentTime: 12, src: '', pause() {}, removeAttribute(name) { if (name === 'src') this.src = ''; },
+    load() { this.loads = (this.loads || 0) + 1; },
+  };
+  let ready = 0, fatal = 0;
+  const playback = new FilePlayback(video, { loader: async () => FakeHls, onReady: () => ready++, onFatal: () => fatal++ });
+  await playback.open({ type: 'hls-js', url: '/movie.m3u8' }, 33);
+  const first = instances[0];
+  assert.equal(first.url, '/movie.m3u8');
+  first.emit(FakeHls.Events.MANIFEST_PARSED);
+  assert.equal(first.startedAt, 33);
+  first.emit(FakeHls.Events.FRAG_BUFFERED); first.emit(FakeHls.Events.FRAG_BUFFERED);
+  assert.equal(ready, 1);
+  first.emit(FakeHls.Events.ERROR, { fatal: true, type: FakeHls.ErrorTypes.MEDIA_ERROR });
+  assert.equal(first.recoveries, 1); assert.equal(fatal, 0);
+  first.emit(FakeHls.Events.ERROR, { fatal: true, type: FakeHls.ErrorTypes.MEDIA_ERROR, details: 'decode failed' });
+  assert.equal(first.destroyed, true); assert.equal(fatal, 1);
+
+  let release;
+  const delayed = new Promise(resolve => { release = resolve; });
+  const stale = new FilePlayback(video, { loader: () => delayed });
+  const opening = stale.open({ type: 'hls-js', url: '/old.m3u8' });
+  await stale.open({ type: 'direct', url: '/new.mp4' });
+  release(FakeHls); await opening;
+  assert.equal(video.src, '/new.mp4');
+  assert.equal(instances.length, 1, 'stale async HLS load must not attach');
+  stale.close();
+  assert.equal(video.src, '');
 });
 
 test('Apple extension links are restricted to App Store and TestFlight HTTPS URLs', () => {
@@ -311,23 +402,40 @@ test('media server supports full, HEAD, bounded, suffix, and invalid byte ranges
 
 test('prepare builds and cleans a native Safari HLS package', async t => {
   const ffmpeg = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobe = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
   if (!fs.existsSync(ffmpeg)) return t.skip('bundled ffmpeg is not available on this platform');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-hls-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const source = path.join(dir, 'source.mp4');
-  const made = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=1', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', source], { encoding: 'utf8', windowsHide: true });
+  const made = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=26',
+    '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo',
+    '-map', '0:v:0', '-map', '1:a:0', '-map', '2:a:0', '-t', '26', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '288', '-keyint_min', '288', '-sc_threshold', '0',
+    '-c:a:0', 'ac3', '-c:a:1', 'aac', '-disposition:a:0', '0', '-disposition:a:1', 'default', source], { encoding: 'utf8', windowsHide: true });
   assert.equal(made.status, 0, made.stderr);
+  const encoders = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8', windowsHide: true }).stdout;
+  const audioEncoder = /\baac_mf\b/.test(encoders) ? 'aac_mf' : 'aac';
   const { Library } = require('../server/library');
-  const library = new Library({ config: { cacheDir: dir, folders: [] }, tools: { ffmpeg, encoders: { h264: 'libx264' } }, save() {} });
+  const library = new Library({ config: { cacheDir: dir, folders: [] }, tools: { ffmpeg, encoders: { h264: 'libx264', aac: audioEncoder } }, save() {} });
   const id = 'a1b2c3d4e5f6';
   const size = fs.statSync(source).size;
   library.items.set(id, { id, path: source, rel: 'source.mp4', title: 'Source', ext: '.mp4', size, info: {
-    duration: 1, bitrateMbps: 1, video: { index: 0, codec: 'h264', width: 320, height: 180, bitDepth: 8, pixFmt: 'yuv420p' },
-    audios: [{ index: 1, codec: 'aac', channels: 2 }], defaultAudioIndex: 1, subs: [], plan: { mode: 'direct', reasons: [] },
+    duration: 26, bitrateMbps: 1, video: { index: 0, codec: 'h264', width: 320, height: 180, bitDepth: 8, pixFmt: 'yuv420p' },
+    audios: [{ index: 1, codec: 'ac3', channels: 2 }, { index: 2, codec: 'aac', channels: 2 }], defaultAudioIndex: 1, subs: [], plan: { mode: 'remux', reasons: [] },
   }, prepared: null, job: null });
+  let liveDuringPrepare = null, livePlaylist = null, readyInList = false;
+  library.once('ready', () => {
+    liveDuringPrepare = library.playable(id);
+    livePlaylist = library.hlsFile(id, 'index.m3u8');
+    readyInList = library.list().items.find(item => item.id === id)?.job?.ready;
+  });
   const job = library.prepare(id, { hls: true });
   while (['queued', 'running'].includes(job.state)) await new Promise(resolve => setTimeout(resolve, 25));
   assert.equal(job.state, 'done', job.error);
+  assert.equal(liveDuringPrepare?.progressive, true);
+  assert.equal(liveDuringPrepare?.file, null);
+  assert.equal(liveDuringPrepare?.hls, true);
+  assert.ok(livePlaylist?.endsWith(`${id}.hls.part${path.sep}index.m3u8`));
+  assert.equal(readyInList, true);
   const playable = library.playable(id);
   assert.equal(playable.hls, true);
   const playlistFile = library.hlsFile(id, 'index.m3u8');
@@ -336,10 +444,112 @@ test('prepare builds and cleans a native Safari HLS package', async t => {
   assert.match(playlist, /URI="init\.mp4"/);
   assert.match(playlist, /seg-00000\.m4s/);
   assert.doesNotMatch(playlist, /[A-Z]:[\\/]/i);
+  const probed = spawnSync(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'json', playlistFile], { encoding: 'utf8', windowsHide: true });
+  assert.equal(probed.status, 0, probed.stderr);
+  assert.deepEqual(JSON.parse(probed.stdout).streams.map(stream => stream.codec_name), ['h264', 'aac']);
+  const direct = spawnSync(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_name,channels', '-of', 'json', playable.file], { encoding: 'utf8', windowsHide: true });
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.deepEqual(JSON.parse(direct.stdout).streams.map(stream => stream.codec_name), ['h264', 'aac']);
+  // ffmpeg's HLS demuxer used to start the MP4's audio one segment late (10 s on real movies)
+  const starts = spawnSync(ffprobe, ['-v', 'error', '-show_entries', 'stream=codec_type,start_time', '-of', 'json', playable.file], { encoding: 'utf8', windowsHide: true });
+  const [videoStart, audioStart] = JSON.parse(starts.stdout).streams.map(stream => Number(stream.start_time));
+  assert.ok(Math.abs(audioStart - videoStart) < 0.1, `audio starts ${audioStart}s, video ${videoStart}s`);
+  assert.equal(fs.existsSync(path.join(dir, `${id}.hls`, 'segments.txt')), false);
   assert.ok(library.hlsFile(id, 'init.mp4'));
   assert.equal(library.hlsFile(id, '../source.mp4'), null);
   library.removePrepared(id);
   assert.equal(fs.existsSync(path.join(dir, `${id}.hls`)), false);
+});
+
+test('Safari HLS is opt-in, maps the selected source audio, and strips Dolby Vision', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-prepare-options-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const { Library, buildHlsArgs } = require('../server/library');
+  const library = new Library({ config: { cacheDir: dir, folders: [] }, tools: { ffmpeg: 'ffmpeg', encoders: {} }, save() {} });
+  library.running = {}; // Keep this unit test from starting the queued fake ffmpeg job.
+  const id = 'a1b2c3d4e5f6';
+  const info = {
+    duration: 60, video: { index: 2, codec: 'hevc', dv: { profile: 8 } },
+    audios: [{ index: 3, codec: 'dts', channels: 6 }, { index: 4, codec: 'aac', channels: 2 }],
+    defaultAudioIndex: 4, subs: [{ index: 5, text: true }], plan: { mode: 'direct', reasons: [] },
+  };
+  library.items.set(id, { id, path: path.join(dir, 'source.mp4'), size: 1000, info, job: null });
+  const job = library.prepare(id, {});
+  assert.equal(job.opts.hls, false);
+  library.cancel(id);
+
+  const args = buildHlsArgs({ source: 'source.mp4', info, options: { subsOnly: true, audio: info.audios[1] }, videoCodec: 'hevc', stripDv: true, copyAudio: true });
+  const maps = args.flatMap((arg, i) => arg === '-map' ? [args[i + 1]] : []);
+  assert.deepEqual(maps, ['0:2', '0:4']);
+  assert.equal(args[args.indexOf('-bsf:v') + 1], 'dovi_rpu=strip=1,hevc_mp4toannexb,extract_extradata');
+  assert.equal(args[args.indexOf('-c:a') + 1], 'copy');
+  assert.equal(args[args.indexOf('-hls_playlist_type') + 1], 'event');
+  assert.equal(args[args.indexOf('-hls_flags') + 1], 'independent_segments+temp_file');
+  const hevcCopyArgs = buildHlsArgs({ source: 'source.mkv', info, options: { subsOnly: true, audio: info.audios[1] }, videoCodec: 'hevc', stripDv: false, copyAudio: true });
+  assert.equal(hevcCopyArgs[hevcCopyArgs.indexOf('-bsf:v') + 1], 'hevc_mp4toannexb,extract_extradata');
+
+  const hlsDir = path.join(dir, `${id}.hls`);
+  fs.mkdirSync(hlsDir); fs.writeFileSync(path.join(hlsDir, 'index.m3u8'), '#EXTM3U\n');
+  const item = library.items.get(id);
+  item.prepared = { hls: { dir: `${id}.hls` } };
+  assert.equal(library.goodHls(item), null);
+  item.prepared.hls.dvStripped = true;
+  assert.ok(library.goodHls(item));
+});
+
+test('HLS audio copy is explicit and never bypasses stereo or six-channel limits', () => {
+  const { buildHlsArgs } = require('../server/library');
+  const info = { video: { index: 0, codec: 'h264' } };
+  const audioArgs = (audio, audioMode, copyAudio) => buildHlsArgs({
+    source: 'source.mp4', info, options: { subsOnly: true, audio, audioMode },
+    videoCodec: 'h264', stripDv: false, copyAudio,
+  });
+  const option = (args, name) => args[args.indexOf(name) + 1];
+
+  const safeCopy = audioArgs({ index: 1, codec: 'aac', channels: 2 }, 'surround', true);
+  assert.equal(option(safeCopy, '-c:a'), 'copy');
+  assert.equal(safeCopy.includes('-ac'), false);
+
+  const stereo = audioArgs({ index: 1, codec: 'aac', channels: 6 }, 'stereo', false);
+  assert.equal(option(stereo, '-c:a'), 'aac');
+  assert.equal(option(stereo, '-b:a'), '256k');
+  assert.equal(option(stereo, '-ac'), '2');
+
+  const compatibleSurround = audioArgs({ index: 1, codec: 'aac', channels: 8 }, 'surround', false);
+  assert.equal(option(compatibleSurround, '-c:a'), 'aac');
+  assert.equal(option(compatibleSurround, '-b:a'), '640k');
+  assert.equal(option(compatibleSurround, '-ac'), '6');
+});
+
+test('progressive preparation really downmixes source AAC when stereo is requested', async t => {
+  const ffmpeg = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobe = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+  if (!fs.existsSync(ffmpeg)) return t.skip('bundled ffmpeg is not available on this platform');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-hls-audio-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const source = path.join(dir, 'source.mp4');
+  const made = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=24:duration=5',
+    '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=5.1', '-t', '5',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '48', '-keyint_min', '48', '-sc_threshold', '0',
+    '-c:a', 'aac', source], { encoding: 'utf8', windowsHide: true });
+  assert.equal(made.status, 0, made.stderr);
+
+  const { Library } = require('../server/library');
+  const id = 'b1c2d3e4f5a6';
+  const library = new Library({ config: { cacheDir: dir, folders: [] }, tools: { ffmpeg, encoders: { aac: 'aac' } }, save() {} });
+  library.items.set(id, { id, path: source, rel: 'source.mp4', title: 'Source', ext: '.mp4', size: fs.statSync(source).size,
+    info: { duration: 5, bitrateMbps: 1, video: { index: 0, codec: 'h264', width: 160, height: 90, bitDepth: 8, pixFmt: 'yuv420p' },
+      audios: [{ index: 1, codec: 'aac', channels: 6 }], defaultAudioIndex: 1, subs: [], plan: { mode: 'remux', reasons: [] } },
+    prepared: null, job: null });
+  const job = library.prepare(id, { hls: true, audioMode: 'stereo' });
+  while (['queued', 'running'].includes(job.state)) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(job.state, 'done', job.error);
+  for (const file of [library.hlsFile(id, 'index.m3u8'), library.playable(id).file]) {
+    const result = spawnSync(ffprobe, ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=codec_name,channels', '-of', 'json', file], { encoding: 'utf8', windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).streams[0], { codec_name: 'aac', channels: 2 });
+  }
 });
 
 test('self-signed certificates are valid, cover requested hosts, and are reused', () => {
@@ -360,6 +570,11 @@ test('self-signed certificates are valid, cover requested hosts, and are reused'
 test('assets reject traversal and YouTube result parsing survives both layouts', () => {
   const assets = require('../server/assets');
   assert.match(assets.get('index.html').type, /text\/html/);
+  const hls = assets.get('vendor/hls.min.js');
+  assert.match(hls.type, /javascript/);
+  assert.deepEqual(hls.body, fs.readFileSync(path.join(ROOT, 'node_modules/hls.js/dist/hls.light.min.js')));
+  assert.ok(assets.get('vendor/hls.LICENSE.txt').body.length > 100);
+  assert.match(read('build/build-windows.js'), /assets\['public\/vendor\/hls\.min\.js'\]/);
   for (const p of ['', '../config.json', 'js/../index.html', 'js//app.js']) assert.equal(assets.get(p), null, p);
   const { parsePage } = require('../server/youtube');
   const data = { a: { videoRenderer: { videoId: 'abcdefghijk', title: { simpleText: 'One' }, ownerText: { runs: [{ text: 'Channel' }] }, lengthText: { simpleText: '1:23' }, thumbnail: { thumbnails: [{ url: 'https://img/1' }] } } }, b: { lockupViewModel: { contentId: 'lmnopqrstuv', contentType: 'VIDEO', metadata: { lockupMetadataViewModel: { title: { content: 'Two' } } } } } };
@@ -383,7 +598,10 @@ test('library analysis preserves direct, remux, transcode, title, and audio deci
 test('room keys, permissions, URL selection, public data, and timeline commands work', t => {
   const { Room, randKey, PERMS, REACTIONS } = require('../server/room');
   assert.match(randKey(24), /^[A-Za-z0-9]{24}$/); assert.equal(new Set(PERMS).size, 4); assert.ok(REACTIONS.includes('👏'));
-  const library = { playable: id => id === 'movie' ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] } : null, list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
+  const library = { playable: id => id === 'movie'
+    ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] }
+    : id === 'live' ? { id, title: 'Live', file: null, duration: 100, hls: true, progressive: true, subs: [] } : null,
+  list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
   const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {} });
   t.after(() => room.shutdown());
   assert.equal(room.roleForKey('admin-secret-key', true), 'host');
@@ -392,6 +610,11 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   const host = { id: 'host01', name: 'Host', role: 'host', admitted: true, perms: Object.fromEntries(PERMS.map(p => [p, true])), ws: { readyState: 0 } };
   room.selectMovie(host, 'movie');
   assert.equal(room.publicMovie().file, undefined); assert.equal(room.publicMovie().url, '/media/movie/video');
+  room.selectMovie(host, 'live');
+  assert.equal(room.publicMovie().url, null);
+  assert.equal(room.publicMovie().hls, '/media/live/hls/index.m3u8');
+  assert.equal(room.publicMovie().progressive, true);
+  room.selectMovie(host, 'movie');
   room.command(host, { action: 'seek', position: 500 }); assert.equal(room.state.position, 100);
   room.selectUrl(host, 'http://127.0.0.1/private', false, { custom: true }); assert.equal(room.movie.kind, 'file');
   room.selectUrl(host, 'https://example.com/watch?ep=2', false, { custom: true, strict: true });
@@ -446,7 +669,7 @@ test('room moments anchor chat, reactions, and bookmarks to movie time in memory
 test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {
   const tools = require('../server/tools');
   assert.equal(tools.encoderLabel('hevc_nvenc'), 'NVIDIA GPU'); assert.equal(tools.encoderLabel(null), 'none');
-  assert.deepEqual(await tools.detectEncoders(null), { hevc: null, h264: null, hevcSoftware: false, h264Software: false, list: [] });
+  assert.deepEqual(await tools.detectEncoders(null), { hevc: null, h264: null, aac: null, hevcSoftware: false, h264Software: false, list: [] });
   assert.equal(await tools.hasDoviStrip(null), false);
   const ran = await tools.run(process.execPath, ['-e', 'process.stdout.write("ok")']); assert.equal(ran.code, 0); assert.equal(ran.out, 'ok');
   const { isPrivate, PortMapper } = require('../server/upnp');

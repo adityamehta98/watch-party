@@ -136,7 +136,10 @@ const healthToken = randKey(24);
 let turnOk = false;
 let reachable = 'unknown';
 
-library.on('update', () => room.broadcastControllers({ type: 'library-changed' }));
+library.on('update', () => {
+  room.refreshLibraryMovie();
+  room.broadcastControllers({ type: 'library-changed' });
+});
 library.on('progress', p => room.broadcastControllers({ type: 'job', ...p }));
 
 const tcpMapping = () => mapper.state.mappings.find(m => m.protocol === 'TCP');
@@ -387,7 +390,7 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
   // YouTube is the only outside site the page may load, and only when you show a YouTube video.
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');

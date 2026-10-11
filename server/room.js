@@ -101,7 +101,8 @@ class Room {
     const perms = role === 'host' ? Object.fromEntries(PERMS.map(p => [p, true])) : { ...this.settings.defaults, ...((mem && mem.perms) || {}) };
     const client = {
       id, name, role, ws, key, perms, iceFor: ctx.iceFor || (() => []), relayOnlyFor: ctx.relayOnly || (() => true), ip: ctx.ip || '',
-      capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse },
+      // nativeHls: Safari / iPhone / iPad, the only browsers that play the stream with their own HLS player
+      capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse, nativeHls: !!(msg.capabilities?.hls && msg.capabilities?.nativeHlsPreferred) },
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
       media: { cam: false, mic: false },
       status: { at: 0 }, bufferingSince: null, lastWaitCause: 0,
@@ -217,9 +218,26 @@ class Room {
     }
     return {
       kind: 'file', id: m.id, title: m.title, duration: m.duration, width: m.width, height: m.height, hdr: m.hdr, codec: m.codec,
-      mbps: m.mbps, audio: m.audio, url: `/media/${m.id}/video`, hls: m.hls ? `/media/${m.id}/hls/index.m3u8` : null,
+      mbps: m.mbps, audio: m.audio, url: m.file ? `/media/${m.id}/video` : null,
+      hls: m.hls ? `/media/${m.id}/hls/index.m3u8` : null, progressive: !!m.progressive,
       subs: m.subs.map(s => ({ key: s.key, label: s.label, lang: s.lang, url: `/media/${m.id}/sub/${s.key}.vtt` })),
     };
+  }
+
+  refreshLibraryMovie() {
+    if (this.movie?.kind !== 'file') return;
+    const playable = this.library.playable(this.movie.id);
+    if (!playable) {
+      if (!this.movie.progressive) return;
+      this.movie = null;
+      this.setState({ movieId: null, playing: false, position: 0, anchor: Date.now() });
+      this.broadcast({ type: 'movie', movie: null });
+      return;
+    }
+    const changed = !!this.movie.file !== !!playable.file || !!this.movie.hls !== !!playable.hls
+      || !!this.movie.progressive !== !!playable.progressive || this.movie.subs.length !== playable.subs.length;
+    this.movie = { ...playable, kind: 'file' };
+    if (changed) this.broadcast({ type: 'movie', movie: this.publicMovie() });
   }
 
   people(forHost) {
@@ -366,7 +384,8 @@ class Room {
     if (!p) { this.toast(client, 'That movie needs to be prepared first.', 'error'); return; }
     this.movie = { ...p, kind: 'file' };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
-    this.setState({ movieId: id, playing: false, position: 0, anchor: Date.now() }, { by: client.name, action: 'load' });
+    // Start playing right away so the host doesn't have to click Play after Show in room.
+    this.setState({ movieId: id, playing: true, position: 0, anchor: Date.now() + 600 }, { by: client.name, action: 'play' });
     this.system(`Now showing: ${p.title}`);
   }
 
@@ -494,6 +513,9 @@ class Room {
           health: clamp(st.health, 0, 100), rtt: clamp(st.rtt, 0, 10000), rate: clamp(st.rate || 1, 0.25, 4),
           stalls: Math.min(9999, Number(st.stalls) || 0), dev: String(st.dev || '').slice(0, 24),
         };
+        if (client.status.error && !previous.error && client.capabilities?.nativeHls && this.movie?.kind === 'file' && !this.movie.hls) {
+          this.broadcastHosts({ type: 'toast', kind: 'error', text: `${client.name}'s Safari could not play this copy. Prepare it again with “Instant start” enabled.` });
+        }
         if (client.status.buffering) { if (!client.bufferingSince) client.bufferingSince = now; } else client.bufferingSince = null;
         if ((previous.at && previous.buffering !== client.status.buffering) || (!previous.at && client.status.buffering)) {
           this.syncEvents.push({ at: now, clientId: client.id, name: client.name, type: client.status.buffering ? 'stall' : 'recover', position: Math.round(this.currentPosition(now) * 10) / 10 });

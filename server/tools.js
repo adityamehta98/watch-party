@@ -77,12 +77,12 @@ const HEVC_CANDIDATES = ['hevc_nvenc', 'hevc_qsv', 'hevc_amf', 'hevc_videotoolbo
 const H264_CANDIDATES = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'];
 
 async function detectEncoders(ffmpeg) {
-  const result = { hevc: null, h264: null, hevcSoftware: false, h264Software: false, list: [] };
+  const result = { hevc: null, h264: null, aac: null, hevcSoftware: false, h264Software: false, list: [] };
   if (!ffmpeg) return result;
   const r = await run(ffmpeg, ['-hide_banner', '-encoders']);
   const names = new Set();
   for (const line of r.out.split(/\r?\n/)) {
-    const m = line.match(/^\s*V[\w.]{5}\s+(\S+)/);
+    const m = line.match(/^\s*[AVS][\w.]{5}\s+(\S+)/);
     if (m) names.add(m[1]);
   }
   result.hevcSoftware = names.has('libx265');
@@ -105,6 +105,12 @@ async function detectEncoders(ffmpeg) {
   }
   if (!result.hevc && result.hevcSoftware) { result.hevc = 'libx265'; result.hevc10 = true; }
   if (!result.h264 && result.h264Software) result.h264 = 'libx264';
+  if (names.has('aac_mf')) {
+    const audio = await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=5.1',
+      '-t', '0.2', '-c:a', 'aac_mf', '-b:a', '640k', '-f', 'null', '-'], 10000);
+    if (audio.code === 0) result.aac = 'aac_mf';
+  }
+  if (!result.aac && names.has('aac')) result.aac = 'aac';
   result.list = [result.hevc, result.h264].filter(Boolean);
   return result;
 }

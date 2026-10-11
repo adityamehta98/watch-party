@@ -12,6 +12,10 @@ let sea = null;
 try { sea = require('node:sea'); if (!sea.isSea()) sea = null; } catch { sea = null; }
 
 const PUBLIC = path.resolve(__dirname, '..', 'public');
+const VENDOR = new Map([
+  ['vendor/hls.min.js', path.resolve(__dirname, '..', 'node_modules', 'hls.js', 'dist', 'hls.light.min.js')],
+  ['vendor/hls.LICENSE.txt', path.resolve(__dirname, '..', 'node_modules', 'hls.js', 'LICENSE')],
+]);
 const cache = new Map();
 
 function get(rel) {
@@ -26,7 +30,7 @@ function get(rel) {
       return a;
     } catch { return null; }
   }
-  try { return { type, body: fs.readFileSync(path.join(PUBLIC, rel)) }; } catch { return null; }
+  try { return { type, body: fs.readFileSync(VENDOR.get(rel) || path.join(PUBLIC, rel)) }; } catch { return null; }
 }
 
 module.exports = { get, isPackaged: !!sea };

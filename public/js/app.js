@@ -1,7 +1,8 @@
 import { Connection } from './net.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
-import { playbackCapabilities, deliverySources } from './capabilities.js';
+import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
+import { FilePlayback } from './file-playback.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
@@ -57,7 +58,7 @@ const S = {
 };
 
 const video = $('#video');
-const PLAYBACK = playbackCapabilities(video);
+const PLAYBACK = playbackCapabilities(video, globalThis, PLATFORM);
 const stage = $('#stage');
 // The media everything talks to: the <video> for your files, or a YouTube / streaming-tab adapter.
 let M = video;
@@ -65,6 +66,13 @@ let ytMedia = null, remote = null;
 let pipWin = null; // pop-out camera window
 const room = $('#room');
 let conn = null, player = null, mesh = null;
+const filePlayback = new FilePlayback(video, {
+  onReady: () => { clearTimeout(fileStartTimer); S.filePlaybackError = null; renderNotice(); },
+  onFatal: error => {
+    S.filePlaybackError = error.message;
+    if (!tryNextFileSource('The streaming copy failed, so playback switched to another format.')) renderNotice();
+  },
+});
 
 // Installable shell: room HTML, invite URLs, media and messages always stay network-only.
 const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -271,6 +279,7 @@ function onWelcome(m) {
 function teardownMedia() {
   try { mesh && mesh.closeAll(); } catch {}
   for (const k of ['audio', 'video']) if (mesh && mesh.local[k]) { mesh.local[k].stop(); mesh.local[k] = null; }
+  filePlayback.close();
   try { video.pause(); } catch {}
 }
 
@@ -347,6 +356,66 @@ function mediaFor(movie) {
   return k === 'youtube' ? ytMedia : k === 'service' ? remote : video;
 }
 
+let fileStartTimer = null;
+function openFileSource(source) {
+  S.filePlaybackError = null;
+  filePlayback.open(source, 0).catch(error => {
+    S.filePlaybackError = error.message;
+    if (!tryNextFileSource('That format was unavailable, so playback switched to another one.')) renderNotice();
+  });
+}
+
+function tryNextFileSource(reason) {
+  clearTimeout(fileStartTimer);
+  const next = S.fileSources?.[S.fileSourceIndex + 1];
+  if (!next) return false;
+  S.fileSourceIndex++;
+  openFileSource(next);
+  toast(reason || 'Trying the Safari-optimized stream…', { timeout: 5000 });
+  return true;
+}
+
+function watchFileStart() {
+  clearTimeout(fileStartTimer);
+  if ((S.fileSources?.length || 0) < 2) return;
+  fileStartTimer = setTimeout(() => {
+    if (kindOf(S.movie) === 'file' && video.readyState < 2) tryNextFileSource();
+  }, 20000);
+}
+
+function addSubtitleTracks(movie) {
+  let added = false;
+  for (const s of movie?.subs || []) {
+    if (trackEls.has(s.key)) continue;
+    const t = document.createElement('track');
+    t.kind = 'subtitles';
+    t.label = s.label;
+    if (s.lang) t.srclang = s.lang.slice(0, 3);
+    t.src = `${s.url}?k=${encodeURIComponent(key)}`;
+    video.appendChild(t);
+    trackEls.set(s.key, t);
+    added = true;
+  }
+  if (!added) return;
+  buildCcMenu();
+  const pref = store.get('wp.subLang', null);
+  const match = pref && (movie.subs || []).find(s => s.lang === pref && !/forced/i.test(s.label));
+  setTimeout(() => selectSub(match ? match.key : null, false), 0);
+}
+
+function refreshFileSources(movie) {
+  const next = deliverySources(movie, PLAYBACK, key, clientId);
+  const { sources, activate } = reconcileDeliverySources(next, filePlayback.source, !!(S.filePlaybackError || video.error));
+  S.fileSources = sources;
+  S.fileSourceIndex = 0;
+  if (activate) openFileSource(activate);
+  else if (!sources.length && filePlayback.source) {
+    filePlayback.close();
+    S.filePlaybackError = 'This movie no longer has a playable source.';
+  }
+  watchFileStart();
+}
+
 function loadMovie(movie) {
   const same = S.movie && movie && S.movie.id === movie.id;
   if (!same) S.observatory = null;
@@ -364,7 +433,16 @@ function loadMovie(movie) {
   renderObservatory();
   renderBookmarks();
   if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
-  if (same) return;
+  if (same) {
+    if (kindOf(movie) === 'file') {
+      player.movie = movie;
+      refreshFileSources(movie);
+      addSubtitleTracks(movie);
+      checkCodecSupport(movie);
+      renderNotice();
+    }
+    return;
+  }
   trackEls.clear();
   const media = mediaFor(movie);
   if (media !== M) {
@@ -376,21 +454,13 @@ function loadMovie(movie) {
   S.metaSent = null;
   S.fileSources = kindOf(movie) === 'file' ? deliverySources(movie, PLAYBACK, key, clientId) : [];
   S.fileSourceIndex = 0;
-  player.setMovie(movie, S.fileSources[0] || null, media);
+  S.filePlaybackError = null;
+  filePlayback.close();
+  player.setMovie(movie, null, media);
+  if (kindOf(movie) === 'file' && S.fileSources[0]) openFileSource(S.fileSources[0]);
+  watchFileStart();
   if (movie && kindOf(movie) === 'file') {
-    for (const s of movie.subs || []) {
-      const t = document.createElement('track');
-      t.kind = 'subtitles';
-      t.label = s.label;
-      if (s.lang) t.srclang = s.lang.slice(0, 3);
-      t.src = `${s.url}?k=${encodeURIComponent(key)}`;
-      video.appendChild(t);
-      trackEls.set(s.key, t);
-    }
-    // restore subtitle choice by language
-    const pref = store.get('wp.subLang', null);
-    const match = pref && (movie.subs || []).find(s => s.lang === pref && !/forced/i.test(s.label));
-    setTimeout(() => selectSub(match ? match.key : null, false), 0);
+    addSubtitleTracks(movie);
     checkCodecSupport(movie);
   } else {
     $('#emptyTitle').textContent = 'Nothing is playing yet';
@@ -634,9 +704,13 @@ function renderControls() {
   const mb = $('#muteBtn');
   const mi = muted ? 'mute' : 'vol';
   if (mb.dataset.icon !== mi) { mb.dataset.icon = mi; mb.innerHTML = icon(mi); }
-  // local buffering notice
+  // local buffering + "catching up" notices: renderNotice is heavy so we only refresh it when
+  // one of the inputs it watches has flipped
   const buffering = S.state && S.state.playing && conn.clock.now() > S.state.anchor + 600 && (M.readyState < 3 || M.seeking) && !M.error;
-  if (buffering !== S._buffering) { S._buffering = buffering; renderNotice(); }
+  const syncing = !!(player && player.syncing);
+  if (buffering !== S._buffering || syncing !== S._syncing) {
+    S._buffering = buffering; S._syncing = syncing; renderNotice();
+  }
 }
 
 function renderNotice() {
@@ -647,8 +721,16 @@ function renderNotice() {
       html = `<span>${esc(M.error.yt === 101 || M.error.yt === 150 ? 'The owner of this YouTube video doesn\'t allow playing it outside YouTube. The host can show it with "Everyone opens it in their own tab" instead.' : 'This video couldn\'t be loaded.')}</span>`;
     } else if (M === remote) {
       html = ''; // the service panel explains what to do
+    } else if (S.filePlaybackError) {
+      html = `<span>${esc(S.filePlaybackError)} Ask the host to retry with “Compress for streaming” if this device does not support the movie's video format.</span>`;
     } else if (video.error) {
-      html = `<span>${esc(codecWarning || 'Your browser couldn\'t play this movie. Try Chrome or Edge, or ask the host to prepare a compressed copy.')}</span>`;
+      const apple = PLATFORM.appleMobile || PLATFORM.safari;
+      const message = apple
+        ? S.movie.hls
+          ? 'Safari could not decode this movie. Ask the host to prepare it again with “Compress for streaming” and “Instant start” enabled.'
+          : 'This movie was prepared without an instant-start stream. Ask the host to open Options, enable “Instant start”, and prepare it again.'
+        : codecWarning || 'Your browser couldn\'t play this movie. Ask the host to prepare a compressed copy.';
+      html = `<span>${esc(message)}</span>`;
     } else if (codecWarning && video.readyState < 1) {
       html = `<span>${esc(codecWarning)}</span>`;
     } else if (player && player.videoFailed && !pictureHintHidden(S.movie.id)) {
@@ -668,13 +750,10 @@ function renderNotice() {
   if (el.innerHTML !== html) el.innerHTML = html;
 }
 
+for (const event of ['loadeddata', 'canplay']) video.addEventListener(event, () => clearTimeout(fileStartTimer));
 video.addEventListener('error', () => {
-  const next = S.fileSources?.[++S.fileSourceIndex];
-  if (next) {
-    video.src = next;
-    video.load();
-    toast('Safari streaming was unavailable, so playback switched to the original file.', { timeout: 5000 });
-  }
+  if (filePlayback.ownsErrors) return;
+  tryNextFileSource('The direct stream was unavailable, so playback switched to Safari streaming.');
   renderNotice();
 });
 
@@ -1762,6 +1841,41 @@ async function loadLibrary() {
 }
 
 function guestCount() { return Math.max(1, S.people.filter(p => p.admitted && p.role !== 'host').length); }
+function nativeHlsViewerHere() { return S.people.some(p => p.admitted && p.status?.hls); }
+
+// A one-line explanation from the server becomes a short tag; the full text opens on click.
+function reasonTag(text) {
+  const t = (tag, bad = false) => ({ tag, text, bad });
+  let m;
+  if (/profile 5/.test(text)) return t('Dolby Vision 5', true);
+  if (/Dolby Vision/.test(text)) return t('Dolby Vision');
+  if ((m = /^(\w+) files /.exec(text))) return t(m[1]);
+  if ((m = /^(.+?) audio /.exec(text))) return t(`${m[1].split(' ')[0]} audio`);
+  if (/re-encoded/.test(text)) return t('Re-encode');
+  if (/hev1/.test(text)) return t('hev1');
+  if (/No video track/.test(text)) return t('No video', true);
+  return t(text.split(/[\s,.:]+/).slice(0, 2).join(' '));
+}
+const whyPop = Object.assign(document.createElement('div'), { className: 'why-pop', hidden: true });
+whyPop.setAttribute('role', 'dialog');
+document.body.appendChild(whyPop);
+function closeWhy() { whyPop.hidden = true; whyPop.anchor = null; }
+document.addEventListener('click', e => {
+  const tag = e.target.closest('[data-why]');
+  if (!tag) { if (!whyPop.contains(e.target)) closeWhy(); return; }
+  e.stopPropagation();
+  if (whyPop.anchor === tag && !whyPop.hidden) return closeWhy();
+  whyPop.textContent = tag.dataset.why;
+  whyPop.anchor = tag;
+  whyPop.hidden = false;
+  const r = tag.getBoundingClientRect(), w = Math.min(280, innerWidth - 24);
+  whyPop.style.width = w + 'px';
+  whyPop.style.left = Math.max(12, Math.min(r.left, innerWidth - w - 12)) + 'px';
+  const below = r.bottom + 6, h = whyPop.offsetHeight;
+  whyPop.style.top = (below + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : below) + 'px';
+}, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !whyPop.hidden) closeWhy(); });
+document.addEventListener('scroll', closeWhy, true);
 
 function movieChips(it) {
   const i = it.info;
@@ -1788,6 +1902,7 @@ function prepFormHtml(it) {
   const audioOpts = i.audios.map(a => `<option value="${a.index}" ${String(o.audioIndex ?? i.defaultAudioIndex) === String(a.index) ? 'selected' : ''}>${esc([a.lang, a.label, a.title].filter(Boolean).join(' · '))}</option>`).join('');
   const compress = !!o.compress;
   const hls = o.hls !== false;
+  const appleHere = nativeHlsViewerHere();
   const target = o.targetMbps || (i.video.width > 1920 ? 25 : 12);
   const textSubs = i.subs.filter(s => s.text).length;
   const imgSubs = i.subs.filter(s => !s.text).length;
@@ -1803,7 +1918,7 @@ function prepFormHtml(it) {
         ? `Re-encodes the video with ${esc(enc)} so it needs less upload. At 20–25 Mbps, 4K still looks close to the original.`
         : must ? `This video format has to be re-encoded with ${esc(enc)}.` : 'Video is copied bit-for-bit. Viewers get exactly what you have.'}</div></div>
     ${compress ? `<label class="opt">Target bitrate<select data-o="targetMbps">${[8, 12, 16, 20, 25, 30, 40].map(n => `<option value="${n}" ${n === +target ? 'selected' : ''}>${n} Mbps${n <= 12 ? ' (1080p-ish)' : n >= 30 ? ' (near original)' : ''}</option>`).join('')}</select></label>` : ''}
-    <label class="check-row"><input type="checkbox" data-o="hls" ${hls ? 'checked' : ''}><span><b>Optimize for Safari, iPhone and iPad</b><br>Creates segmented HLS media for steadier seeking and recovery on Apple devices. Other browsers still use the direct file.</span></label>
+    <label class="check-row"><input type="checkbox" data-o="hls" ${hls ? 'checked' : ''}><span><b>Instant start on phones, tablets and computers</b>${appleHere ? ' · an Apple viewer is here' : ''}<br>Recommended. Playback becomes available after the first safe segments; the full browser copy finishes in the background.</span></label>
     <div class="hint">${textSubs ? `${textSubs} text subtitle track${textSubs > 1 ? 's' : ''} will be included.` : 'No text subtitles in this file.'}${imgSubs ? ` ${imgSubs} image subtitle track${imgSubs > 1 ? 's' : ''} (PGS) can't be shown in browsers.` : ''}</div>
     <div class="hint">The prepared copy is deleted when Watch Party stops, so it doesn't fill up your disk. Prepare it again next time (copying takes a few minutes, compressing longer).</div>
     <div class="row end" style="margin-top:0"><button class="btn sm" data-act="closeprep" data-id="${it.id}">Cancel</button><button class="btn sm primary" data-act="prepare" data-id="${it.id}">Start</button></div>
@@ -1825,10 +1940,17 @@ function renderLibrary() {
     const i = it.info;
     const current = S.movie && S.movie.id === it.id;
     let status = '', acts = '', why = '', warn = '';
+    const tags = []; // short labels (MKV, Dolby Vision…) whose explanation opens on click
     if (it.job && ['queued', 'running'].includes(it.job.state)) {
-      status = `<div class="progress"><div style="width:${it.job.percent.toFixed(1)}%"></div></div>
-        <div class="progress-meta"><span>${esc(it.job.label)}${it.job.state === 'queued' ? ' · queued' : ''}</span><span data-pm>${it.job.percent.toFixed(0)}%${it.job.speed ? ` · ${it.job.speed.toFixed(1)}×` : ''}${it.job.eta ? ` · ${fmtEta(it.job.eta)}` : ''}</span></div>`;
-      acts = `<button class="btn sm" data-act="cancel" data-id="${it.id}">Cancel</button>`;
+      const ready = !!(it.job.ready && it.playable);
+      status = `<div class="progress ${ready ? 'ready' : ''}"><div style="width:${it.job.percent.toFixed(1)}%"></div></div>
+        <div class="progress-meta"><span>${ready ? 'Ready to watch · still preparing in background' : `${esc(it.job.label)}${it.job.state === 'queued' ? ' · queued' : ''}`}</span><span data-pm>${it.job.percent.toFixed(0)}%${it.job.speed ? ` · ${it.job.speed.toFixed(1)}×` : ''}${it.job.eta ? ` · ${fmtEta(it.job.eta)}` : ''}</span></div>`;
+      if (ready) {
+        acts = current
+          ? `<span class="chip ok">Now showing</span><button class="btn sm" data-act="unload">Stop showing</button>`
+          : `<button class="btn sm primary" data-act="play" data-id="${it.id}">${icon('play')}Show in room</button>`;
+        acts += `<button class="btn sm" data-act="cancel" data-id="${it.id}">Stop background preparation</button>`;
+      } else acts = `<button class="btn sm" data-act="cancel" data-id="${it.id}">Cancel</button>`;
     } else if (it.job && it.job.state === 'error') {
       status = `<div class="warnline" style="color:#ff8a8a">Prepare failed: ${esc(it.job.error)}</div>`;
     } else if (it.job && it.job.state === 'done') {
@@ -1849,18 +1971,18 @@ function renderLibrary() {
         if (isHost && it.prepared && it.prepared.mode !== 'subs' && !current) acts += `<button class="btn sm ghost" data-act="unprep" data-id="${it.id}" title="Delete the prepared copy to free up ${esc(it.prepared.sizeLabel)}">Delete copy</button>`;
         if (it.prepared && it.prepared.mode !== 'subs') status = status || (it.prepared.mode === 'hls'
           ? `<div class="fine">Optimized for Safari, iPhone and iPad · ${esc(it.prepared.sizeLabel)}</div>`
-          : `<div class="fine">Prepared copy · ${esc(it.prepared.sizeLabel)} · ${it.prepared.bitrateMbps} Mbps · ${esc(it.prepared.audioLabel || '')}${it.prepared.compressed ? ' · compressed' : ''}${it.prepared.hls ? ' · Safari HLS' : ''}</div>`);
+          : `<div class="fine">Prepared copy · ${esc(it.prepared.sizeLabel)} · ${it.prepared.bitrateMbps} Mbps · ${esc(it.prepared.audioLabel || '')}${it.prepared.compressed ? ' · compressed' : ''}${it.prepared.hls ? ' · instant stream' : ''}</div>`);
       } else if (plan.mode === 'unsupported') {
-        why = `<ul class="why">${plan.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
+        tags.push(...plan.reasons.map(reasonTag));
       } else {
-        if (it.stalePrepared) status = `<div class="warnline">The copy made by the older version shows a black screen (Dolby Vision). Prepare it again to fix it; the old copy is replaced.</div>`;
-        why = `<ul class="why">${plan.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`;
+        if (it.stalePrepared) tags.push({ tag: 'Old copy', bad: true, text: 'The copy made by the older version shows a black screen (Dolby Vision). Prepare it again to fix it; the old copy is replaced.' });
+        tags.push(...plan.reasons.map(reasonTag));
         const est = plan.mode === 'remux' ? ` (~${Math.max(1, Math.round(it.size / 120e6 / 60))} min)` : '';
         if (!S.prepOpen.has(it.id)) acts = `<button class="btn sm primary" data-act="quickprep" data-id="${it.id}">Prepare${est}</button><button class="btn sm ghost" data-act="openprep" data-id="${it.id}">Options</button>`;
       }
       const mbps = (it.prepared && it.prepared.bitrateMbps) || i.bitrateMbps;
       if (upload && mbps && mbps * viewers > upload * 0.85) {
-        warn = `<div class="warnline">This file is ${mbps} Mbps. ${viewers} viewer${viewers > 1 ? 's' : ''} need about ${Math.round(mbps * viewers)} Mbps of upload, and you have ${upload}. Use "Compress for streaming" in Options.</div>`;
+        tags.push({ tag: 'Upload too slow', bad: true, text: `This file is ${mbps} Mbps. ${viewers} viewer${viewers > 1 ? 's' : ''} need about ${Math.round(mbps * viewers)} Mbps of upload, and you have ${upload}. Use "Compress for streaming" in Options.` });
       }
       if (i.plan.mode === 'direct' && !it.prepared) {
         const ts = i.subs.filter(s => s.text).length;
@@ -1869,7 +1991,7 @@ function renderLibrary() {
     }
     return `<div class="movie ${current ? 'current' : ''}" data-movie="${it.id}">
       <div class="movie-top"><div style="min-width:0;flex:1"><div class="mt">${esc(it.title)}</div><div class="mf" title="${esc(it.rel)}">${esc(it.rel)}</div></div></div>
-      <div class="chips">${movieChips(it)}</div>
+      <div class="chips">${movieChips(it)}${tags.map(t => `<button type="button" class="chip why-tag ${t.bad ? 'bad' : 'warn'}" data-why="${esc(t.text)}" title="What does this mean?">${esc(t.tag)}</button>`).join('')}</div>
       ${why}${status}${warn}
       ${acts ? `<div class="acts">${acts}</div>` : ''}
       ${S.prepOpen.has(it.id) && i ? prepFormHtml(it) : ''}
@@ -1881,13 +2003,22 @@ function renderLibraryCurrent() { if ((isHost || canControl()) && S.library) ren
 
 function updateJob(id, job) {
   const it = S.library && S.library.items.find(x => x.id === id);
-  if (it) it.job = job;
+  if (it) {
+    const readinessChanged = !!it.job?.ready !== !!job.ready;
+    it.job = job;
+    if (readinessChanged) { renderLibrary(); return; }
+  }
   const card = document.querySelector(`[data-movie="${id}"]`);
   const bar = card && card.querySelector('.progress > div');
   if (bar) {
     bar.style.width = job.percent.toFixed(1) + '%';
+    bar.parentElement.classList.toggle('ready', !!job.ready);
     const pm = card.querySelector('[data-pm]');
-    if (pm) pm.textContent = `${job.percent.toFixed(0)}%${job.speed ? ` · ${job.speed.toFixed(1)}×` : ''}${job.eta ? ` · ${fmtEta(job.eta)}` : ''}`;
+    if (pm) pm.textContent = job.ready
+      ? 'Available now'
+      : `${job.percent.toFixed(0)}%${job.speed ? ` · ${job.speed.toFixed(1)}×` : ''}${job.eta ? ` · ${fmtEta(job.eta)}` : ''}`;
+    const meta = bar.parentElement.nextElementSibling;
+    if (meta) meta.firstElementChild.textContent = job.ready ? 'Ready to watch · still preparing in background' : (job.label || 'Preparing') + (job.state === 'queued' ? ' · queued' : '');
   } else renderLibrary();
 }
 
@@ -1925,9 +2056,14 @@ $('#libList').addEventListener('click', async e => {
       case 'unload': conn.send({ type: 'select-movie', id: null }); break;
       case 'openprep': S.prepOpen.add(id); renderLibrary(); break;
       case 'closeprep': S.prepOpen.delete(id); renderLibrary(); break;
-      case 'quickprep': if (!isHost) { conn.send({ type: 'lib-prepare', id, opts: {} }); break; } await api(`/api/prepare/${id}`, { method: 'POST', body: '{}' }); break;
+      case 'quickprep': {
+        const opts = { hls: true };
+        if (!isHost) { conn.send({ type: 'lib-prepare', id, opts }); break; }
+        await api(`/api/prepare/${id}`, { method: 'POST', body: JSON.stringify(opts) });
+        break;
+      }
       case 'prepare': {
-        const o = S.prepOpts.get(id) || {};
+        const o = { hls: true, ...(S.prepOpts.get(id) || {}) };
         const it = S.library.items.find(x => x.id === id);
         if (o.compress && !o.targetMbps) o.targetMbps = it.info.video.width > 1920 ? 25 : 12;
         if (isHost) await api(`/api/prepare/${id}`, { method: 'POST', body: JSON.stringify(o) });
