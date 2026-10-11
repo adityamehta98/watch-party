@@ -44,8 +44,9 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 - **Adaptive theater visuals.** Host-owned movies can tint the player edges from tiny local frame samples; no frame or color telemetry leaves the browser. Reduced-motion, data-saver, low-memory, low-battery, and manual battery-saver modes automatically remove costly effects. QR invitations animate only when a guest actually reaches the room.
 - **Installable PWA shell.** Install the room on a phone, tablet, or desktop for standalone chat, room controls, reactions, and the manual-sync clock. Only static UI code is cached; invite pages, keys, messages, metrics, and media stay network-only.
 - **Host control.** The host approves each guest and decides per person who can play/pause/seek, chat, react, and use a camera and mic.
-- **Capability-aware delivery.** Desktop browsers use efficient byte-range playback; Safari, iPhone and iPad automatically choose authenticated, segmented HLS when the host enables Apple optimization. A failed HLS start falls back to the original file.
-- **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, package HLS) with `ffmpeg`.
+- **Instant start.** A movie that needs preparing becomes watchable a few seconds after **Prepare** starts. One `ffmpeg` pass writes a growing, authenticated HLS stream straight from the source; the room can press play after the first two finished segments while the rest is prepared in the background.
+- **Capability-aware delivery.** Each viewer gets the best path their browser can play: byte-range MP4 for finished movies, Safari's native HLS on Mac/iPhone/iPad, and [hls.js](https://github.com/video-dev/hls.js) everywhere else. A source that fails or stalls on start falls back to the next one without reloading the page.
+- **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, instant-start stream) with `ffmpeg`. Short tags such as **MKV** or **Dolby Vision** explain why a file needs work; click one for the details.
 - **Streaming services.** Syncs Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, Apple TV+ and YouTube. Everyone plays from their own account and Watch Party keeps you together.
 - **Webcams and mic.** A built-in TURN relay runs on the host PC, so guests never learn each other's IP addresses. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
@@ -128,11 +129,7 @@ The Windows build packs Node, the bundled server and every file in `public/` int
 
 ### Extra build tools
 
-```bash
-npm install --no-save esbuild postject
-```
-
-You also need:
+`esbuild` and `postject` are dev dependencies, so `npm install` already fetched them. You also need:
 
 - a **Windows `node.exe` of the exact same version** as the Node running the build,
 - a folder with **Windows ffmpeg binaries** (`ffmpeg.exe`, `ffprobe.exe`, DLLs; for example a "shared" build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) or [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases)),
@@ -149,7 +146,7 @@ The output goes to `dist/WatchParty/`. What the script does:
 1. **Bundles** `server/index.js` and its dependencies into one CommonJS file with esbuild.
 2. **Checks** that the Chromium and Safari manifests match `REQUIRED_EXT_VERSION` in `public/js/media.js`, and fails if they differ.
 3. **Packages both extensions** to `public/ext/watch-party-sync.zip` and `public/ext/watch-party-safari-source.zip`, then copies the Chromium folder to `dist/WatchParty/extension/`.
-4. **Embeds** every file under `public/` as a SEA asset.
+4. **Embeds** every file under `public/` as a SEA asset, plus the hls.js player from `node_modules` (served as `/vendor/hls.min.js`).
 5. **Injects** the blob into a copy of `node.exe` with `postject`.
 6. **Switches the PE subsystem** from console to GUI so the app runs without a console window.
 7. **Copies** ffmpeg, ffprobe, their DLLs, the ffmpeg license and this README into `dist/WatchParty/`.
@@ -162,25 +159,31 @@ Build the extension downloads alone with `npm run build:extensions`. When changi
 
 ## How it works
 
+```mermaid
+flowchart LR
+  subgraph host["Host PC: WatchParty.exe (Node), one port 8765"]
+    guard["guard.js<br/>room-key gate, lockout"]
+    server["index.js<br/>HTTPS + WebSocket"]
+    room["room.js<br/>shared timeline, permissions,<br/>auto-wait, Sync Observatory"]
+    lib["library.js<br/>scan, ffprobe, prepare jobs"]
+    ffmpeg[("ffmpeg / ffprobe")]
+    cache[("cache/<br/>growing HLS, finished MP4,<br/>subtitles")]
+    media["/media/<br/>byte ranges + signed HLS"]
+    turn["turn.js<br/>STUN/TURN relay (UDP)"]
+    reach["upnp.js / tailscale.js / tunnel.js"]
+  end
+  viewer["Each viewer's browser<br/>app.js, player.js, file-playback.js"]
+  ext["Watch Party Sync extension<br/>(Netflix, Prime Video, ...)"]
+
+  viewer -->|"wss: play/pause/seek, chat, status"| guard --> server <--> room
+  room <--> lib --> ffmpeg --> cache
+  viewer -->|"https: MP4 ranges or HLS segments"| media --> cache
+  viewer <-.->|"webcams and mic"| turn
+  ext <-->|"drives the service's own player"| viewer
+  reach -.->|"makes port 8765 reachable"| server
 ```
-                          Host PC (Windows)
- ┌──────────────────────────────────────────────────────────────────┐
- │  WatchParty.exe  (Node)                       port 8765          │
- │  ┌─────────────┐  ┌─────────────┐  ┌───────────────┐             │
- │  │ HTTPS + WS  │  │ Room / sync │  │ Library       │──► ffprobe  │
- │  │ server      │◄─┤ engine      │  │ (scan, prep)  │──► ffmpeg   │
- │  │ (guard.js)  │  └─────────────┘  └───────────────┘             │
- │  │             │  ┌─────────────┐  ┌───────────────┐             │
- │  │ /media/…    │  │ TURN relay  │  │ UPnP / Tail-  │             │
- │  │ byte ranges │  │ (UDP 8765)  │  │ scale / tunnel│             │
- │  └─────────────┘  └─────────────┘  └───────────────┘             │
- └───────▲───────────────────▲──────────────────────────────────────┘
-         │ https + wss       │ webcams (WebRTC via relay)
-   ┌─────┴─────┐       ┌─────┴─────┐
-   │  Guest A  │       │  Guest B  │   …each plays the file locally
-   │  browser  │       │  browser  │      and locks it to the room clock
-   └───────────┘       └───────────┘
-```
+
+The host's PC is the only server. Every viewer downloads the movie directly from it and plays it locally; the room only shares a timeline ("position P was playing at server time T"), and each player keeps itself on that timeline.
 
 ### 1. One port, one secret
 
@@ -194,7 +197,24 @@ The server doesn't push video. Each guest's `<video>` element fetches the file f
 - seeking is instant, because the browser just asks for a different byte range,
 - the host's **upload bandwidth** is the limit: roughly *bitrate × number of guests*.
 
-When a prepared movie has **Safari / iPhone / iPad optimization**, Apple devices select native fMP4 HLS instead. The server signs every playlist reference with the room key, validates every segment filename, and keeps direct MP4 as an automatic fallback. Browsers without native HLS continue using the lower-overhead byte-range path.
+Movies prepared with **Instant start** also have a fragmented-MP4 **HLS** copy: 4-second-or-longer segments cut on keyframes. HLS is what lets a movie play while it is still being prepared, and it recovers better on Apple devices. The server rewrites every playlist entry to carry the room key, accepts only `index.m3u8`, `init.mp4` and `seg-NNNNN.m4s` names, and serves playlists with `no-cache` so a growing playlist is re-read.
+
+Each viewer picks a source with `public/js/capabilities.js`, and `public/js/file-playback.js` attaches it to the one `<video>` the sync engine controls:
+
+```mermaid
+flowchart TD
+  start["Movie shown in the room"] --> done{"Finished MP4<br/>exists yet?"}
+  done -->|"yes"| mp4["Direct MP4<br/>(byte ranges)"]
+  done -->|"no, still preparing"| which
+  mp4 -.->|"video error, or not started after 20 s"| which
+  which{"Which browser?"} -->|"Safari on Mac, iPhone, iPad"| native["Native HLS"]
+  which -->|"Chrome, Edge, Firefox, Android"| hlsjs["hls.js on Media Source Extensions"]
+  which -->|"no MSE, but native HLS"| native
+  hlsjs -.->|"fatal error after 2 network retries<br/>and 1 media recovery"| nextsrc["Next source in the list"]
+```
+
+- **Why hls.js on Chrome?** Recent Chrome versions report native HLS support, but Chrome's built-in player gives up on a playlist that is still growing (`DEMUXER_ERROR_COULD_NOT_PARSE`). Only Safari's native player is trusted; everything else uses hls.js (vendored, served from `/vendor/hls.min.js`) with a VOD-style configuration and a large forward buffer for 4K files.
+- **Formats can change mid-movie.** When the finished MP4 appears, the server re-broadcasts the movie. Viewers who are already playing keep their working HLS source (`reconcileDeliverySources`); anyone who joins later gets the ranged MP4.
 
 ### 3. Preparing files for browsers
 
@@ -204,8 +224,40 @@ Browsers can't play every container or codec. `server/library.js` runs `ffprobe`
 - **converts audio** (for example DTS/TrueHD/AC-3 → AAC),
 - **strips Dolby Vision** metadata (fixes the "sound but black screen" problem),
 - **extracts text subtitles** to WebVTT (or picks up a matching `.srt` next to the movie),
-- optionally **compresses for streaming** (about 20 to 25 Mbps), using a hardware encoder when one works.
-- optionally **packages fragmented MP4 HLS** for native Apple playback without transcoding during the party.
+- optionally **compresses for streaming** (about 20 to 25 Mbps), using a hardware encoder when one works (and falls back to the CPU encoder if the graphics card can't handle the file).
+- with **Instant start** (on by default), builds the HLS stream first so the movie is watchable within seconds.
+
+**Instant start, step by step.** The old pipeline wrote a complete MP4 and then read that multi-gigabyte file a second time to cut HLS, so nobody could watch until both passes finished. Now the expensive pass writes the stream directly from the source, and the browser MP4 is a cheap stream copy at the end:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Host as Host page
+  participant Lib as library.js
+  participant FF as ffmpeg
+  participant Room as room.js
+  participant V as Viewers
+  Host->>Lib: Prepare (instant start)
+  Lib->>FF: pass 1: source to fMP4 HLS in id.hls.part/<br/>(EVENT playlist, temp_file)
+  loop every 100 ms
+    Lib->>Lib: init.mp4 + 2 finished segments listed?
+  end
+  Lib-->>Host: "Ready to watch, still preparing in background"
+  Host->>Room: Show in room
+  Room-->>V: movie with growing HLS, play starts
+  FF-->>Lib: pass 1 done (playlist gets ENDLIST)
+  Lib->>FF: pass 2: init.mp4 + segments to MP4 (stream copy)<br/>+ text subtitles to WebVTT
+  Lib->>Lib: rename id.hls.part to id.hls, write id.json
+  Lib-->>Room: library update
+  Room-->>V: movie now also has the direct MP4
+```
+
+Details that make this safe:
+
+- **No half-written segments.** The playlist is an HLS `EVENT` playlist written with `temp_file`, so a segment only appears in it once ffmpeg has finished writing it. While the job runs, only the job's own `*.hls.part` folder is served; a failed or cancelled job is never treated as a prepared copy.
+- **Apple-friendly HEVC.** Stream-copied HEVC is tagged `hvc1` and gets its parameter sets rebuilt (`hevc_mp4toannexb,extract_extradata`), without which iOS can wait forever on the first frame. Dolby Vision RPUs are stripped with `dovi_rpu` when the bundled ffmpeg has it; otherwise the video is re-encoded.
+- **Audio stays on the video clock.** Audio the browser can't play is re-encoded to AAC (Windows' `aac_mf` encoder when it works, ffmpeg's `aac` otherwise) through `aresample=async=1`, which fills or trims tiny gaps so long movies don't drift.
+- **The MP4 copy reads the fragments as one file.** Pass 2 opens `init.mp4` and the segments in order through ffmpeg's `concatf:` protocol. Reading them through ffmpeg's HLS demuxer instead started the finished MP4's audio about 10 seconds late.
 
 Prepared copies go in `cache/` and are deleted when the app stops, unless `keepPrepared` is `true`.
 
@@ -214,8 +266,34 @@ Prepared copies go in `cache/` and are deleted when the app stops, unless `keepP
 - **Clock sync** (`public/js/net.js`): every client keeps measuring the offset between its clock and the server's over the WebSocket, NTP-style.
 - **Shared timeline** (`server/room.js`): the room stores *"position P was playing at server time T, at rate 1.0"* (or *paused at P*). Play, pause and seek update that state and broadcast it, with a short start delay so every player starts on the same tick.
 - **Adaptive drift correction** (`public/js/player.js`, `public/js/sync.js`): each player compares its `currentTime` with the shared timeline. An RTT-aware deadband and smoothed drift prevent oscillation; low-buffer players avoid aggressive speed-ups and repeated seeks. Large drift still triggers a decisive seek. Late joiners compute the current room position and jump there.
-- **Buffering:** if a viewer stalls, the room waits for them and then everyone resumes together.
-- **Sync Observatory:** the Room's **Sync** tab renders live RTT rings, drift, buffer health, recent correction decisions, synchronization confidence, stall/recovery markers, and suggestions such as preparing a 720p copy for a struggling guest. Telemetry is bounded in memory, resets with the movie, and is never written to disk.
+- **Buffering:** if a viewer stalls for more than 1.5 s, the room pauses everyone at the same position and resumes together 0.7 s after all players report ready (or after 30 s). Someone who stalls 3 times in 4 minutes stops pausing the room for 15 minutes and catches up on their own; the host is told why.
+
+```mermaid
+sequenceDiagram
+  participant C as Whoever presses play
+  participant S as room.js (server clock)
+  participant P as Every player
+  C->>S: play at position P
+  S->>S: state = playing from P at server time T (T slightly ahead)
+  S-->>P: state
+  Note over P: each player knows its offset to the<br/>server clock from NTP-style pings (net.js)
+  P->>P: before T: park on the frame at P. At T: play
+  loop every 200 ms (player.js + sync.js)
+    P->>P: drift = currentTime - (P + time since T)
+    alt drift larger than about 0.9 s
+      P->>P: seek to the target plus the learned seek time
+    else small drift
+      P->>P: speed up or slow down by up to 6 to 10 %<br/>(Safari: tiny precise jumps instead)
+    end
+  end
+  P-->>S: status: buffering, drift, buffer ahead, RTT
+  opt a player stalls for more than 1.5 s
+    S-->>P: pause everyone at the same position
+    S-->>P: resume together once all are ready
+  end
+```
+
+- **Sync Observatory:** the Room's **Sync** tab renders live RTT rings, drift, buffer health, recent correction decisions, synchronization confidence, stall/recovery markers, and suggestions such as preparing a 720p copy for a struggling guest. These numbers change every second, so they travel in their own host-only `observatory` message; the people list is only re-sent (to the host and guests separately) when it actually changes. Telemetry is bounded in memory, resets with the movie, and is never written to disk.
 - **Shared moments:** the server timestamps reactions slightly ahead so every synced screen animates them on the same movie frame. Chat messages carry their movie position, and scene bookmarks are bounded to the current title. These moment records stay in room memory and are never written to configuration or disk.
 - **Adaptive visuals:** ambient theater colors come from a 12×7 local sample of host-owned video at most a few times per second; samples are neither transmitted nor stored. Effects stop in background tabs and are disabled for reduced-motion, data-saver, low-memory, low-battery, or manual battery-saver modes. Sidebar and QR handoff motion uses only compositor-friendly transforms and opacity.
 
@@ -242,7 +320,20 @@ For Netflix and similar services the video can't be shared, because DRM blacks o
 
 - `extension/service.js` runs on the streaming site, finds the main `<video>`, reports its position, and applies play/pause/seek commands. Your own clicks in the player are shared with the room.
 - `extension/netflix-main.js` runs in Netflix's page context and uses Netflix's own player API, because setting `currentTime` directly triggers an error there.
-- `extension/party.js` relays messages between the Watch Party page and the extension. `background.js` connects the two tabs.
+- `extension/party.js` relays messages between the Watch Party page and the extension. `background.js` connects the two tabs and decides where the sync scripts run. Only `party.js` (on Watch Party pages) still comes from the manifest; the service scripts are added on demand, and only to tabs a party controls:
+
+```mermaid
+flowchart TD
+  load["A page or frame finishes loading"] --> party{"Is the tab controlled by a party?<br/>(the watch-here window, or a<br/>service tab the party opened)"}
+  party -->|"no"| skip["Nothing runs. Pages you browse<br/>on your own are never touched"]
+  party -->|"yes"| own{"Is it the Watch Party page itself?"}
+  own -->|"yes"| skip
+  own -->|"no"| known{"A known streaming service?"}
+  known -->|"yes"| svc["Inject services.js + service.js<br/>(+ netflix-main.js on Netflix)"]
+  known -->|"no"| custom{"Did the host open a custom site in this tab?"}
+  custom -->|"yes"| cs["Inject sync + ad-cleanup scripts"]
+  custom -->|"no"| skip
+```
 - `sidebar.*` and `theater.*` show the party (chat, cameras, controls) in Chrome's side panel or in a combined "watch here" window.
 - `apple/SafariWebExtension/` overlays a Safari popup manifest on the same extension code. Safari uses a normal top-level player tab, avoiding embedded-player sandbox detection on iPhone and iPad.
 - On the web page, `public/js/media.js` wraps the remote player (and the YouTube IFrame player) in an adapter that behaves like a `<video>` element, so the same sync engine drives all of them.
@@ -257,7 +348,18 @@ Watch Party opens **one port (8765)**, and only while the app is running.
 
 - **Invisible without the link.** Requests without the secret key get a plain `404` for everything. The key is 24 random characters (about 140 bits).
 - **New link every run.** The invite key changes each time the app starts. **New link** in the Room tab rotates it instantly and disconnects everyone.
-- **Brute-force lockout** (`server/guard.js`). An IP with 10 wrong attempts in 10 minutes is blocked for an hour. There are also per-IP connection limits and idle-connection timeouts.
+- **Brute-force lockout** (`server/guard.js`). An IP with 10 wrong attempts in 10 minutes is blocked for an hour. There are also per-IP connection limits and idle-connection timeouts. Only real guesses count as attempts; requests that phones and browsers make on their own never lock a guest out:
+
+```mermaid
+flowchart TD
+  req["Request from outside this PC"] --> key{"Carries the room key?<br/>(invite URL or invite cookie)"}
+  key -->|"yes"| serve["Served. A missing movie file is a<br/>plain 404, never a strike"]
+  key -->|"no"| icon{"A public icon?<br/>(favicon, touch icon)"}
+  icon -->|"yes"| iconok["Served"]
+  icon -->|"no"| guest{"Same address as a guest<br/>already in the room?"}
+  guest -->|"yes"| quiet["Plain 404, no strike"]
+  guest -->|"no"| strike["Plain 404 + 1 strike<br/>(10 in 10 min = blocked for 1 h)"]
+```
 - **Host approval.** You can require approval for each guest. **People** shows each guest's IP so you can spot strangers. **Lock room** stops new joins.
 - **Host-only admin.** The host page, library and settings answer only on `localhost`, even with the admin key.
 - **Encrypted.** Guests always use HTTPS. Plain HTTP from the internet is only redirected to HTTPS.
@@ -323,11 +425,11 @@ How it behaves:
 - **Skip Intro / Skip Recap / Skip Credits / Next Episode** are pressed automatically in the host's window, and everyone follows. You can turn this off under the service tiles.
 - **Ads:** when one person gets an ad, the room waits for them.
 - **Android:** streaming services use the live manual-sync clock because Android browsers do not support this Safari/Chromium extension.
-- **iPhone/iPad:** Safari uses the signed Web Extension; before it is published, the same live manual-sync clock remains available.
+- **iPhone/iPad:** Safari uses the signed Web Extension. Until it is published, the party shows installation/publishing guidance instead of handing the streaming URL to a native app.
 - **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; DRM playback still opens in the streaming service's Safari tab.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
 - **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
-- The extension's sync script only runs on those sites, on Watch Party pages, and on a custom site the host opened inside the Watch Party window (a tiny check runs on other pages and stops right away). It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
+- The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
 
 ### Custom site (any website with a video)
 
@@ -420,8 +522,10 @@ watch-party/
 │   ├── tunnel.js           Cloudflare quick tunnel (optional)
 │   ├── youtube.js          key-less YouTube search
 │   ├── services.js         list of supported streaming services
-│   ├── tools.js            locate ffmpeg/ffprobe/cloudflared, detect hardware encoders
-│   └── assets.js           serve web files from disk or from inside the exe
+│   ├── tools.js            locate ffmpeg/ffprobe/cloudflared, detect hardware video and AAC encoders
+│   ├── settings.js         config.json migration and validation
+│   ├── pwa.js              install manifest for the home-screen app
+│   └── assets.js           serve web files (and the vendored hls.js) from disk or from inside the exe
 ├── public/                 web client (host page and guest page)
 │   ├── index.html
 │   ├── css/app.css
@@ -429,7 +533,8 @@ watch-party/
 │   ├── js/net.js           WebSocket with auto-reconnect and server clock sync
 │   ├── js/player.js        drift correction against the shared timeline
 │   ├── js/sync.js          pure adaptive sync tuning rules
-│   ├── js/capabilities.js  native playback detection and delivery selection
+│   ├── js/capabilities.js  playback detection and delivery-source selection
+│   ├── js/file-playback.js attaches direct MP4, native HLS or hls.js to the shared <video>, with fallback
 │   ├── js/media.js         YouTube and remote-tab (extension) player adapters
 │   ├── js/rtc.js           WebRTC webcam/mic mesh
 │   └── ext/                built extension zip for guests (generated)
@@ -442,7 +547,7 @@ watch-party/
 └── package.json
 ```
 
-Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocket) and [`qrcode`](https://github.com/soldair/node-qrcode) (QR code for invite links). Everything else (TLS certificates, UPnP, TURN, range serving) is written with Node's standard library.
+Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocket), [`qrcode`](https://github.com/soldair/node-qrcode) (QR code for invite links) and [`hls.js`](https://github.com/video-dev/hls.js) (HLS playback in browsers without a usable native player). Everything else (TLS certificates, UPnP, TURN, range serving) is written with Node's standard library.
 
 ---
 
@@ -455,6 +560,7 @@ Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocke
 | A friend is **blocked** after mistyping | Room tab → **Unblock all**. |
 | **Black screen with sound** | Dolby Vision file: **Prepare** it again. Otherwise the guest should use Chrome with graphics acceleration on, or use a compressed copy. |
 | Someone **keeps buffering** | Your upload or their download is too slow for the file. Use **Compress for streaming**. |
+| **Sound is seconds behind the picture**, or a movie only plays once **Prepare** has finished | The copy was made by an older version. **Prepare** it again. |
 | **No sound** for a guest | They click the orange **Tap to turn sound on** button (browser autoplay rules). |
 | **Port 8765 is in use** | Close the other program, or change `"port"` in `config.json`. |
 | Closed the host tab by accident | Double-click `WatchParty.exe` again within a few seconds and the page reopens. |
@@ -478,7 +584,7 @@ Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocke
 
 - Watch Party's own code is released under the [MIT License](LICENSE).
 - [FFmpeg](https://ffmpeg.org/) is a separate project under LGPL/GPL. Release builds ship its binaries in `bin/` with `FFMPEG-LICENSE.txt`. They aren't part of this repository.
-- Uses [`ws`](https://github.com/websockets/ws) and [`qrcode`](https://github.com/soldair/node-qrcode).
+- Uses [`ws`](https://github.com/websockets/ws), [`qrcode`](https://github.com/soldair/node-qrcode) and [`hls.js`](https://github.com/video-dev/hls.js) (Apache-2.0; its license ships as `/vendor/hls.LICENSE.txt`).
 - Netflix, YouTube, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+ and Apple TV+ are trademarks of their respective owners. This project isn't affiliated with or endorsed by any of them.
 
 Please only share content you have the right to share.
