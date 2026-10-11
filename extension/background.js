@@ -219,7 +219,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       const site = customSite(m.custom, theaterParty.get(tab), m.blockPopups);
       if (site) customHosts.set(tab, site); else customHosts.delete(tab);
     }
-    updateFrameRules().then(() => reply({ ok: true }));
+    updateFrameRules().then(() => { injectTabFrames(tab); reply({ ok: true }); });
     return true;
   }
   if (m.wp === 'theater-open' && sender.tab) {
@@ -254,17 +254,6 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       .then(() => reply({ ok: true }), e => reply({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
-  if (m.wp === 'custom-probe' && sender.tab) {
-    reply({ custom: customHosts.has(sender.tab.id) });
-    return;
-  }
-  if (m.wp === 'custom-ready' && sender.tab && customHosts.has(sender.tab.id)) {
-    const target = { tabId: sender.tab.id, frameIds: [sender.frameId || 0] };
-    chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
-      .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
-      .catch(() => { /* page moved while the scripts were being added */ });
-    return;
-  }
   if (m.wp === 'frame-allow' && sender.tab && theaterTabs.has(sender.tab.id)) {
     // the Watch Party window is about to show a custom site: let that site load inside it
     if (m.party) theaterParty.set(sender.tab.id, originOf(m.party));
@@ -273,21 +262,6 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (site && party) customHosts.set(sender.tab.id, site); else customHosts.delete(sender.tab.id);
     updateFrameRules().then(() => reply({ ok: !!site }));
     return true;
-  }
-  if (m.wp === 'custom-frame' && sender.tab && theaterTabs.has(sender.tab.id)) {
-    // A page inside the Watch Party window that isn't a known service: the custom site the host
-    // opened, or a frame inside it (that's often where the video player is). Never the party page.
-    const party = theaterParty.get(sender.tab.id);
-    if (!customHosts.has(sender.tab.id)) return; // the window isn't showing a custom site right now
-    if (!party || m.top === party || originOf(sender.url) === party) return;
-    let host = '';
-    try { host = new URL(sender.url).hostname; } catch { /* about:blank and the like */ }
-    if (host && wpServiceOf(host)) return; // a known service: its own script is already there
-    const target = { tabId: sender.tab.id, frameIds: [sender.frameId || 0] };
-    chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
-      .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
-      .catch(() => { /* the frame went away */ });
-    return;
   }
   if (m.wp === 'open-panel') {
     // sent right after a click, which is when Chrome allows opening the panel
@@ -340,6 +314,44 @@ chrome.tabs.onRemoved.addListener(tabId => {
     if (party.pendingTab === tabId) party.pendingTab = null;
   }
 });
+
+// ---- content-script injection ------------------------------------------------------------------
+// The sync scripts run ONLY in tabs and frames a party is actively using: the "watch here" window,
+// a service tab the party opened, or the host's custom site. Pages you browse on your own are never
+// touched, so the extension has no effect anywhere outside a live Watch Party.
+function partyControlsTab(tabId) {
+  if (theaterTabs.has(tabId)) return true;
+  for (const party of parties) if (party.watch && ((party.link && party.link.tabId === tabId) || party.pendingTab === tabId)) return true;
+  return false;
+}
+function injectFrame(tabId, frameId, url) {
+  let u; try { u = new URL(url); } catch { return; }              // about:blank, data:, extension pages
+  if (!/^https?:$/.test(u.protocol)) return;
+  if (/^\/(join|host)\/[A-Za-z0-9]+\/?$/.test(u.pathname)) return; // never the Watch Party page itself
+  const partyOrigin = theaterParty.get(tabId);
+  if (partyOrigin && u.origin === partyOrigin) return;
+  const target = { tabId, frameIds: [frameId] };
+  if (wpServiceOf(u.hostname)) {
+    chrome.scripting.executeScript({ target, files: ['services.js', 'service.js'] })
+      .then(() => wpServiceOf(u.hostname) === 'netflix' ? chrome.scripting.executeScript({ target, world: 'MAIN', files: ['netflix-main.js'] }) : null)
+      .catch(() => {});
+    return;
+  }
+  if (!customHosts.has(tabId)) return;                            // a custom site, only where the host opened one
+  chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
+    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
+    .catch(() => {});
+}
+// every frame already loaded in a tab (a tab claimed after it loaded, or a woken-up background part);
+// the content scripts guard against running twice, so re-injecting is safe
+function injectTabFrames(tabId) {
+  if (!chrome.webNavigation || !chrome.webNavigation.getAllFrames) return;
+  chrome.webNavigation.getAllFrames({ tabId }).then(frames => { for (const f of frames || []) injectFrame(tabId, f.frameId, f.url); }).catch(() => {});
+}
+// fresh navigations inside a party-controlled tab
+if (chrome.webNavigation && chrome.webNavigation.onDOMContentLoaded) {
+  chrome.webNavigation.onDOMContentLoaded.addListener(d => { if (partyControlsTab(d.tabId)) injectFrame(d.tabId, d.frameId, d.url); });
+}
 
 // Streaming sites normally refuse to be shown inside another page. Only in the "watch here" window
 // (and only for the streaming sites listed in the manifest, plus the custom site the host opened

@@ -469,7 +469,7 @@ test('custom-site extension installs scoped ad rules and preserves same-site pop
     runtime: { id: 'ext', onConnect: event(), onMessage: runtimeMessage, getURL: p => `chrome-extension://ext/${p}` },
     sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
     tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({}), update: async (id, x) => { activated.push([id, x]); }, remove: async id => { removed.push(id); }, sendMessage: async () => {}, create: async () => ({ id: 2 }) },
-    webNavigation: { onCreatedNavigationTarget: event() }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
+    webNavigation: { onCreatedNavigationTarget: event(), onDOMContentLoaded: event(), getAllFrames: async () => [] }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
     declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async x => { updates.push(x); } },
   } });
   vm.runInContext(read('extension/services.js'), context);
@@ -498,7 +498,7 @@ test('Safari opens streaming sites as normal top-level tabs', async () => {
   const context = vm.createContext({ URL, URLSearchParams, console, self: { WP_SAFARI: true }, importScripts() {}, setTimeout, clearTimeout, chrome: {
     runtime: { id: 'ext', onConnect: runtimeConnect, onMessage: runtimeMessage, getURL: p => `safari-web-extension://ext/${p}` },
     tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({}), update: async (id, opts) => { updated.push([id, opts]); }, remove: async () => {}, sendMessage: async () => {}, create: async opts => { created.push(opts); return { id: 22, windowId: 3 }; } },
-    webNavigation: { onCreatedNavigationTarget: event() }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
+    webNavigation: { onCreatedNavigationTarget: event(), onDOMContentLoaded: event(), getAllFrames: async () => [] }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
     declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async update => { rules.push(update); } },
   } });
   vm.runInContext(read('extension/services.js'), context);
