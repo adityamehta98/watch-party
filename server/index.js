@@ -366,8 +366,10 @@ const isSecure = req => !!req.socket.encrypted || viaTunnel(req) || viaFunnel(re
 const effectiveHost = req => String((viaFunnel(req) && req.headers['x-forwarded-host']) || req.headers.host || '');
 
 // Answer anything unexpected with a bare 404 so the app doesn't reveal itself, and count it.
+const PUBLIC_ASSETS = new Set(['/favicon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/favicon.ico']);
 function notFound(req, res, why) {
-  if (!isLocal(req)) guard.strike(clientIp(req), why);
+  // someone already in the room (same address) is a guest whose phone asked for something stale, not a guesser
+  if (!isLocal(req) && !room.hasAdmittedIp(clientIp(req))) guard.strike(clientIp(req), why);
   res.writeHead(404, { 'Content-Type': 'text/plain', 'Connection': 'close' });
   res.end('Not found');
 }
@@ -473,28 +475,34 @@ function media(req, res, p, u) {
   if (!role) return notFound(req, res, 'media key');
   const m = p.match(/^\/media\/(\w+)\/(video|sub\/(\w+)\.vtt|hls\/(index\.m3u8|init\.mp4|seg-\d{5}\.m4s))$/);
   if (!m) return notFound(req, res, 'media path');
+  // From here on the request carries the real room key: a miss (an old movie, a file that was
+  // cleaned up, a player prefetching after a switch) is a plain 404 and never counts as a guess.
+  const missing = () => { res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('Not found'); };
   const id = m[1];
-  if (role !== 'host' && (!room.movie || room.movie.id !== id)) return notFound(req, res, 'not current movie');
+  if (role !== 'host' && (!room.movie || room.movie.id !== id)) return missing();
   const clientId = u.searchParams.get('c');
   if (m[2] === 'video') {
     const pl = (room.movie && room.movie.id === id) ? room.movie : library.playable(id);
-    if (!pl) return notFound(req, res, 'no movie');
+    if (!pl?.file) return missing();
     return serveFile(req, res, pl.file, { onBytes: n => room.addBytes(clientId, n), maxChunk: config.maxChunkMB > 0 ? config.maxChunkMB * 1024 * 1024 : 0 });
   }
   if (m[4]) {
     const file = library.hlsFile(id, m[4]);
-    if (!file) return notFound(req, res, 'no hls media');
+    if (!file) return missing();
     if (m[4] !== 'index.m3u8') return serveFile(req, res, file, { onBytes: n => room.addBytes(clientId, n) });
     try {
       const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
       if (clientId) auth.set('c', clientId);
       const body = authorizeHlsPlaylist(fs.readFileSync(file, 'utf8'), auth.toString());
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+      // Growing EVENT playlists must be re-fetched often. 'no-cache' tells Safari to
+      // revalidate on every request; 'no-store' can confuse iOS's HLS stack. Final (complete)
+      // playlists are small and change rarely, so the same policy works for both.
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
-    } catch { return notFound(req, res, 'no hls playlist'); }
+    } catch { return missing(); }
   }
   const file = library.subFile(id, m[3]);
-  if (!file) return notFound(req, res, 'no subtitle');
+  if (!file) return missing();
   try {
     const text = library.readSub(file);
     res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -532,15 +540,24 @@ async function handler(req, res) {
     if ((m = p.match(/^\/join\/([A-Za-z0-9]+)\/?$/))) {
       if (!safeEq(m[1], room.roomKey)) return notFound(req, res, 'join key');
       // cookie lets the page load its own files; it's useless without the current room key
-      const cookies = [`wp_k=${room.roomKey}; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`];
+      const cookies = [`wp_k=${room.roomKey}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`];
       if (isTheaterPage(req) && secure) cookies.push(`wp_kt=${room.roomKey}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`);
       return serveStatic(req, res, 'index.html', { 'Set-Cookie': cookies });
     }
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/media/')) return media(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
+    // Icons are public and harmless. Browsers and iOS fetch them (and the install manifest) without
+    // cookies, so they must never count as a wrong guess: ten of those used to lock a guest out.
+    if (PUBLIC_ASSETS.has(p)) {
+      const rel = p.startsWith('/apple-touch-icon') ? 'icon-192.png' : p.slice(1);
+      if (!assets.get(rel)) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
+      return serveStatic(req, res, rel);
+    }
+    const invited = local || safeEq(cookieKey(req), room.roomKey);
+    if (!invited && p === '/manifest.webmanifest') { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
     // page files (css/js): only for this PC or someone who opened a valid invite link
-    if (!local && !safeEq(cookieKey(req), room.roomKey)) return notFound(req, res, 'asset without invite');
+    if (!invited) return notFound(req, res, 'asset without invite');
     if (p === '/manifest.webmanifest') {
       const startUrl = local ? `/host/${config.adminKey}` : `/join/${room.roomKey}`;
       res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' });
@@ -613,7 +630,7 @@ function onUpgrade(req, socket, head) {
   let originOk = true;
   if (req.headers.origin) { try { const oh = new URL(req.headers.origin).host; originOk = oh === req.headers.host || oh === effectiveHost(req); } catch { originOk = false; } }
   if (u.pathname !== '/ws' || !role || !originOk || (!local && !isSecure(req) && config.linkMode !== 'plain')) {
-    if (!local) guard.strike(clientIp(req), 'websocket');
+    if (!local && !room.hasAdmittedIp(clientIp(req))) guard.strike(clientIp(req), 'websocket');
     socket.destroy();
     return;
   }

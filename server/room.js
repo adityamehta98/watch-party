@@ -154,6 +154,7 @@ class Room {
   }
 
   admitted() { return [...this.clients.values()].filter(c => c.admitted); }
+  hasAdmittedIp(ip) { return !!ip && this.admitted().some(c => c.role !== 'host' && c.ip === ip); }
 
   // The way webcams connect changed (public link switched on or off, a relay key added): tell
   // everyone, and the host reconnects the cameras with the new settings.

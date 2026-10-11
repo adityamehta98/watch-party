@@ -548,6 +548,7 @@ test('secret, authentication, and cleanup invariants remain enforced', () => {
   assert.doesNotMatch(index, /searchParams\.get\(['"]admin['"]\)/);
   assert.match(index, /headers\['x-admin-key'\]/);
   assert.match(index, /FromBase64String/);
+  assert.match(index, /if \(!pl\?\.file\) return missing\(\)/);
   assert.doesNotMatch(index, /-Message \$\{JSON\.stringify/);
   assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.html')));
   assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.js')));
