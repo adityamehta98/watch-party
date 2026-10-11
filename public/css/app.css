@@ -285,12 +285,15 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 
 /* ---------- sidebar ---------- */
 .sidebar { grid-area: side; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.tabs { display: flex; gap: 2px; padding: 8px; border-bottom: 1px solid var(--border); }
-.tab { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; font-size: 13px; position: relative; padding: 0 6px; }
-.tab svg { width: 17px; height: 17px; }
-.tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--border); }
+.tab { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 650; font-size: 13px; position: relative; padding: 0; transition: flex .18s ease, color .15s, background .15s, box-shadow .15s; }
+.tab svg { width: 18px; height: 18px; }
+.tab span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab:not(.active) span { display: none; }
 .tab:hover { color: var(--text); background: var(--surface-2); }
-.tab.active { color: var(--text); background: var(--surface-3); }
+.tab.active { flex-grow: 1.5; padding: 0 10px; color: var(--text); background: linear-gradient(180deg, rgba(255,255,255,.045), transparent), var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-2); }
+.tab.active svg { color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .badge { position: absolute; top: 3px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-style: normal; font-size: 10.5px; font-weight: 800; display: grid; place-items: center; }
 .panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
 .panel.active { display: flex; view-transition-name: sidebar-panel; }
@@ -466,7 +469,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   .volume input { display: none; }
   .hide-sm { display: none; }
   .ctrl { width: 36px; height: 36px; }
-  .tab span { display: none; }
+  .tab:not(.active) span { display: none; }
 }
 @media (max-width: 520px) {
   .topbar { gap: 8px; padding: 0 8px; }

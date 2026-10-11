@@ -184,8 +184,11 @@ function wire() {
     renderNotice();
     scheduleUi();
     if (m.by && m.by !== S.me?.name && prev && ['play', 'pause', 'seek'].includes(m.action)) {
-      const verb = { play: 'pressed play', pause: 'paused', seek: `jumped to ${fmtTime(m.state.position)}` }[m.action];
-      toast(`${m.by} ${verb}`, { timeout: 2200 });
+      if (m.action === 'seek') {
+        const now = conn.clock.now();
+        const before = prev.playing ? prev.position + Math.max(0, now - prev.anchor) / 1000 : prev.position;
+        seekToast(m.by, m.state.position - before, m.state.position);
+      } else toast(`${m.by} ${m.action === 'play' ? 'pressed play' : 'paused'}`, { timeout: 2200 });
     }
   });
   conn.on('movie', m => loadMovie(m.movie));
@@ -1021,6 +1024,26 @@ function floatReaction(emoji, name) {
 }
 
 // ---------------------------------------------------------------- toasts
+// Several quick skips by the same person become one popup that counts up: "skipped forward 40 sec".
+let skipToast = null;
+function seekToast(by, delta, position) {
+  const t = performance.now();
+  // the skip buttons move 10 s; time that played between clicks shouldn't turn 40 into 39
+  const snapped = Math.round(delta / 5) * 5;
+  if (snapped && Math.abs(delta - snapped) < 1.5) delta = snapped;
+  const live = skipToast && skipToast.by === by && t - skipToast.at < 3000 && skipToast.el.isConnected;
+  if (live) skipToast.total += delta; else skipToast = { by, total: delta, el: null };
+  skipToast.at = t;
+  const secs = Math.round(skipToast.total), abs = Math.abs(secs);
+  const amount = abs < 60 ? `${abs} sec` : `${Math.floor(abs / 60)} min${abs % 60 ? ` ${abs % 60} sec` : ''}`;
+  const text = abs >= 1 && abs <= 600 ? `${by} skipped ${secs > 0 ? 'forward' : 'back'} ${amount}` : `${by} jumped to ${fmtTime(position)}`;
+  if (live) {
+    skipToast.el.querySelector('.t').textContent = text;
+    clearTimeout(skipToast.el.timer);
+    const el = skipToast.el;
+    el.timer = setTimeout(() => el.remove(), 2500);
+  } else skipToast.el = toast(text, { timeout: 2500 });
+}
 function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
   const box = $('#toasts');
   const el = document.createElement('div');
@@ -1032,7 +1055,8 @@ function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
   });
   box.appendChild(el);
   while (box.childElementCount > 4) box.firstElementChild.remove();
-  setTimeout(() => el.remove(), timeout);
+  el.timer = setTimeout(() => el.remove(), timeout);
+  return el;
 }
 
 // ---------------------------------------------------------------- chat
@@ -1126,7 +1150,11 @@ function renderBadges() {
 // ---------------------------------------------------------------- tabs / sidebar
 function setTab(t) {
   S.tab = t;
-  for (const b of $$('.tab')) b.classList.toggle('active', b.dataset.tab === t);
+  for (const b of $$('.tab')) {
+    const active = b.dataset.tab === t;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+  }
   for (const p of $$('.panel')) p.classList.toggle('active', p.dataset.panel === t);
   if (t === 'chat') { S.unread = 0; renderBadges(); const l = $('#chatList'); l.scrollTop = l.scrollHeight; }
   if (t === 'library') loadLibrary();

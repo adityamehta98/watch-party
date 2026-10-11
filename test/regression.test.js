@@ -34,6 +34,10 @@ test('browser DOM and icon references resolve', () => {
   const symbols = new Set([...page.matchAll(/<symbol\s+id="i-([^"]+)/g)].map(m => m[1]));
   const icons = [...app.matchAll(/\bicon\(['"]([^'"]+)/g)].map(m => m[1]);
   assert.deepEqual([...new Set(icons.filter(name => !symbols.has(name)))], []);
+  const css = read('public/css/app.css');
+  assert.match(css, /\.tab:not\(\.active\) span\s*\{\s*display:\s*none/);
+  assert.match(css, /\.tab\.active\s*\{[^}]*flex-grow:\s*1\.5/);
+  assert.doesNotMatch(css, /\.tab span\s*\{\s*display:\s*none/);
 
   for (const [htmlFile, jsFile] of [['extension/sidebar.html', 'extension/sidebar.js'], ['extension/theater.html', 'extension/theater.js']]) {
     const html = read(htmlFile), js = read(jsFile);
