@@ -157,7 +157,13 @@ test('device detection selects the correct extension installation path', async (
   assert.equal(installTarget(mac), 'mac-safari-source');
   const windows = detectPlatform({ userAgent: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/130.0 Safari/537.36' });
   assert.equal(installTarget(windows), 'chromium');
-  assert.doesNotMatch(read('public/js/app.js'), /Phones and tablets can't run extensions/);
+  const app = read('public/js/app.js');
+  assert.doesNotMatch(app, /Phones and tablets can't run extensions/);
+  const appleFlow = app.slice(app.indexOf("} else if (!remote.present && PLATFORM.appleMobile)"), app.indexOf("} else if (!remote.present && PLATFORM.safari)"));
+  assert.match(appleFlow, /Install Watch Party Sync/);
+  assert.match(appleFlow, /Settings → Apps → Safari → Extensions/);
+  assert.match(appleFlow, /data-copy="\$\{esc\(location\.href\)\}"/);
+  assert.doesNotMatch(appleFlow, /href="\$\{esc\(m\.url\)\}"|manual sync|follow-clock/);
 });
 
 test('adaptive sync tuning protects weak buffers without hiding large drift', async () => {

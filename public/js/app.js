@@ -420,20 +420,20 @@ function renderServicePanel() {
     button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">${isCustom() ? `Open ${esc(name)}` : `Open it in the ${esc(name)} app`}</a>`;
     help = `<p class="fine">Android browsers do not support this Safari/Chromium extension. Follow the live clock by hand; chat and reactions still work here.</p>`;
   } else if (!remote.present && PLATFORM.appleMobile) {
-    const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
-    const live = `<div class="follow-clock"><span id="followState"></span><b id="followTime"></b></div>${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}.`;
     if (target === 'apple-mobile-browser') {
-      status = `<b>Open this party link in Safari</b> to use Watch Party Sync on ${esc(DEVICE)}. ${live}`;
-      button = `<a class="btn" href="${esc(m.url)}" target="_blank" rel="noopener">Open ${esc(name)} for manual sync</a>`;
-      help = `<p class="fine">Apple only enables Safari Web Extensions inside Safari. Copy this party link, open Safari, install the extension there, then reload the party.</p>`;
+      status = `<b>Finish setup in Safari</b> to watch ${esc(name)} with Watch Party on this ${esc(DEVICE)}.`;
+      button = `${appleUrl ? `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install Watch Party Sync</a>` : ''}<button class="btn${appleUrl ? '' : ' primary'}" type="button" data-copy="${esc(location.href)}">Copy this party link</button>`;
+      help = appleUrl
+        ? `<ol class="svc-steps"><li>Install <b>Watch Party Sync</b> from TestFlight or the App Store.</li><li>Open <b>Settings → Apps → Safari → Extensions → Watch Party Sync</b>, turn it on, and allow the streaming sites you use.</li><li>Copy this party link, open it in Safari, then reload it. Tap <b>Watch ${esc(name)} with Watch Party</b>; controls, chat and reactions appear over the normal Safari player.</li></ol><p class="fine">Apple only enables Safari Web Extensions inside Safari.</p>`
+        : `<p class="fine">The extension source is ready, but the host has not published its signed TestFlight or App Store build yet. Apple does not allow an extension ZIP to be installed directly on iPad or iPhone.</p>`;
     } else if (target === 'apple-mobile') {
-      status = `${live}<br><b>Install Watch Party Sync for Safari</b> to synchronize automatically.`;
-      button = `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install the Safari extension</a><a class="btn" href="${esc(m.url)}" target="_blank" rel="noopener">Open ${esc(name)} manually</a>`;
-      help = `<ol class="svc-steps"><li>Install the signed app from TestFlight or the App Store.</li><li>Open <b>Settings → Apps → Safari → Extensions → Watch Party Sync</b>, turn it on, and allow the streaming sites you use.</li><li>Return here in Safari, reload, then tap <b>Open in Safari</b>. On iPad, Split View keeps chat visible; on iPhone, use the extension's toolbar popup.</li></ol>`;
+      status = `<b>Install Watch Party Sync for Safari</b> to watch ${esc(name)} together on this ${esc(DEVICE)}.`;
+      button = `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install Watch Party Sync</a>`;
+      help = `<ol class="svc-steps"><li>Install the signed app from TestFlight or the App Store.</li><li>Open <b>Settings → Apps → Safari → Extensions → Watch Party Sync</b>, turn it on, and allow the streaming sites you use.</li><li>Return to this party in Safari and reload it. Tap <b>Watch ${esc(name)} with Watch Party</b>; controls, chat and reactions appear over the normal Safari player.</li></ol>`;
     } else {
-      status = `${live}<br>The host has not published the signed Apple extension yet, so automatic Safari sync is not available on this ${esc(DEVICE)}.`;
-      button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">Open ${esc(name)} for manual sync</a>`;
-      help = `<p class="fine">Use the live clock to match play, pause, and position. The source is ready, but Apple requires a signed App Store or TestFlight app before an iPad or iPhone can install it.</p>`;
+      status = `<b>Watch Party Sync for Safari is not published yet.</b>`;
+      button = `<button class="btn primary" type="button" data-copy="${esc(location.href)}">Copy this party link</button>`;
+      help = `<p class="fine">The extension source is ready, but the host must publish its signed TestFlight or App Store build and add the install link in Room settings. Apple does not allow an extension ZIP to be installed directly on ${esc(DEVICE)}.</p>`;
     }
   } else if (!remote.present && PLATFORM.safari) {
     status = `To watch together on ${esc(name)}, install <b>Watch Party Sync for Safari</b>. Everyone uses their own ${esc(name)} account.`;
@@ -486,10 +486,10 @@ function renderServicePanel() {
         ? `${esc(pickerName)} is picking something on ${esc(name)}. Open ${esc(name)} now and sign in with <b>your own</b> ${esc(name)} account, so you're ready when they press play.`
         : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
     button = isTheater ? '' : safariRuntime
-      ? `<button class="btn primary" type="button" data-svc="theater">Open ${esc(name)} in Safari</button>`
+      ? `<button class="btn primary" type="button" data-svc="theater">Watch ${esc(name)} with Watch Party</button>`
       : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
     help = safariRuntime
-      ? `<p class="fine">The player opens as a normal Safari tab so the site sees a standard browser page. Use the Watch Party toolbar popup for controls, or return here for chat.</p>`
+      ? `<p class="fine">The video opens as a normal Safari page so ${esc(name)} and its protected player work normally. Watch Party controls, chat and reactions appear over the player; the party tab stays connected in the background.</p>`
       : `<p class="fine">Already have it open in another tab? Just press play there and it links up.</p>`;
     if (isCustom()) {
       // any website the host opened: it plays inside the Watch Party window, and only the host drives it
@@ -508,10 +508,10 @@ function renderServicePanel() {
     if (st.ad) status += `<br>An ad is playing in your tab. The room waits until it's over.`;
     if (st.blocked) status += `<br>Click play once inside the ${esc(name)} tab. The browser needs one click there.`;
     button = safariRuntime
-      ? `<button class="btn primary" type="button" data-svc="show">Show ${esc(name)}</button>`
+      ? `<button class="btn primary" type="button" data-svc="show">Watch ${esc(name)} with Watch Party</button>`
       : `<button class="btn primary" type="button" data-svc="panel">Show the party next to ${esc(name)}</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} again</button>`;
     help = safariRuntime
-      ? `<p class="fine">The video stays in its normal Safari tab. Tap the Watch Party extension in Safari's toolbar for compact controls; this party tab keeps chat, reactions, and room presence connected.</p>`
+      ? `<p class="fine">The protected video stays on its normal Safari page while Watch Party controls, chat and reactions sit over the player. The party tab remains connected in the background.</p>`
       : `<p class="fine">Watch in the ${esc(name)} tab. The party (chat, cameras, people and the play controls) sits in the panel on the right side of Chrome, next to the video. Closed it? Click the Watch Party icon in Chrome's toolbar, or the button above. Keep this tab open in the background: it's what keeps everyone connected.</p>`;
   }
   const html = `<div class="svc-card"><div class="svc-name">${esc(name)}</div><h2>${esc(m.title && m.title !== name ? m.title : `Watching on ${name}`)}</h2><p>${status}</p>${button ? `<div class="row" style="justify-content:center">${button}</div>` : ''}${help}</div>`;
