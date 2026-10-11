@@ -21,7 +21,7 @@ const crypto = require('crypto');
 const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
-const { cleanAppleExtensionUrl } = require('./settings');
+const { cleanAppleExtensionUrl, migrateConfig } = require('./settings');
 const pwa = require('./pwa');
 
 const ROOT = tools.ROOT;
@@ -91,13 +91,7 @@ function loadConfig() {
   try { c = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (e) {
     if (fs.existsSync(CONFIG_PATH)) console.warn('  config.json could not be read, using defaults:', e.message);
   }
-  // Upgrade settings from the first version (Cloudflare tunnel, local-only listening, outside STUN servers).
-  if (Object.keys(c).length && !c.version) {
-    if (c.bind === '127.0.0.1') delete c.bind;
-    delete c.iceServers;
-  }
-  delete c.iceServers;
-  return { ...DEFAULT_CONFIG, ...c, safariExtensionUrl: cleanAppleExtensionUrl(c.safariExtensionUrl), version: 2 };
+  return { ...DEFAULT_CONFIG, ...migrateConfig(c) };
 }
 const config = loadConfig();
 const cliOriginal = {};

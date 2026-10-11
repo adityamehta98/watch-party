@@ -448,6 +448,18 @@ test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t =>
   await turn.start(); t.after(() => turn.stop()); assert.ok(turn.sock.address().port > 0);
 });
 
+test('legacy Cloudflare settings are cleaned and launcher docs are accurate', () => {
+  const { migrateConfig } = require('../server/settings');
+  const migrated = migrateConfig({ bind: '127.0.0.1', tunnel: 'cloudflare', iceServers: ['stun:old.example'], safariExtensionUrl: 'javascript:alert(1)' });
+  assert.equal(migrated.bind, undefined);
+  assert.equal(migrated.tunnel, undefined);
+  assert.equal(migrated.iceServers, undefined);
+  assert.equal(migrated.safariExtensionUrl, '');
+  assert.equal(migrated.version, 2);
+  assert.equal(migrateConfig({ version: 2, tunnel: 'cloudflare' }).tunnel, 'cloudflare');
+  assert.doesNotMatch(read('bin/README.txt'), /installed by refresh\.bat/i);
+});
+
 function event() { const listeners = []; return { addListener(fn) { listeners.push(fn); }, fire(...a) { return listeners.map(fn => fn(...a)); } }; }
 
 test('custom-site extension installs scoped ad rules and preserves same-site popup buttons', async () => {
