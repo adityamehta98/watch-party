@@ -200,7 +200,8 @@ function wire() {
     }
   });
   conn.on('movie', m => loadMovie(m.movie));
-  conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; S.observatory = m.observatory || null; renderPeople(); renderObservatory(); renderNowPlaying(); renderCams(); renderNotice(); });
+  conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; renderPeople(); renderNowPlaying(); renderCams(); renderNotice(); renderLibraryCurrent(); });
+  conn.on('observatory', m => { S.observatory = m.observatory || null; renderObservatory(); renderPeopleDrift(); });
   conn.on('chat', m => addChat(m.message, true));
   conn.on('react', scheduleReaction);
   conn.on('bookmarks', m => { S.bookmarks = m.bookmarks || []; renderBookmarks(); });
@@ -1461,7 +1462,6 @@ function renderPeople() {
       else if (S.movie && !st.stale) sub.push('Loading…');
       if (S.movie && st.loaded && st.ahead != null) sub.push(`${Math.round(st.ahead)}s buffered`);
       if (S.movie && p.role !== 'host' && p.mbps > 0.3) sub.push(`${p.mbps} Mbps`);
-      if (S.movie && st.loaded && Math.abs(st.drift || 0) > 60 && !st.buffering) sub.push(`${st.drift > 0 ? '+' : ''}${st.drift} ms`);
       if (st.dev && !me) sub.push(esc(st.dev));
       // "stalled 3×": this person's movie ran out of data 3 times (only counted for your own movie files)
       if (S.movie && st.stalls > 0 && !me) sub.push(`<span class="${st.stalls >= 3 ? 'bad' : ''}" title="Times their video ran out of data and had to wait">stalled ${st.stalls}×</span>`);
@@ -1476,9 +1476,10 @@ function renderPeople() {
       else why = `They keep running dry even though the speed looks fine. Ask them to close other tabs and downloads, or prepare a "Compress for streaming" copy (Library → Options).`;
       if (st.noWait) why += ' The room no longer pauses for them; they catch up on their own.';
     }
+    const drift = isHost && p.role !== 'host' ? `${sub.length ? '<span data-drift-sep hidden>·</span>' : ''}<span data-drift="${esc(p.id)}" hidden></span>` : '';
     html += `<div class="person" data-id="${p.id}"><div class="person-top">${avatar(p.name)}
       <div style="min-width:0"><div class="nm"><span>${esc(p.name)}${me ? ' (you)' : ''}</span>${p.role === 'host' ? '<span class="host-tag">HOST</span>' : ''}</div>
-      ${sub.length ? `<div class="sub">${sub.join('<span>·</span>')}</div>` : ''}
+      ${sub.length || drift ? `<div class="sub">${sub.join('<span>·</span>')}${drift}</div>` : ''}
       ${why ? `<div class="sub why">${why}</div>` : ''}
       ${isHost && p.ip ? `<div class="sub" title="The internet address this person is connecting from">from ${esc(p.ip)}</div>` : ''}</div>
       <div class="icons">${p.media?.cam ? icon('cam', 'on') : ''}${p.media?.mic ? icon('mic', 'on') : ''}${me ? `<button class="btn sm ghost" data-rename>Rename</button>` : ''}</div></div>`;
@@ -1498,6 +1499,21 @@ function renderPeople() {
   }
   if (isHost && !guests.length) html += `<p class="fine" style="margin-top:12px">No one else is here yet. <button class="btn sm" data-invite>Invite people</button></p>`;
   el.innerHTML = html;
+  renderPeopleDrift();
+}
+
+function renderPeopleDrift() {
+  if (!isHost) return;
+  const metrics = new Map((S.observatory?.participants || []).map(p => [p.id, p.status || {}]));
+  for (const slot of $$('[data-drift]')) {
+    const st = metrics.get(slot.dataset.drift);
+    const drift = Math.round(Number(st?.drift) || 0);
+    const visible = !!S.movie && !!st?.loaded && !st?.buffering && Math.abs(drift) > 60;
+    slot.hidden = !visible;
+    slot.textContent = visible ? `${drift > 0 ? '+' : ''}${drift} ms` : '';
+    const separator = slot.previousElementSibling;
+    if (separator?.matches('[data-drift-sep]')) separator.hidden = !visible;
+  }
 }
 
 function renderObservatory() {
@@ -1511,7 +1527,7 @@ function renderObservatory() {
   }
   const tone = value => value >= 85 ? 'good' : value >= 65 ? 'warn' : 'bad';
   const score = Math.max(0, Math.min(100, Number(obs.confidence) || 0));
-  const people = S.people.filter(p => p.admitted);
+  const people = obs.participants || [];
   const participants = people.map(p => {
     const st = p.status || {};
     const rtt = Math.max(0, Number(st.rtt) || 0);

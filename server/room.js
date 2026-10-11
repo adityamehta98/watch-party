@@ -46,7 +46,8 @@ class Room {
       locked: false,
       defaults: { playback: true, chat: true, react: true, camera: true, ...(s.defaults || {}) },
     };
-    this.lastPeopleJson = '';
+    this.lastPeopleJson = { host: '', guest: '' };
+    this.lastObservatoryJson = '';
     this.recentLeft = new Map(); // quiet "left/joined" noise when someone just refreshes
     this.timer = setInterval(() => this.tick(), 500);
   }
@@ -248,11 +249,9 @@ class Room {
       list.push({
         id: c.id, name: c.name, role: c.role, admitted: c.admitted, perms: c.perms, media: c.media, ip: forHost && c.role !== 'host' ? c.ip : undefined,
         status: forHost ? {
-          buffering: !!st.buffering, blocked: !!st.blocked, ahead: st.ahead, drift: st.drift,
-          health: st.health, rtt: st.rtt, rate: st.rate,
+          buffering: !!st.buffering, blocked: !!st.blocked, ahead: st.ahead == null ? null : Math.round(st.ahead),
           loaded: !!st.loaded, error: st.error || 0, stale: Date.now() - (st.at || 0) > 6000,
-          stalls: st.stalls || 0, dev: st.dev || '', waits: c.waits ? c.waits.length : 0, noWait: !!(c.noWaitUntil && c.noWaitUntil > Date.now()),
-          corrections: (c.metrics && c.metrics.corrections || []).slice(-12),
+          stalls: st.stalls || 0, dev: st.dev || '', hls: !!c.capabilities?.nativeHls, waits: c.waits ? c.waits.length : 0, noWait: !!(c.noWaitUntil && c.noWaitUntil > Date.now()),
         } : { buffering: !!st.buffering, noWait: !!(c.noWaitUntil && c.noWaitUntil > Date.now()) },
         mbps: forHost ? Math.round(c.mbps * 10) / 10 : undefined,
       });
@@ -262,22 +261,38 @@ class Room {
 
   broadcastPeople(force) {
     const hostList = this.people(true);
-    const observatory = this.observatory();
-    const json = JSON.stringify([hostList, observatory]);
-    if (!force && json === this.lastPeopleJson) return;
-    this.lastPeopleJson = json;
     const guestMsg = JSON.stringify({ type: 'people', people: this.people(false) });
-    const hostMsg = JSON.stringify({ type: 'people', people: hostList, totalMbps: Math.round(hostList.filter(p => p.role !== 'host').reduce((s, p) => s + (p.mbps || 0), 0) * 10) / 10, observatory });
+    const hostMsg = JSON.stringify({ type: 'people', people: hostList, totalMbps: Math.round(hostList.filter(p => p.role !== 'host').reduce((s, p) => s + (p.mbps || 0), 0) * 10) / 10 });
+    const observatoryMsg = JSON.stringify({ type: 'observatory', observatory: this.observatory() });
+    const hostChanged = force || hostMsg !== this.lastPeopleJson.host;
+    const guestChanged = force || guestMsg !== this.lastPeopleJson.guest;
+    const observatoryChanged = force || observatoryMsg !== this.lastObservatoryJson;
+    this.lastPeopleJson = { host: hostMsg, guest: guestMsg };
+    this.lastObservatoryJson = observatoryMsg;
+    if (!hostChanged && !guestChanged && !observatoryChanged) return;
     for (const c of this.clients.values()) {
       if (!c.admitted || c.ws.readyState !== 1) continue;
-      try { c.ws.send(c.role === 'host' ? hostMsg : guestMsg); } catch {}
+      try {
+        if (c.role === 'host') {
+          if (hostChanged) c.ws.send(hostMsg);
+          if (observatoryChanged) c.ws.send(observatoryMsg);
+        } else if (guestChanged) c.ws.send(guestMsg);
+      } catch {}
     }
   }
 
   observatory() {
-    if (!this.movie) return { confidence: null, timeline: [], recommendations: [] };
+    if (!this.movie) return { confidence: null, participants: [], timeline: [], recommendations: [] };
     const now = Date.now();
     const watchers = this.admitted().filter(c => c.status && c.status.loaded);
+    const participants = this.admitted().sort((a, b) => (a.role === 'host' ? -1 : 0) - (b.role === 'host' ? -1 : 0) || a.name.localeCompare(b.name)).map(c => {
+      const st = c.status || {};
+      return { id: c.id, name: c.name, status: {
+        loaded: !!st.loaded, buffering: !!st.buffering, stale: now - (st.at || 0) > 6000,
+        drift: st.drift, health: st.health, rtt: st.rtt, rate: st.rate,
+        corrections: (c.metrics && c.metrics.corrections || []).slice(-12),
+      } };
+    });
     const scores = watchers.map(c => {
       const st = c.status;
       let score = 100;
@@ -306,7 +321,7 @@ class Room {
         recommendations.push({ clientId: c.id, level: st.buffering ? 'urgent' : 'suggestion', text });
       }
     }
-    return { confidence, timeline: this.syncEvents.slice(-60), recommendations };
+    return { confidence, participants, timeline: this.syncEvents.slice(-60), recommendations };
   }
 
   resetObservatory() {

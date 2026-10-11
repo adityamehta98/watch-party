@@ -630,7 +630,7 @@ test('Sync Observatory keeps bounded in-memory health, corrections, and recommen
   t.after(() => room.shutdown());
   room.movie = { id: 'movie', kind: 'file', title: 'Movie', duration: 3600, height: 1080, mbps: 12 };
   room.state = { movieId: 'movie', playing: false, position: 120, anchor: Date.now(), seq: 1, waiting: false, waitingFor: [] };
-  const guest = { id: 'alex01', name: 'Alex', role: 'guest', admitted: true, perms: {}, ws: { readyState: 0 }, status: { at: 0 }, bufferingSince: null, lastWaitCause: 0, metrics: { corrections: [], lastCorrection: '' }, mbps: 6, bytes: 0, lastBytes: 0 };
+  const guest = { id: 'alex01', name: 'Alex', role: 'guest', admitted: true, perms: {}, capabilities: { hls: true, nativeHls: true }, ws: { readyState: 0 }, status: { at: 0 }, bufferingSince: null, lastWaitCause: 0, metrics: { corrections: [], lastCorrection: '' }, mbps: 6, bytes: 0, lastBytes: 0 };
   room.clients.set(guest.id, guest);
   room.onMessage(guest, { type: 'status', status: { loaded: true, ready: false, buffering: true, health: 8, rtt: 240, drift: -420, stalls: 3, rate: 1, correction: { id: 1, type: 'seek', drift: -420, at: Date.now(), value: 120 } } });
   room.onMessage(guest, { type: 'status', status: { loaded: true, ready: true, buffering: false, health: 45, rtt: 180, drift: -35, stalls: 3, rate: 1.02, correction: { id: 2, type: 'rate', drift: -35, at: Date.now(), value: 1.02 } } });
@@ -638,9 +638,44 @@ test('Sync Observatory keeps bounded in-memory health, corrections, and recommen
   assert.ok(obs.confidence >= 0 && obs.confidence <= 100);
   assert.deepEqual(obs.timeline.map(e => e.type), ['stall', 'recover']);
   assert.match(obs.recommendations[0].text, /720p.*Alex.*buffering/);
-  const publicGuest = room.people(true).find(p => p.id === guest.id);
-  assert.equal(publicGuest.status.corrections.length, 2);
+  const observedGuest = obs.participants.find(p => p.id === guest.id);
+  assert.equal(observedGuest.status.corrections.length, 2);
+  assert.equal(observedGuest.status.drift, -35);
+  const hostView = room.people(true).find(p => p.id === guest.id).status;
+  assert.equal(hostView.drift, undefined);
+  assert.equal(hostView.hls, true);
+  assert.equal(room.people(false).find(p => p.id === guest.id).status.hls, undefined);
+  const app = read('public/js/app.js');
+  assert.match(app, /conn\.on\('observatory'.*renderPeopleDrift\(\)/);
+  assert.match(app, /data-drift="\$\{esc\(p\.id\)\}"/);
+  const notices = [];
+  room.broadcastHosts = message => notices.push(message);
+  room.onMessage(guest, { type: 'status', status: { error: 4, dev: 'iPad' } });
+  room.onMessage(guest, { type: 'status', status: { error: 4, dev: 'iPad' } });
+  assert.equal(notices.length, 1);
+  assert.match(notices[0].text, /Instant start/);
   assert.equal(config.syncEvents, undefined); assert.equal(config.metrics, undefined);
+});
+
+test('Sync Observatory updates do not rebroadcast the people list', t => {
+  const { Room } = require('../server/room');
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library: { list: () => ({ folders: [], scanning: false, items: [] }) }, save() {} });
+  t.after(() => room.shutdown());
+  const sent = { host: [], guest: [] };
+  const client = (id, role) => ({
+    id, name: role === 'host' ? 'Host' : 'Alex', role, admitted: true, perms: {}, media: { cam: false, mic: false },
+    ws: { readyState: 1, send: raw => sent[role].push(JSON.parse(raw)) }, status: { at: Date.now(), loaded: true, ready: true, buffering: false, ahead: 10, drift: 5, health: 90, rtt: 40, rate: 1, stalls: 0 },
+    metrics: { corrections: [], lastCorrection: '' }, mbps: 5, waits: [],
+  });
+  const host = client('host01', 'host'), guest = client('guest01', 'guest');
+  room.clients.set(host.id, host); room.clients.set(guest.id, guest);
+  room.movie = { id: 'movie', kind: 'file', duration: 100, height: 1080, mbps: 8 };
+  room.broadcastPeople(true);
+  sent.host.length = 0; sent.guest.length = 0;
+  guest.status = { ...guest.status, drift: 250, health: 55, rtt: 220, rate: 1.04 };
+  room.broadcastPeople(false);
+  assert.deepEqual(sent.guest, []);
+  assert.deepEqual(sent.host.map(message => message.type), ['observatory']);
 });
 
 test('room moments anchor chat, reactions, and bookmarks to movie time in memory', t => {
