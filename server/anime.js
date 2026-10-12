@@ -15,7 +15,6 @@ const dns = require('dns').promises;
 const net = require('net');
 const { Readable } = require('stream');
 
-const HOSTS = ['megaplay.buzz', 'megavid.buzz'];
 const PRIMARY = 'https://megaplay.buzz';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
@@ -101,33 +100,37 @@ function parseSource(j, host) {
   return { url, subtitles, intro, outro };
 }
 
-// Try each host/path with a browser-like Referer+Origin (the API is origin-gated). First hit wins.
+// The JSON source API and the /vid stream both live on megavid.buzz and are same-origin-gated:
+// the API checks Origin, the stream/segments check Referer, and both must be megavid's own origin
+// (megaplay.buzz only serves the iframe embed). First hit wins.
+const STREAM_HOST = 'https://megavid.buzz';
 async function resolveStream(anilistId, malId, ep, lang) {
   const want = lang === 'dub' ? 'dub' : 'sub';
   const n = Math.max(1, Math.trunc(Number(ep)) || 1);
   const ani = Math.trunc(Number(anilistId)) || 0;
   const mal = Math.trunc(Number(malId)) || 0;
-  const attempts = [];
-  for (const host of HOSTS) {
-    if (ani > 0) attempts.push({ host, api: `https://${host}/api/ani/${ani}/${n}/${want}`, embed: `https://${host}/stream/ani/${ani}/${n}/${want}` });
-    if (mal > 0) attempts.push({ host, api: `https://${host}/api/mal/${mal}/${n}/${want}`, embed: `https://${host}/stream/mal/${mal}/${n}/${want}` });
-  }
-  for (const a of attempts) {
+  const streamReferer = STREAM_HOST + '/'; // the stream + its segments are hotlink-gated to this
+  const apis = [];
+  if (ani > 0) apis.push(`${STREAM_HOST}/api/ani/${ani}/${n}/${want}`);
+  if (mal > 0) apis.push(`${STREAM_HOST}/api/mal/${mal}/${n}/${want}`);
+  for (const api of apis) {
     try {
-      const r = await fetch(a.api, {
+      const r = await fetch(api, {
         headers: {
           'User-Agent': UA,
           'Accept': 'application/json, text/plain, */*',
-          'Referer': a.embed,
-          'Origin': `https://${a.host}`,
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Referer': streamReferer,
+          'Origin': STREAM_HOST,
           'X-Requested-With': 'XMLHttpRequest',
         },
         signal: AbortSignal.timeout(12000),
       });
       if (!r.ok) continue;
       const j = await r.json().catch(() => null);
-      const parsed = parseSource(j, a.host);
-      if (parsed && parsed.url) return { ...parsed, referer: a.embed };
+      if (!j || j.success === false) continue;
+      const parsed = parseSource(j, 'megavid.buzz');
+      if (parsed && parsed.url) return { ...parsed, referer: streamReferer };
     } catch { /* try the next candidate */ }
   }
   return null;
