@@ -25,7 +25,11 @@ if errorlevel 1 (
 )
 
 echo [2/5] npm dependencies...
-if exist "node_modules\esbuild" if exist "node_modules\postject" if exist "node_modules\hls.js" (
+set "NEED_NPM="
+if not exist "node_modules\esbuild" set "NEED_NPM=1"
+if not exist "node_modules\postject" set "NEED_NPM=1"
+if not exist "node_modules\hls.js" set "NEED_NPM=1"
+if not defined NEED_NPM (
   echo   node_modules already has what the build needs; skipping npm install.
   goto :npm_done
 )
@@ -49,46 +53,45 @@ if not exist "%CACHE%" mkdir "%CACHE%"
 
 set "WIN_NODE_DIR=%CACHE%\node-v!NODE_VER!-win-x64"
 set "WIN_NODE=!WIN_NODE_DIR!\node.exe"
-if exist "!WIN_NODE!" (
-  echo   Cached Windows node.exe v!NODE_VER! found.
-) else (
-  echo   Downloading Windows node.exe v!NODE_VER! ...
-  if not exist "!WIN_NODE_DIR!" mkdir "!WIN_NODE_DIR!"
-  powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { Invoke-WebRequest -UseBasicParsing -Uri ('https://nodejs.org/dist/v' + $env:NODE_VER + '/win-x64/node.exe') -OutFile $env:WIN_NODE } catch { exit 1 }"
-  if errorlevel 1 (
-    echo   Could not download node.exe for v!NODE_VER!.
-    goto :fail
-  )
-)
+set "NODE_URL=https://nodejs.org/dist/v!NODE_VER!/win-x64/node.exe"
+if exist "!WIN_NODE!" goto :node_done
+echo   Downloading Windows node.exe v!NODE_VER! ...
+if not exist "!WIN_NODE_DIR!" mkdir "!WIN_NODE_DIR!"
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri $env:NODE_URL -OutFile $env:WIN_NODE" || goto :node_fail
+goto :node_done
+:node_fail
+echo   Could not download node.exe for v!NODE_VER! from !NODE_URL!.
+goto :fail
+:node_done
+echo   Cached Windows node.exe v!NODE_VER! ready.
 
 set "FFMPEG_DIR=%CACHE%\ffmpeg"
 set "FFMPEG_BIN=!FFMPEG_DIR!\bin"
-if exist "!FFMPEG_BIN!\ffmpeg.exe" (
-  echo   Cached ffmpeg found.
-) else (
-  echo   Downloading ffmpeg (shared Windows build) ...
-  if exist "!FFMPEG_DIR!" rmdir /s /q "!FFMPEG_DIR!"
-  set "FFMPEG_ZIP=%CACHE%\ffmpeg.zip"
-  set "FFMPEG_EXTRACT=%CACHE%\ffmpeg-extract"
-  if exist "!FFMPEG_EXTRACT!" rmdir /s /q "!FFMPEG_EXTRACT!"
-  powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip' -OutFile $env:FFMPEG_ZIP } catch { exit 1 }"
-  if errorlevel 1 (
-    echo   Could not download ffmpeg.
-    goto :fail
-  )
-  powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Force -LiteralPath $env:FFMPEG_ZIP -DestinationPath $env:FFMPEG_EXTRACT } catch { exit 1 }"
-  if errorlevel 1 (
-    echo   Could not unzip ffmpeg.
-    goto :fail
-  )
-  for /d %%d in ("!FFMPEG_EXTRACT!\ffmpeg-*") do move /y "%%d" "!FFMPEG_DIR!" >nul
-  if not exist "!FFMPEG_BIN!\ffmpeg.exe" (
-    echo   ffmpeg archive layout changed; could not find bin\ffmpeg.exe inside the download.
-    goto :fail
-  )
-  rmdir /s /q "!FFMPEG_EXTRACT!" >nul 2>nul
-  del /q "!FFMPEG_ZIP!" >nul 2>nul
-)
+set "FFMPEG_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+set "FFMPEG_ZIP=%CACHE%\ffmpeg.zip"
+set "FFMPEG_EXTRACT=%CACHE%\ffmpeg-extract"
+if exist "!FFMPEG_BIN!\ffmpeg.exe" goto :ffmpeg_done
+echo   Downloading ffmpeg shared Windows build ...
+if exist "!FFMPEG_DIR!" rmdir /s /q "!FFMPEG_DIR!"
+if exist "!FFMPEG_EXTRACT!" rmdir /s /q "!FFMPEG_EXTRACT!"
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri $env:FFMPEG_URL -OutFile $env:FFMPEG_ZIP" || goto :ffmpeg_dl_fail
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Expand-Archive -Force -LiteralPath $env:FFMPEG_ZIP -DestinationPath $env:FFMPEG_EXTRACT" || goto :ffmpeg_unzip_fail
+for /d %%d in ("!FFMPEG_EXTRACT!\ffmpeg-*") do move /y "%%d" "!FFMPEG_DIR!" >nul
+if not exist "!FFMPEG_BIN!\ffmpeg.exe" goto :ffmpeg_layout_fail
+rmdir /s /q "!FFMPEG_EXTRACT!" >nul 2>nul
+del /q "!FFMPEG_ZIP!" >nul 2>nul
+goto :ffmpeg_done
+:ffmpeg_dl_fail
+echo   Could not download ffmpeg from !FFMPEG_URL!.
+goto :fail
+:ffmpeg_unzip_fail
+echo   Could not unzip ffmpeg.
+goto :fail
+:ffmpeg_layout_fail
+echo   ffmpeg archive layout changed; bin\ffmpeg.exe was not inside the download.
+goto :fail
+:ffmpeg_done
+echo   Cached ffmpeg ready.
 
 echo [4/5] Building dist\WatchParty\WatchParty.exe ...
 set "DIST_EXE=dist\WatchParty\WatchParty.exe"
@@ -106,24 +109,26 @@ if not exist "!DIST_EXE!" (
 
 echo [5/5] Installing the fresh exe ...
 echo   New build: %CD%\!DIST_EXE!
-if exist "WatchParty.exe" (
-  echo   Replacing: %CD%\WatchParty.exe
-  taskkill /im WatchParty.exe /f >nul 2>nul
-  rem Give Windows a moment to release the file lock after taskkill.
-  timeout /t 2 /nobreak >nul
-  copy /y "!DIST_EXE!" "WatchParty.exe" >nul
-  if errorlevel 1 (
-    echo   Could not overwrite WatchParty.exe (still in use?). Close its browser tab,
-    echo   wait a few seconds and run build.bat again, or copy !DIST_EXE! over it by hand.
-    goto :fail
-  )
-  echo   Replaced. Starting WatchParty.exe ...
-  start "" "%CD%\WatchParty.exe"
-) else (
-  echo   No WatchParty.exe in this folder yet. Copy !DIST_EXE! next to refresh.bat
-  echo   and double-click it (or run refresh.bat).
+if not exist "WatchParty.exe" goto :no_root_exe
+echo   Replacing: %CD%\WatchParty.exe
+taskkill /im WatchParty.exe /f >nul 2>nul
+rem Give Windows a moment to release the file lock after taskkill.
+timeout /t 2 /nobreak >nul
+copy /y "!DIST_EXE!" "WatchParty.exe" >nul
+if errorlevel 1 (
+  echo   Could not overwrite WatchParty.exe. It may still be running:
+  echo   close its browser tab, wait a few seconds and run build.bat again,
+  echo   or copy !DIST_EXE! over it by hand.
+  goto :fail
 )
+echo   Replaced. Starting WatchParty.exe ...
+start "" "%CD%\WatchParty.exe"
+goto :success
+:no_root_exe
+echo   No WatchParty.exe in this folder yet. Copy !DIST_EXE! next to refresh.bat
+echo   and double-click it (or run refresh.bat).
 
+:success
 echo.
 echo === BUILD SUCCESSFUL ===
 echo   Fresh exe:  %CD%\!DIST_EXE!
