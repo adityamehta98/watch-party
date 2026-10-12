@@ -53,13 +53,20 @@ const seaConfig = {
 fs.writeFileSync(path.join(TMP, 'sea-config.json'), JSON.stringify(seaConfig, null, 2));
 execFileSync(process.execPath, ['--experimental-sea-config', path.join(TMP, 'sea-config.json')], { stdio: 'inherit' });
 
-// 3) inject into a copy of the Windows node.exe
+// 3) inject into a copy of the Windows node.exe. Strip its Authenticode signature first (clear the
+// Certificate Table and drop the appended cert blob) or postject refuses to add the SEA resource.
+function stripPeSignature(src, dst) {
+  const b = fs.readFileSync(src);
+  const pe = b.readUInt32LE(0x3c);
+  if (b.toString('latin1', pe, pe + 4) !== 'PE\0\0') throw new Error('not a PE file');
+  const dirs = pe + 24 + (b.readUInt16LE(pe + 24) === 0x20b ? 112 : 96);
+  const sec = dirs + 4 * 8; // IMAGE_DIRECTORY_ENTRY_SECURITY
+  const off = b.readUInt32LE(sec), size = b.readUInt32LE(sec + 4);
+  b.writeUInt32LE(0, sec); b.writeUInt32LE(0, sec + 4);
+  fs.writeFileSync(dst, off && size && off + size <= b.length ? b.subarray(0, off) : b);
+}
 const exe = path.join(OUT, 'WatchParty.exe');
-fs.copyFileSync(winNode, path.join(TMP, 'node.exe'));
-try {
-  // the original Node signature would be invalid after injection; remove it
-  execFileSync('osslsigncode', ['remove-signature', '-in', path.join(TMP, 'node.exe'), '-out', exe], { stdio: 'ignore' });
-} catch { fs.copyFileSync(path.join(TMP, 'node.exe'), exe); }
+stripPeSignature(winNode, exe);
 execFileSync(process.execPath, [path.join(TOOLS, 'postject', 'dist', 'cli.js'), exe, 'NODE_SEA_BLOB', path.join(TMP, 'sea.blob'),
   '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'], { stdio: 'inherit' });
 
