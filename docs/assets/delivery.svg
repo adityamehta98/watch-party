@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" role="img" aria-label="How each viewer chooses the best delivery path">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1218"/><stop offset="1" stop-color="#131a24"/></linearGradient>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; fill: #e8ecf3; }
+      .title { font-size: 18px; font-weight: 700; }
+      .label { font-size: 13px; font-weight: 600; }
+      .sub { font-size: 11px; fill: #9aa8bd; }
+      .pill { fill: #1a2230; stroke: #2a3240; stroke-width: 1.5; }
+      .pillOn { fill: #1b2a3a; stroke: #4ab8ff; stroke-width: 1.5; }
+      .pillGood { fill: #1a2b22; stroke: #4ade80; stroke-width: 1.5; }
+      .pillWarn { fill: #2a2017; stroke: #ef7a3e; stroke-width: 1.5; }
+      .arrow { stroke: #2a3240; stroke-width: 1.3; fill: none; marker-end: url(#arrow); }
+      .arrowGood { stroke: #4ade80; stroke-width: 1.5; fill: none; marker-end: url(#arrowG); stroke-dasharray: 0; }
+      .arrowFb { stroke: #ef7a3e; stroke-width: 1.3; fill: none; marker-end: url(#arrowW); stroke-dasharray: 4 3; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a3240"/></marker>
+    <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4ade80"/></marker>
+    <marker id="arrowW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ef7a3e"/></marker>
+  </defs>
+  <rect width="1000" height="440" fill="url(#bg3)"/>
+  <text x="40" y="40" class="title">Delivery path picker</text>
+  <text x="40" y="60" class="sub">public/js/capabilities.js — tested per viewer, re-evaluated when the server adds or drops a format.</text>
+
+  <g transform="translate(60,100)">
+    <rect class="pill" x="0" y="0" width="190" height="56" rx="10"/>
+    <text x="95" y="24" text-anchor="middle" class="label">Movie shown in room</text>
+    <text x="95" y="42" text-anchor="middle" class="sub">kind: file / anime / growing</text>
+  </g>
+  <path class="arrow" d="M 250 128 L 340 128"/>
+
+  <g transform="translate(340,80)">
+    <rect class="pill" x="0" y="0" width="220" height="100" rx="12"/>
+    <text x="110" y="26" text-anchor="middle" class="label">Does a finished MP4 exist?</text>
+    <text x="110" y="46" text-anchor="middle" class="sub">(progressive or anime proxy)</text>
+    <text x="30" y="80" class="sub">YES</text>
+    <text x="190" y="80" text-anchor="end" class="sub">NO / still growing</text>
+  </g>
+
+  <path class="arrowGood" d="M 350 180 Q 320 220 290 260"/>
+  <g transform="translate(190,255)">
+    <rect class="pillGood" x="0" y="0" width="240" height="60" rx="10"/>
+    <text x="120" y="24" text-anchor="middle" class="label">Direct MP4 byte-ranges</text>
+    <text x="120" y="44" text-anchor="middle" class="sub">native player, instant seek, 4K preserved</text>
+  </g>
+
+  <path class="arrow" d="M 550 180 Q 570 220 600 260"/>
+  <g transform="translate(560,255)">
+    <rect class="pill" x="0" y="0" width="240" height="60" rx="10"/>
+    <text x="120" y="24" text-anchor="middle" class="label">Which browser?</text>
+    <text x="120" y="44" text-anchor="middle" class="sub">Safari? Managed MSE? Plain MSE?</text>
+  </g>
+
+  <g transform="translate(540,350)">
+    <rect class="pillOn" x="0" y="0" width="200" height="60" rx="10"/>
+    <text x="100" y="24" text-anchor="middle" class="label">Safari (desktop / iOS)</text>
+    <text x="100" y="44" text-anchor="middle" class="sub">native HLS first, hls.js fallback</text>
+  </g>
+  <path class="arrow" d="M 640 315 L 640 350"/>
+
+  <g transform="translate(760,350)">
+    <rect class="pillOn" x="0" y="0" width="220" height="60" rx="10"/>
+    <text x="110" y="24" text-anchor="middle" class="label">Chrome / Edge / Firefox</text>
+    <text x="110" y="44" text-anchor="middle" class="sub">hls.js over MSE, 90s forward buffer</text>
+  </g>
+  <path class="arrow" d="M 700 315 Q 760 340 820 350"/>
+
+  <g transform="translate(60,350)">
+    <rect class="pillWarn" x="0" y="0" width="190" height="60" rx="10"/>
+    <text x="95" y="24" text-anchor="middle" class="label">Any source failed?</text>
+    <text x="95" y="44" text-anchor="middle" class="sub">next in list, no reload</text>
+  </g>
+  <path class="arrowFb" d="M 310 315 Q 220 335 160 350"/>
+  <path class="arrowFb" d="M 310 285 Q 190 290 155 350"/>
+</svg>

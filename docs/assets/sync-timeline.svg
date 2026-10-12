@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" role="img" aria-label="How Watch Party keeps everyone within 50 milliseconds">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1218"/>
+      <stop offset="1" stop-color="#131a24"/>
+    </linearGradient>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; fill: #e8ecf3; }
+      .title { font-size: 18px; font-weight: 700; }
+      .label { font-size: 13px; font-weight: 600; }
+      .sub { font-size: 11px; fill: #9aa8bd; }
+      .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; fill: #f5b544; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="1000" height="420" fill="url(#bg2)"/>
+  <text x="40" y="40" class="title">The shared timeline</text>
+  <text x="40" y="60" class="sub">Server stores "at tick T, movie position is P playing at rate 1.0." Each viewer runs a 5 Hz control loop.</text>
+
+  <line x1="60" y1="110" x2="940" y2="110" stroke="#2a3240" stroke-width="1"/>
+  <g>
+    <line x1="140" y1="105" x2="140" y2="115" stroke="#2a3240"/><text x="140" y="130" text-anchor="middle" class="sub">T</text>
+    <line x1="260" y1="105" x2="260" y2="115" stroke="#2a3240"/><text x="260" y="130" text-anchor="middle" class="sub">T+200ms</text>
+    <line x1="380" y1="105" x2="380" y2="115" stroke="#2a3240"/><text x="380" y="130" text-anchor="middle" class="sub">T+400ms</text>
+    <line x1="500" y1="105" x2="500" y2="115" stroke="#2a3240"/><text x="500" y="130" text-anchor="middle" class="sub">T+600ms</text>
+    <line x1="620" y1="105" x2="620" y2="115" stroke="#2a3240"/><text x="620" y="130" text-anchor="middle" class="sub">T+800ms</text>
+    <line x1="740" y1="105" x2="740" y2="115" stroke="#2a3240"/><text x="740" y="130" text-anchor="middle" class="sub">T+1s</text>
+    <line x1="860" y1="105" x2="860" y2="115" stroke="#2a3240"/><text x="860" y="130" text-anchor="middle" class="sub">T+1.2s</text>
+  </g>
+
+  <g transform="translate(60,170)">
+    <text x="0" y="0" class="label">Host</text>
+    <text x="0" y="16" class="sub">source of truth</text>
+    <line x1="80" y1="-5" x2="880" y2="-5" stroke="#f5b544" stroke-width="3"/>
+    <circle cx="80" cy="-5" r="5" fill="#f5b544"/>
+    <text x="80" y="-20" text-anchor="middle" class="num">0 ms</text>
+  </g>
+
+  <g transform="translate(60,230)">
+    <text x="0" y="0" class="label">Viewer A</text>
+    <text x="0" y="16" class="sub">RTT 14 ms, Wi-Fi</text>
+    <line x1="80" y1="-5" x2="880" y2="-5" stroke="#4ab8ff" stroke-width="3"/>
+    <circle cx="86" cy="-5" r="5" fill="#4ab8ff"/>
+    <text x="86" y="-20" text-anchor="middle" class="num">+6 ms</text>
+    <path d="M 86 -16 Q 86 -40 100 -40" stroke="#4ab8ff" fill="none" stroke-width="1" stroke-dasharray="2 3"/>
+  </g>
+
+  <g transform="translate(60,290)">
+    <text x="0" y="0" class="label">Viewer B</text>
+    <text x="0" y="16" class="sub">RTT 42 ms, iPad on cellular</text>
+    <line x1="80" y1="-5" x2="880" y2="-5" stroke="#4ade80" stroke-width="3"/>
+    <circle cx="100" cy="-5" r="5" fill="#4ade80"/>
+    <text x="100" y="-20" text-anchor="middle" class="num">+20 ms</text>
+  </g>
+
+  <g transform="translate(60,350)">
+    <text x="0" y="0" class="label">Viewer C</text>
+    <text x="0" y="16" class="sub">RTT 110 ms, overseas</text>
+    <line x1="80" y1="-5" x2="880" y2="-5" stroke="#ef7a3e" stroke-width="3"/>
+    <circle cx="118" cy="-5" r="5" fill="#ef7a3e"/>
+    <text x="118" y="-20" text-anchor="middle" class="num">+42 ms</text>
+    <g transform="translate(260,10)">
+      <text x="0" y="0" class="sub" fill="#ef7a3e">drift grew to 180 ms → smooth 0.06x rate nudge</text>
+    </g>
+  </g>
+
+  <g transform="translate(40,392)">
+    <rect x="0" y="-10" width="12" height="12" rx="2" fill="#f5b544"/><text x="20" y="0" class="sub">host</text>
+    <rect x="90" y="-10" width="12" height="12" rx="2" fill="#4ab8ff"/><text x="110" y="0" class="sub">near</text>
+    <rect x="170" y="-10" width="12" height="12" rx="2" fill="#4ade80"/><text x="190" y="0" class="sub">mobile</text>
+    <rect x="270" y="-10" width="12" height="12" rx="2" fill="#ef7a3e"/><text x="290" y="0" class="sub">far</text>
+    <text x="800" y="0" text-anchor="end" class="sub">drift bar is ms behind the shared timeline (never scaled)</text>
+  </g>
+</svg>

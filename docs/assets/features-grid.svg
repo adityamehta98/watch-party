@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" role="img" aria-label="Watch Party feature grid">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1218"/><stop offset="1" stop-color="#131a24"/></linearGradient>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; fill: #e8ecf3; }
+      .h { font-size: 15px; font-weight: 700; }
+      .b { font-size: 12px; fill: #9aa8bd; }
+      .card { fill: #1a2230; stroke: #2a3240; stroke-width: 1.5; }
+      .ic { stroke: #f5b544; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <rect width="1000" height="440" fill="url(#bg4)"/>
+
+  <g transform="translate(30,30)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <circle class="ic" cx="18" cy="18" r="14"/>
+      <path class="ic" d="M18 10 v16 M10 18 h16"/>
+    </g>
+    <text x="80" y="42" class="h">No accounts, no cloud</text>
+    <text x="80" y="60" class="b">Host runs one file. Guests open a link.</text>
+    <text x="80" y="76" class="b">Movie, chat, cams go peer-to-peer.</text>
+  </g>
+
+  <g transform="translate(350,30)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <rect class="ic" x="4" y="6" width="28" height="20" rx="3"/>
+      <path class="ic" d="M12 30 h12 M18 26 v4"/>
+    </g>
+    <text x="80" y="42" class="h">Original quality</text>
+    <text x="80" y="60" class="b">4K stays 4K. HDR stays HDR.</text>
+    <text x="80" y="76" class="b">Nothing re-encoded live.</text>
+  </g>
+
+  <g transform="translate(670,30)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <circle class="ic" cx="18" cy="18" r="14"/>
+      <path class="ic" d="M18 10 v8 l5 3"/>
+    </g>
+    <text x="80" y="42" class="h">~50 ms sync</text>
+    <text x="80" y="60" class="b">Everyone on the same frame.</text>
+    <text x="80" y="76" class="b">Late joiners jump to the room spot.</text>
+  </g>
+
+  <g transform="translate(30,170)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <path class="ic" d="M6 20 l6 -8 l6 6 l6 -10 l6 12"/>
+    </g>
+    <text x="80" y="42" class="h">Sync Observatory</text>
+    <text x="80" y="60" class="b">Live RTT, drift, buffer, stalls</text>
+    <text x="80" y="76" class="b">per viewer with quality advice.</text>
+  </g>
+
+  <g transform="translate(350,170)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <path class="ic" d="M6 20 c6 -14 20 -14 26 0"/>
+      <circle class="ic" cx="12" cy="28" r="4"/><circle class="ic" cx="28" cy="28" r="4"/>
+    </g>
+    <text x="80" y="42" class="h">Reactions &amp; chat</text>
+    <text x="80" y="60" class="b">Emojis land on the same frame.</text>
+    <text x="80" y="76" class="b">Chat lines carry a clickable scene time.</text>
+  </g>
+
+  <g transform="translate(670,170)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <rect class="ic" x="4" y="4" width="28" height="20" rx="3"/>
+      <path class="ic" d="M4 28 h28"/>
+      <circle class="ic" cx="18" cy="14" r="3"/>
+    </g>
+    <text x="80" y="42" class="h">Webcams &amp; mic</text>
+    <text x="80" y="60" class="b">Built-in STUN/TURN relay.</text>
+    <text x="80" y="76" class="b">Guests never see each other's IPs.</text>
+  </g>
+
+  <g transform="translate(30,310)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <path class="ic" d="M4 10 l14 -6 l14 6 l-14 6 z"/>
+      <path class="ic" d="M4 20 l14 6 l14 -6 M4 28 l14 6 l14 -6"/>
+    </g>
+    <text x="80" y="42" class="h">Streaming services</text>
+    <text x="80" y="60" class="b">Netflix, Prime, Hulu, Disney+, Max,</text>
+    <text x="80" y="76" class="b">Peacock, Paramount+, YouTube.</text>
+  </g>
+
+  <g transform="translate(350,310)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <polygon class="ic" points="10,6 30,18 10,30"/>
+    </g>
+    <text x="80" y="42" class="h">Instant start</text>
+    <text x="80" y="60" class="b">Growing HLS the moment ffmpeg has</text>
+    <text x="80" y="76" class="b">two segments. Finish watching before</text>
+    <text x="80" y="92" class="b">the file is done preparing.</text>
+  </g>
+
+  <g transform="translate(670,310)">
+    <rect class="card" x="0" y="0" width="300" height="120" rx="12"/>
+    <g transform="translate(24,30)">
+      <path class="ic" d="M18 4 l14 20 h-28 z"/>
+      <circle class="ic" cx="18" cy="20" r="3"/>
+    </g>
+    <text x="80" y="42" class="h">Anime, no extension</text>
+    <text x="80" y="60" class="b">Native HLS stream, ad-free, synced,</text>
+    <text x="80" y="76" class="b">on iPhone and iPad too.</text>
+  </g>
+</svg>

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" role="img" aria-label="Sync Observatory panel showing per-viewer drift and buffer health">
+  <defs>
+    <linearGradient id="bgO" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1218"/><stop offset="1" stop-color="#131a24"/></linearGradient>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; fill: #e8ecf3; }
+      .title { font-size: 16px; font-weight: 700; }
+      .sub { font-size: 11px; fill: #9aa8bd; }
+      .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; font-weight: 700; }
+      .pill { fill: #1a2230; stroke: #2a3240; stroke-width: 1.5; }
+      .ring { fill: none; stroke-width: 4; }
+      .lab { font-size: 10px; fill: #9aa8bd; letter-spacing: .06em; text-transform: uppercase; }
+    </style>
+  </defs>
+  <rect width="1000" height="420" fill="url(#bgO)"/>
+
+  <g transform="translate(30,30)">
+    <circle cx="40" cy="40" r="30" class="ring" stroke="#4ade80"/>
+    <circle cx="40" cy="40" r="30" class="ring" stroke="#2a3240" stroke-dasharray="188" stroke-dashoffset="22"/>
+    <text x="40" y="38" text-anchor="middle" class="mono" fill="#4ade80">98</text>
+    <text x="40" y="54" text-anchor="middle" class="lab">confidence</text>
+    <text x="90" y="20" class="title">Sync Observatory</text>
+    <text x="90" y="40" class="sub">Live timing across 4 participants · 1-second refresh</text>
+    <text x="90" y="58" class="sub">Movie: <tspan class="mono" fill="#f5b544">Everything.Everywhere.All.at.Once.2160p.mkv</tspan></text>
+  </g>
+
+  <g transform="translate(30,140)">
+    <rect class="pill" x="0" y="0" width="455" height="110" rx="10"/>
+    <text x="18" y="24" class="title">Dudu  <tspan class="sub">host · Windows · 0 ms RTT</tspan></text>
+    <text x="18" y="46" class="lab">drift</text><text x="80" y="46" class="mono" fill="#4ade80">+0 ms</text>
+    <text x="150" y="46" class="lab">buffer</text><text x="210" y="46" class="mono" fill="#4ade80">99%</text>
+    <text x="280" y="46" class="lab">rate</text><text x="330" y="46" class="mono" fill="#e8ecf3">1.00×</text>
+    <rect x="18" y="60" width="420" height="8" rx="4" fill="#2a3240"/>
+    <rect x="18" y="60" width="416" height="8" rx="4" fill="#4ade80"/>
+    <text x="18" y="90" class="sub">source of truth</text>
+  </g>
+
+  <g transform="translate(515,140)">
+    <rect class="pill" x="0" y="0" width="455" height="110" rx="10"/>
+    <text x="18" y="24" class="title">Adi   <tspan class="sub">iPad · 49 ms RTT · hls.js</tspan></text>
+    <text x="18" y="46" class="lab">drift</text><text x="80" y="46" class="mono" fill="#4ab8ff">+21 ms</text>
+    <text x="150" y="46" class="lab">buffer</text><text x="210" y="46" class="mono" fill="#4ab8ff">92%</text>
+    <text x="280" y="46" class="lab">rate</text><text x="330" y="46" class="mono" fill="#e8ecf3">1.00×</text>
+    <rect x="18" y="60" width="420" height="8" rx="4" fill="#2a3240"/>
+    <rect x="18" y="60" width="386" height="8" rx="4" fill="#4ab8ff"/>
+    <text x="18" y="90" class="sub">no corrections needed</text>
+  </g>
+
+  <g transform="translate(30,270)">
+    <rect class="pill" x="0" y="0" width="455" height="110" rx="10"/>
+    <text x="18" y="24" class="title">Priya <tspan class="sub">Chromebook · 110 ms RTT · overseas</tspan></text>
+    <text x="18" y="46" class="lab">drift</text><text x="80" y="46" class="mono" fill="#ef7a3e">+180 ms</text>
+    <text x="150" y="46" class="lab">buffer</text><text x="210" y="46" class="mono" fill="#4ab8ff">88%</text>
+    <text x="280" y="46" class="lab">rate</text><text x="330" y="46" class="mono" fill="#f5b544">1.03×</text>
+    <rect x="18" y="60" width="420" height="8" rx="4" fill="#2a3240"/>
+    <rect x="18" y="60" width="366" height="8" rx="4" fill="#4ab8ff"/>
+    <text x="18" y="90" class="sub">smooth rate nudge to catch up · correction history: rate +32 → rate +18 → rate +6</text>
+  </g>
+
+  <g transform="translate(515,270)">
+    <rect class="pill" x="0" y="0" width="455" height="110" rx="10"/>
+    <text x="18" y="24" class="title">Omar <tspan class="sub">iPhone · 180 ms RTT · hotel Wi-Fi</tspan></text>
+    <text x="18" y="46" class="lab">drift</text><text x="80" y="46" class="mono" fill="#4ade80">+2 ms</text>
+    <text x="150" y="46" class="lab">buffer</text><text x="210" y="46" class="mono" fill="#ef7a3e">18%</text>
+    <text x="280" y="46" class="lab">rate</text><text x="330" y="46" class="mono" fill="#e8ecf3">1.00×</text>
+    <rect x="18" y="60" width="420" height="8" rx="4" fill="#2a3240"/>
+    <rect x="18" y="60" width="76"  height="8" rx="4" fill="#ef7a3e"/>
+    <text x="18" y="90" class="sub">tip: prepare a 720p copy so Omar doesn't keep stalling the room</text>
+  </g>
+</svg>

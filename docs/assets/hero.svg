@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-label="Watch Party: five devices syncing to the same movie frame">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1218"/>
+      <stop offset="1" stop-color="#1a2230"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5b544"/>
+      <stop offset="1" stop-color="#ef7a3e"/>
+    </linearGradient>
+    <linearGradient id="halo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5b544" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#f5b544" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="theatre" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0" stop-color="#f5b544" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#f5b544" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .pulse { animation: p 2.4s ease-in-out infinite; transform-origin: center; }
+      .pulse2 { animation: p 2.4s ease-in-out .3s infinite; transform-origin: center; }
+      .pulse3 { animation: p 2.4s ease-in-out .6s infinite; transform-origin: center; }
+      .pulse4 { animation: p 2.4s ease-in-out .9s infinite; transform-origin: center; }
+      .pulse5 { animation: p 2.4s ease-in-out 1.2s infinite; transform-origin: center; }
+      @keyframes p { 0%,100% { opacity: 0; r: 2; } 50% { opacity: 1; r: 6; } }
+      .pkt { animation: pkt 3.2s linear infinite; }
+      @keyframes pkt { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; fill: #e8ecf3; }
+      .label { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+      .sub { font-size: 11.5px; fill: #9aa8bd; }
+      .time { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14px; font-weight: 700; fill: #f5b544; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <circle cx="600" cy="210" r="320" fill="url(#theatre)"/>
+
+  <g transform="translate(500,120)">
+    <rect x="0" y="0" width="200" height="124" rx="12" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="8" y="8" width="184" height="108" rx="6" fill="url(#screen)"/>
+    <circle cx="100" cy="62" r="22" fill="#ffffff" opacity=".85"/>
+    <polygon points="94,52 94,72 112,62" fill="#0e1218"/>
+    <rect x="40" y="252" width="120" height="6" rx="3" fill="#2a3240"/>
+    <text x="100" y="264" text-anchor="middle" class="sub">THE SAME FRAME, EVERYWHERE</text>
+    <text x="100" y="282" text-anchor="middle" class="time">00:12:47.063</text>
+  </g>
+
+  <g>
+    <path d="M 600 210 Q 400 260 180 320" stroke="#f5b544" stroke-width="1.4" fill="none" stroke-opacity=".55" stroke-dasharray="2 6"/>
+    <path d="M 600 210 Q 420 140 180 90"  stroke="#f5b544" stroke-width="1.4" fill="none" stroke-opacity=".55" stroke-dasharray="2 6"/>
+    <path d="M 600 210 Q 800 140 1020 90"  stroke="#f5b544" stroke-width="1.4" fill="none" stroke-opacity=".55" stroke-dasharray="2 6"/>
+    <path d="M 600 210 Q 820 260 1020 320" stroke="#f5b544" stroke-width="1.4" fill="none" stroke-opacity=".55" stroke-dasharray="2 6"/>
+    <path d="M 600 210 Q 600 60 600 20"   stroke="#f5b544" stroke-width="1.4" fill="none" stroke-opacity=".55" stroke-dasharray="2 6"/>
+  </g>
+
+  <g transform="translate(70,70)">
+    <rect x="0" y="0" width="60" height="110" rx="10" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="4" y="12" width="52" height="82" rx="4" fill="#131a24"/>
+    <circle cx="30" cy="54" r="10" fill="#f5b544" opacity=".9"/>
+    <text x="30" y="135" text-anchor="middle" class="label">iPhone</text>
+    <text x="30" y="150" text-anchor="middle" class="sub">+8 ms</text>
+    <circle cx="30" cy="54" r="2" fill="#f5b544" class="pulse"/>
+  </g>
+
+  <g transform="translate(60,300)">
+    <rect x="0" y="0" width="88" height="68" rx="8" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="4" y="4" width="80" height="52" rx="3" fill="#131a24"/>
+    <circle cx="44" cy="30" r="10" fill="#f5b544" opacity=".9"/>
+    <text x="44" y="90" text-anchor="middle" class="label">iPad</text>
+    <text x="44" y="104" text-anchor="middle" class="sub">+21 ms</text>
+    <circle cx="44" cy="30" r="2" fill="#f5b544" class="pulse2"/>
+  </g>
+
+  <g transform="translate(550,10)">
+    <rect x="0" y="0" width="100" height="70" rx="6" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="4" y="4" width="92" height="54" rx="2" fill="#131a24"/>
+    <circle cx="50" cy="31" r="10" fill="#f5b544" opacity=".9"/>
+    <rect x="30" y="62" width="40" height="4" rx="2" fill="#2a3240"/>
+    <text x="50" y="86" text-anchor="middle" class="sub">HOST · Windows · 0 ms</text>
+    <circle cx="50" cy="31" r="2" fill="#f5b544" class="pulse3"/>
+  </g>
+
+  <g transform="translate(1000,60)">
+    <rect x="0" y="0" width="130" height="86" rx="6" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="4" y="4" width="122" height="70" rx="2" fill="#131a24"/>
+    <circle cx="65" cy="39" r="10" fill="#f5b544" opacity=".9"/>
+    <rect x="40" y="78" width="50" height="4" rx="2" fill="#2a3240"/>
+    <text x="65" y="102" text-anchor="middle" class="label">MacBook</text>
+    <text x="65" y="116" text-anchor="middle" class="sub">+14 ms</text>
+    <circle cx="65" cy="39" r="2" fill="#f5b544" class="pulse4"/>
+  </g>
+
+  <g transform="translate(1000,290)">
+    <rect x="0" y="0" width="160" height="90" rx="6" fill="#0a0c11" stroke="#2a3240" stroke-width="2"/>
+    <rect x="6" y="6" width="148" height="70" rx="2" fill="#131a24"/>
+    <circle cx="80" cy="41" r="10" fill="#f5b544" opacity=".9"/>
+    <rect x="55" y="80" width="50" height="4" rx="2" fill="#2a3240"/>
+    <text x="80" y="104" text-anchor="middle" class="label">Chromebook</text>
+    <text x="80" y="118" text-anchor="middle" class="sub">+32 ms</text>
+    <circle cx="80" cy="41" r="2" fill="#f5b544" class="pulse5"/>
+  </g>
+
+  <g transform="translate(60,390)">
+    <text class="sub">WATCH PARTY · everyone within ~50 ms · zero accounts · zero cloud</text>
+  </g>
+</svg>

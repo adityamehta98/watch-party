@@ -1,15 +1,40 @@
-# Watch Party
+<div align="center">
 
-**Watch movies from your own PC together with friends who live somewhere else. Everyone sees the same frame at the same moment, at the full quality of your file. No accounts, no cloud service, no subscription.**
+# 🎬 Watch Party
 
-![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
-![Node](https://img.shields.io/badge/node-%E2%89%A518.17-339933)
-![Extension](https://img.shields.io/badge/Chrome%20extension-MV3-4285F4)
-![Safari](https://img.shields.io/badge/Safari-Web%20Extension-006CFF)
-[![Sync benchmark](.github/badges/sync.svg)](benchmark/README.md)
-![License](https://img.shields.io/badge/license-MIT-green)
+**Watch movies from your PC together with friends across the world. One shared frame. Full source quality. No accounts. No cloud.**
 
-Watch Party is a small self-hosted server that runs on the host's Windows PC. Guests open an invite link in their browser and the movie streams straight from the host's disk to each guest. A shared clock keeps every player within about 50 ms of each other. It also has chat, emoji reactions and webcams, and it can sync Netflix, YouTube, Prime Video and other streaming services, with each person watching on their own account.
+<img src="docs/assets/hero.svg" width="100%" alt="Everyone watching the same frame on different devices"/>
+
+<p>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square"/>
+  <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A518.17-339933?style=flat-square&logo=node.js&logoColor=white"/>
+  <img alt="Chromium extension" src="https://img.shields.io/badge/Chromium-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white"/>
+  <img alt="Safari extension" src="https://img.shields.io/badge/Safari-Web%20Extension-006CFF?style=flat-square&logo=safari&logoColor=white"/>
+  <img alt="Apple companion" src="https://img.shields.io/badge/Apple-Swift%20Package-000000?style=flat-square&logo=swift&logoColor=white"/>
+  <a href="benchmark/README.md"><img alt="Sync benchmark" src=".github/badges/sync.svg"/></a>
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"/>
+</p>
+
+<p>
+  <a href="#quick-start-windows-release"><strong>Quick start →</strong></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#security-model">Security</a> ·
+  <a href="#hosting-a-watch-party">Hosting</a>
+</p>
+
+</div>
+
+Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open an invite link in any browser; the movie streams straight from the host's disk to each guest; a shared clock keeps every player within about 50 ms. Chat, emoji reactions, webcams, scene bookmarks and streaming-service sync (Netflix, YouTube, Prime Video and friends) are built in.
+
+### At a glance
+
+| | | |
+|:---:|:---:|:---:|
+| 🎞️ **Full source quality** <br/><sub>no re-encoding, no capture</sub> | ⏱️ **~50 ms sync** <br/><sub>everyone on the same frame</sub> | 🔐 **No cloud, no accounts** <br/><sub>peer-to-peer over your WAN</sub> |
+| 🎬 **Any movie file** <br/><sub>MKV, MP4, HDR, Dolby Vision</sub> | 📺 **Any streaming service** <br/><sub>Netflix, Prime, Hulu, Disney+, …</sub> | 🍥 **Anime, no extension** <br/><sub>native HLS on iPhone / iPad</sub> |
+| 💬 **Chat + reactions** <br/><sub>timed to the exact movie frame</sub> | 📷 **Webcams + mic** <br/><sub>IP-hiding TURN relay built in</sub> | ⚡ **Instant start** <br/><sub>watch while the file is still preparing</sub> |
 
 ---
 
@@ -33,6 +58,10 @@ Watch Party is a small self-hosted server that runs on the host's Windows PC. Gu
 ---
 
 ## Features
+
+<p align="center"><img src="docs/assets/features-grid.svg" width="100%" alt="Feature grid"/></p>
+
+### What makes it different
 
 - **Nothing to install for guests, no accounts for anyone.** Guests open a link in their browser. The host double-clicks one file.
 - **No outside services.** Guests connect straight to the host's PC over an encrypted link. The movie, chat, reactions and webcams all go between the host's PC and the guests.
@@ -204,17 +233,7 @@ Movies prepared with **Instant start** also have a fragmented-MP4 **HLS** copy: 
 
 Each viewer picks a source with `public/js/capabilities.js`, and `public/js/file-playback.js` attaches it to the one `<video>` the sync engine controls:
 
-```mermaid
-flowchart TD
-  start["Movie shown in the room"] --> done{"Finished MP4<br/>exists yet?"}
-  done -->|"yes"| mp4["Direct MP4<br/>(byte ranges)"]
-  done -->|"no, still preparing"| which
-  mp4 -.->|"video error, or not started after 20 s"| which
-  which{"Which browser?"} -->|"Safari on Mac, iPhone, iPad"| native["Native HLS"]
-  which -->|"Chrome, Edge, Firefox, Android"| hlsjs["hls.js on Media Source Extensions"]
-  which -->|"no MSE, but native HLS"| native
-  hlsjs -.->|"fatal error after 2 network retries<br/>and 1 media recovery"| nextsrc["Next source in the list"]
-```
+<p align="center"><img src="docs/assets/delivery.svg" width="100%" alt="Per-viewer delivery path selection"/></p>
 
 - **Why hls.js on Chrome?** Recent Chrome versions report native HLS support, but Chrome's built-in player gives up on a playlist that is still growing (`DEMUXER_ERROR_COULD_NOT_PARSE`). Only Safari's native player is trusted; everything else uses hls.js (vendored, served from `/vendor/hls.min.js`) with a VOD-style configuration and a large forward buffer for 4K files.
 - **Formats can change mid-movie.** When the finished MP4 appears, the server re-broadcasts the movie. Viewers who are already playing keep their working HLS source (`reconcileDeliverySources`); anyone who joins later gets the ranged MP4.
@@ -271,6 +290,11 @@ Prepared copies go in `cache/` and are deleted when the app stops, unless `keepP
 - **Adaptive drift correction** (`public/js/player.js`, `public/js/sync.js`): each player compares its `currentTime` with the shared timeline. An RTT-aware deadband and smoothed drift prevent oscillation; low-buffer players avoid aggressive speed-ups and repeated seeks. Large drift still triggers a decisive seek. Late joiners compute the current room position and jump there.
 - **Buffering:** if a viewer stalls for more than 1.5 s, the room pauses everyone at the same position and resumes together 0.7 s after all players report ready (or after 30 s). Someone who stalls 3 times in 4 minutes stops pausing the room for 15 minutes and catches up on their own; the host is told why.
 
+<p align="center"><img src="docs/assets/sync-timeline.svg" width="100%" alt="How viewers stay within ~50 ms of the shared timeline"/></p>
+
+<details>
+<summary><b>Sequence diagram: play → sync → stall → resume</b></summary>
+
 ```mermaid
 sequenceDiagram
   participant C as Whoever presses play
@@ -296,7 +320,11 @@ sequenceDiagram
   end
 ```
 
+</details>
+
 - **Sync Observatory:** the Room's **Sync** tab renders live RTT rings, drift, buffer health, recent correction decisions, synchronization confidence, stall/recovery markers, and suggestions such as preparing a 720p copy for a struggling guest. These numbers change every second, so they travel in their own host-only `observatory` message; the people list is only re-sent (to the host and guests separately) when it actually changes. Telemetry is bounded in memory, resets with the movie, and is never written to disk.
+
+<p align="center"><img src="docs/assets/observatory.svg" width="100%" alt="Sync Observatory: live drift, buffer, rate, and quality advice per viewer"/></p>
 - **Shared moments:** the server timestamps reactions slightly ahead so every synced screen animates them on the same movie frame. Chat messages carry their movie position, and scene bookmarks are bounded to the current title. These moment records stay in room memory and are never written to configuration or disk.
 - **Adaptive visuals:** ambient theater colors come from a 12×7 local sample of host-owned video at most a few times per second; samples are neither transmitted nor stored. Effects stop in background tabs and are disabled for reduced-motion, data-saver, low-memory, low-battery, or manual battery-saver modes. Sidebar and QR handoff motion uses only compositor-friendly transforms and opacity.
 
