@@ -148,6 +148,234 @@ export class YouTubeMedia extends AdapterBase {
   pause() { if (this.ready) this.p.pauseVideo(); }
 }
 
+// ------------------------------------------------------------------ anime (MegaPlay embed, in the page)
+// Plays inside MegaPlay's documented iframe, so no extension is needed on iPhone/iPad. MegaPlay
+// reports progress with {event:'time'} and {type:'watching-log'} postMessage events. Older player
+// builds also understand the command/event names retained below for synchronized controls.
+const MEGAPLAY_ORIGIN = 'https://megaplay.buzz';
+const isMegaplayUrl = value => {
+  try {
+    const u = new URL(value);
+    return u.origin === MEGAPLAY_ORIGIN && /^\/stream\/(?:s-2\/[^/]+\/(?:sub|dub)|(?:ani|mal)\/[^/]+\/[^/]+\/(?:sub|dub))\/?$/.test(u.pathname);
+  } catch { return false; }
+};
+export class MegaplayMedia extends AdapterBase {
+  constructor(host, { onUser, onFullscreen } = {}) {
+    super();
+    this.host = host;
+    this.onUser = onUser || (() => {});
+    this.onFullscreen = onFullscreen || (() => {});
+    this.frame = null;
+    this.ready = false;
+    this.t = 0; this.dur = 0; this.tAt = 0;
+    this.prevT = 0; this.prevAt = 0;
+    this._playing = false;
+    this.pausedOverride = null; this.overrideAt = 0;
+    this.seekingTarget = null; this.seekStarted = 0;
+    this._muted = false; this._volume = 1;
+    this.buffering = false; this.pauseReported = false;
+    // HLS behind the embed seeks slowly and the rate can't be set, so correct drift with occasional jumps.
+    this.syncProfile = { hardSeek: 1.0, rate: false, pausedEps: 0.5 };
+    this.onMsg = e => this.onMessage(e);
+    window.addEventListener('message', this.onMsg);
+    // MegaPlay only reports position (no play/pause/buffer events), so a gap in those reports is a
+    // stall: a short one is buffering (the room waits), a long one is a real pause.
+    this.stallCheck = setInterval(() => this.checkStall(), 400);
+  }
+
+  checkStall() {
+    if (!this.ready || this.seekingTarget != null || this.pausedOverride != null || !this._playing) return;
+    const stalled = performance.now() - this.tAt;
+    if (stalled > 1300 && !this.buffering) { this.buffering = true; this.emit('waiting'); }
+    if (stalled > 3500 && !this.pauseReported) {
+      this.pauseReported = true; this._playing = false; this.buffering = false;
+      this.emit('pause'); this.userAction('pause', this.t);
+    }
+  }
+
+  send(cmd) { try { this.frame && this.frame.contentWindow && this.frame.contentWindow.postMessage(cmd, MEGAPLAY_ORIGIN); } catch { /* not ready */ } }
+
+  open(movie) {
+    this.close();
+    this.error = null;
+    this.sources = [...new Set([...(Array.isArray(movie.sources) ? movie.sources : []), movie.url].filter(isMegaplayUrl))];
+    this.sourceIndex = 0;
+    if (!this.sources.length) {
+      this.error = { code: 4, message: 'That episode has no valid MegaPlay embed.' };
+      this.emit('error');
+      return;
+    }
+    this.loadSource();
+  }
+
+  loadSource() {
+    clearTimeout(this.readyTimer);
+    this.ready = false; this._playing = false; this.prevAt = 0; this.buffering = false; this.pauseReported = false;
+    const url = this.sources[this.sourceIndex];
+    this.src = `mp:${url}`;
+    const f = document.createElement('iframe');
+    // Allow fullscreen so the embed's own bridge can request it (iOS/Safari fall back to native
+    // fullscreen); on desktop the bridge posts to us instead and we fullscreen the whole stage.
+    f.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media';
+    f.allowFullscreen = true;
+    f.frameBorder = '0';
+    f.scrolling = 'no';
+    // Keep private room paths hidden, but identify this as an embedded request instead of forbidden
+    // direct access. Only the local server's origin is disclosed to MegaPlay.
+    f.referrerPolicy = 'origin';
+    f.style.cssText = 'width:100%;height:100%;border:0;display:block';
+    f.src = url;
+    this.host.innerHTML = '';
+    this.host.appendChild(f);
+    this.frame = f;
+    // A removed mapping renders an error page that cannot be inspected cross-origin. Do not cycle
+    // merely because the viewer has not pressed play yet; MegaPlay reports a real failure itself.
+    this.readyTimer = setTimeout(() => {
+      if (!this.ready) {
+        this.error = { code: 3, message: 'This episode did not start. Try another episode or language.' };
+        this.emit('error');
+      }
+    }, 25000);
+  }
+
+  fsState(fs) { this.send({ megaFullscreenState: !!fs }); }
+
+  failSource(message) {
+    if (this.sourceIndex + 1 < this.sources.length) {
+      this.sourceIndex++;
+      this.loadSource();
+      return;
+    }
+    clearTimeout(this.readyTimer);
+    this.error = { code: 3, message };
+    this.emit('error');
+  }
+
+  close() {
+    clearTimeout(this.readyTimer);
+    this.ready = false; this._playing = false; this.pausedOverride = null; this.seekingTarget = null;
+    this.buffering = false; this.pauseReported = false;
+    this.t = 0; this.dur = 0; this.tAt = 0; this.prevT = 0; this.prevAt = 0; this.src = '';
+    this.externalChangeAt = 0; this.holdUntil = 0; this.lastUserAction = ''; this.lastUserAt = 0;
+    this.sources = []; this.sourceIndex = 0;
+    this.frame = null;
+    if (this.host) this.host.innerHTML = '';
+  }
+
+  userAction(action, t) {
+    const now = performance.now();
+    if (action === this.lastUserAction && now - (this.lastUserAt || 0) < 500) return;
+    this.lastUserAction = action; this.lastUserAt = now;
+    // The sync loop runs every 200 ms. Hold it before notifying the room so a native click cannot be
+    // toggled back while that room update is making its round trip.
+    this.externalChangeAt = now;
+    this.holdUntil = now + 1600;
+    this.onUser({ action, t });
+  }
+
+  onMessage(e) {
+    if (!this.frame || e.source !== this.frame.contentWindow || e.origin !== MEGAPLAY_ORIGIN) return;
+    let m = e.data;
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch { return; } }
+    if (!m || typeof m !== 'object') return;
+    // MegaPlay's fullscreen button drives the parent (see parent-fullscreen-bridge): toggle the whole
+    // stage so Watch Party's camera/chat/reaction bars stay on top in fullscreen. We echo the state back.
+    if (m.megaCommand === 'toggleFullscreen') { this.onFullscreen('toggle'); return; }
+    if (m.megaCommand === 'getFullscreenState') { this.onFullscreen('get'); return; }
+    if (m.event === 'time') {
+      this.onTime(Number(m.time) || 0, Number(m.duration) || 0);
+    } else if (m.type === 'watching-log') {
+      this.onTime(Number(m.currentTime) || 0, Number(m.duration) || 0);
+    } else if (m.event === 'complete') {
+      if (this.dur > 0) this.t = this.dur;
+      this.tAt = performance.now(); this._playing = false;
+      this.emit('timeupdate'); this.emit('pause'); this.emit('ended');
+    } else if (m.event === 'error') {
+      this.failSource('MegaPlay could not load this episode. Try another episode or language.');
+    } else if (m.event === 'PLAYER_READY') {
+      if (!this.ready) { this.ready = true; clearTimeout(this.readyTimer); this.error = null; this.send({ cmd: 'SKP_DATA', auto: true }); this.emit('loadedmetadata'); this.emit('canplay'); }
+    } else if (m.event === 'CURRENT_TIME') {
+      this.onTime(Number(m.time) || 0, Number(m.duration) || 0);
+    } else if (m.event === 'SEEK_DONE') {
+      if (this.seekingTarget != null) { this.t = Number(m.value) || this.seekingTarget; this.tAt = performance.now(); this.seekingTarget = null; this.emit('seeked'); }
+    }
+  }
+
+  onTime(t, dur) {
+    const now = performance.now();
+    const hadMeta = this.dur > 0;
+    if (dur > 0) this.dur = dur;
+    if (!this.ready) { this.ready = true; clearTimeout(this.readyTimer); this.error = null; this.send({ cmd: 'SKP_DATA', auto: true }); this.emit('loadedmetadata'); this.emit('canplay'); }
+    // A progress report means the player is alive: if we had marked it buffering, it recovered.
+    const wasBuffering = this.buffering;
+    if (this.buffering) { this.buffering = false; this.emit('playing'); }
+    this.pauseReported = false;
+    // MegaPlay owns the visible transport controls and sends no play/pause events. Infer a start or a
+    // user seek from the progress, but never guess a pause from a stall (checkStall handles that) and
+    // never treat buffer catch-up as a seek — both would desync the room.
+    if (this.seekingTarget == null && this.prevAt) {
+      const elapsed = (now - this.prevAt) / 1000;
+      if (elapsed > 0.15) {
+        const moved = t - this.prevT;
+        const commanded = this.pausedOverride != null;
+        const expectedMove = this._playing ? elapsed : 0;
+        const advancing = moved > 0.25 * elapsed;
+        const steady = !wasBuffering && elapsed < 2.5; // not a buffer gap / catch-up
+        const jumped = !commanded && steady && Math.abs(moved - expectedMove) > Math.max(3, elapsed * 1.5);
+        if (jumped) this.userAction('seek', t);
+        else if (advancing && !this._playing) {
+          this._playing = true; this.emit('playing');
+          if (!commanded) this.userAction('play', t);
+        }
+      }
+    }
+    this.prevT = t; this.prevAt = now;
+    this.t = t; this.tAt = now;
+    // our requested play/pause has taken effect (or timed out): stop forcing it
+    if (this.pausedOverride != null && (this.pausedOverride === !this._playing || now - this.overrideAt > 2500)) this.pausedOverride = null;
+    if (this.seekingTarget != null && (Math.abs(t - this.seekingTarget) < 1.5 || now - this.seekStarted > 6000)) { this.seekingTarget = null; this.emit('seeked'); }
+    if (!hadMeta && this.dur > 0) this.emit('loadedmetadata');
+    this.emit('timeupdate');
+  }
+
+  get readyState() { if (!this.ready) return 0; return this.buffering ? 2 : 4; }
+  get paused() { return this.pausedOverride != null ? this.pausedOverride : !this._playing; }
+  get seeking() { return this.seekingTarget != null; }
+  get duration() { return this.dur || 0; }
+  get currentTime() {
+    if (this.seekingTarget != null) return this.seekingTarget;
+    const since = performance.now() - this.tAt;
+    // Hold the last reported position during a stall; extrapolating would make the room think we ran
+    // ahead and yank everyone back with a big seek.
+    const t = this.t + (this._playing && !this.buffering && since < 1300 ? since / 1000 : 0);
+    return this.dur ? Math.min(t, this.dur) : t;
+  }
+  set currentTime(t) {
+    this.seekingTarget = Math.max(0, t); this.seekStarted = performance.now();
+    this.emit('seeking');
+    this.send({ cmd: 'SEEK', value: this.seekingTarget });
+  }
+  get buffered() { return new TimeRangesLite(); }
+  get playbackRate() { return 1; }
+  set playbackRate(r) { /* ignored: the embed has no rate control */ }
+  get muted() { return this._muted; }
+  set muted(m) { m = !!m; if (m !== this._muted) { this._muted = m; this.send({ cmd: 'MUTE' }); this.emit('volumechange'); } }
+  get volume() { return this._volume; }
+  set volume(v) { this._volume = v; /* the embed exposes only mute, not a level */ }
+
+  play() {
+    this.pausedOverride = false; this.overrideAt = performance.now();
+    if (!this._playing) { this._playing = true; this.send({ cmd: 'PLAY_TOGGLE' }); }
+    this.buffering = false; this.pauseReported = false;
+    return Promise.resolve();
+  }
+  pause() {
+    this.pausedOverride = true; this.overrideAt = performance.now();
+    if (this._playing) { this._playing = false; this.send({ cmd: 'PLAY_TOGGLE' }); }
+    this.buffering = false;
+  }
+}
+
 // ------------------------------------------------------------------ streaming tab via the extension
 export class RemoteMedia extends AdapterBase {
   constructor({ onInfo } = {}) {
@@ -255,6 +483,7 @@ export class RemoteMedia extends AdapterBase {
   openTab() { if (this.movie) this.post({ type: 'open', service: this.movie.service, url: this.movie.url }); }
   showTab() { this.post({ type: 'show' }); }
   navigate(url) { this.post({ type: 'navigate', url }); }
+  advance(url) { this.cmd({ op: 'next', url }); }
   // the page the streaming tab is on (kept across title changes, which clear the rest of the status)
   get pageUrl() { return this.lastUrl || (this.st && this.st.url) || ''; } // the freshest: status and page reports both update lastUrl
   get signingIn() { return !!(this.page && this.page.signin && performance.now() - this.page.at < 8000); }
@@ -319,7 +548,7 @@ export const SERVICE_HOMES = {
   max: 'https://play.max.com/', disney: 'https://www.disneyplus.com/home', appletv: 'https://tv.apple.com/',
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.11.0';
+export const REQUIRED_EXT_VERSION = '1.14.1';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 export const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],
