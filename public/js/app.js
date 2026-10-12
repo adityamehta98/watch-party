@@ -988,8 +988,12 @@ $('#muteBtn').addEventListener('click', () => { if (player.autoMuted) { unblock(
 // seek bar
 (() => {
   const seek = $('#seek'), tip = $('#seekTip');
+  // Anime arrives with movie.duration == null; the real length only shows up on the <video> once
+  // its HLS manifest is parsed. Fall back to M.duration so the tooltip and the final seek target
+  // land on real seconds, not zero.
+  const dur = () => S.movie?.duration || M.duration || 0;
   const frac = e => { const r = seek.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
-  const showTip = f => { const dur = S.movie?.duration || 0; tip.textContent = fmtTime(f * dur); tip.style.left = (f * 100) + '%'; };
+  const showTip = f => { tip.textContent = fmtTime(f * dur()); tip.style.left = (f * 100) + '%'; };
   seek.addEventListener('pointermove', e => { const f = frac(e); showTip(f); if (dragFrac != null) { dragFrac = f; scheduleUi(); } });
   seek.addEventListener('pointerdown', e => {
     if (!canControl()) return noPerm('playback');
@@ -1001,7 +1005,7 @@ $('#muteBtn').addEventListener('click', () => { if (player.autoMuted) { unblock(
     if (dragFrac == null) return;
     const f = dragFrac; dragFrac = null;
     seek.classList.remove('dragging');
-    sendCmd('seek', f * (S.movie?.duration || 0));
+    sendCmd('seek', f * dur());
   };
   seek.addEventListener('pointerup', end);
   seek.addEventListener('pointercancel', () => { dragFrac = null; seek.classList.remove('dragging'); });
