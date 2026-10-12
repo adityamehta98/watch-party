@@ -138,11 +138,13 @@ The Windows build packs Node, the bundled server and every file in `public/` int
 
 ### Build
 
+On Windows, double-click `build.bat`. It installs the npm packages, caches a matching Windows `node.exe` and an ffmpeg "shared" build under `build\cache\` (reused on later builds), and then runs:
+
 ```bash
 node build/build-windows.js /path/to/windows/node.exe /path/to/ffmpeg/bin
 ```
 
-The output goes to `dist/WatchParty/`. What the script does:
+(you can also run that line directly if you already have both.) The output goes to `dist/WatchParty/`. What the script does:
 
 1. **Bundles** `server/index.js` and its dependencies into one CommonJS file with esbuild.
 2. **Checks** that the Chromium and Safari manifests match `REQUIRED_EXT_VERSION` in `public/js/media.js`, and fails if they differ.
@@ -544,6 +546,7 @@ watch-party/
 ├── build/build-windows.js  builds dist/WatchParty/WatchParty.exe (Node SEA)
 ├── bin/                    ffmpeg/ffprobe binaries (not committed; see bin/README.txt)
 ├── refresh.bat             Windows launcher: installs a waiting update (from _update\), then starts Watch Party
+├── build.bat               Windows build: rebuilds dist\WatchParty\WatchParty.exe from this source tree
 ├── config.example.json     sample configuration
 └── package.json
 ```

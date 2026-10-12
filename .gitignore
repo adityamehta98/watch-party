@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+build/cache/
 
 # Personal settings and secrets (admin key, local folders, TLS keys)
 config.json
