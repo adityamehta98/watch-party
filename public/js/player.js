@@ -218,7 +218,9 @@ export class SyncPlayer {
   correct() {
     this.lastCorrectAt = performance.now();
     const v = this.v, s = this.state;
-    if (!this.movie || !s || !v.src || v.readyState < 1) return;
+    // v.src is empty when hls.js uses ManagedMediaSource (iPhone/iPad), which attaches via a
+    // <source> child instead; v.currentSrc reflects either path, so the sync loop runs there too.
+    if (!this.movie || !s || !v.currentSrc || v.readyState < 1) return;
     if (this.movie.browsing) return; // the host is still picking something on the service: leave the tabs alone
     if (!this.clock.synced) return; // wait until we know the room's clock, or a late joiner lands in the wrong place
     if (v.isAdapter && v.externalChangeAt && performance.now() - v.externalChangeAt < 1200) return;
