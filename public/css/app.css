@@ -276,9 +276,10 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   100% { transform: translate(var(--dx, 0px), -300px) scale(1); opacity: 0; }
 }
 
-/* toasts */
-.toasts { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 8; width: min(440px, calc(100% - 32px)); pointer-events: none; }
-.toast { pointer-events: auto; background: rgba(18,20,25,.95); border: 1px solid var(--border-2); border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); animation: toastIn .2s ease-out; font-weight: 500; }
+/* toasts: each one shrinks to its own content and centers; the stack is capped so a long
+   message still wraps instead of spanning the whole stage. */
+.toasts { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 8; max-width: min(440px, calc(100% - 32px)); pointer-events: none; }
+.toast { pointer-events: auto; background: rgba(18,20,25,.95); border: 1px solid var(--border-2); border-radius: 12px; padding: 10px 12px; display: inline-flex; align-items: center; gap: 10px; max-width: 100%; box-shadow: 0 12px 30px rgba(0,0,0,.45); animation: toastIn .2s ease-out; font-weight: 500; }
 .toast.error { border-color: rgba(239,93,93,.5); }
 .toast.knock, .toast.request { border-color: rgba(245,181,68,.5); }
 .toast .t { flex: 1; }

@@ -193,13 +193,9 @@ function wire() {
     player.setState(m.state);
     renderNotice();
     scheduleUi();
-    if (m.by && m.by !== S.me?.name && prev && ['play', 'pause', 'seek'].includes(m.action)) {
-      if (m.action === 'seek') {
-        const now = conn.clock.now();
-        const before = prev.playing ? prev.position + Math.max(0, now - prev.anchor) / 1000 : prev.position;
-        seekToast(m.by, m.state.position - before, m.state.position);
-      } else toast(`${m.by} ${m.action === 'play' ? 'pressed play' : 'paused'}`, { timeout: 2200 });
-    }
+    // Routine player actions (play/pause/seek) are shown in the shared timeline, not as toasts:
+    // toasts are reserved for things that need the viewer's attention (movie change, join/leave,
+    // buffering, permission changes, errors).
   });
   conn.on('movie', m => loadMovie(m.movie));
   conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; renderPeople(); renderNowPlaying(); renderCams(); renderNotice(); renderLibraryCurrent(); });

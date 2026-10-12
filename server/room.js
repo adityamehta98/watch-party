@@ -357,7 +357,12 @@ class Room {
       this.bookmarks = [];
       this.broadcast({ type: 'bookmarks', bookmarks: [] });
     }
-    this.state = { ...this.state, waiting: false, waitingFor: [], ...patch, seq: this.state.seq + 1 };
+    // Any ordinary command exits the wait state; passing waiting:true explicitly ENTERS it (used to
+    // hold the room while everyone loads a new movie before the first play).
+    const enterWait = patch.waiting === true;
+    const defaults = enterWait ? {} : { waiting: false, waitingFor: [] };
+    this.state = { ...this.state, ...defaults, ...patch, seq: this.state.seq + 1 };
+    if (enterWait) this.waitStart = Date.now();
     this.broadcast({ type: 'state', state: this.state, by: meta.by || null, byId: meta.byId || null, ref: meta.ref || null, action: meta.action || null, serverTime: Date.now() });
   }
 
@@ -485,9 +490,10 @@ class Room {
       this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false, ...meta };
     }
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
-    // Start the room playing (with a load delay) so everyone advances together, and let auto-wait hold
-    // for whoever is still loading instead of one player racing ahead.
-    this.setState({ movieId: id, playing: true, position: 0, anchor: Date.now() + 1500 }, { by: client.name, action: 'play' });
+    // Enter the wait state so the room holds until every viewer has the manifest and the first
+    // segment ready. The checkWait resume path flips playing:true with a short anchor as soon as
+    // everyone reports ready (or after 30 s), so no player races ahead on the slow guest.
+    this.setState({ movieId: id, playing: false, position: 0, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
     this.system(`Now showing "${title}" (Anime)`);
   }
 
@@ -509,9 +515,12 @@ class Room {
     if (!this.movie) return;
     const now = Date.now();
     const s = this.state;
+    // A client whose <video> hasn't loaded the manifest yet reports loaded:false, buffering:false
+    // (buffering requires loaded in player.js). Keep them in watchers so the resume path waits for
+    // them; autoWait is unaffected because its stall filter below needs bufferingSince.
     const watchers = this.admitted().filter(c => {
       const st = c.status;
-      return st && st.loaded && !st.blocked && now - (st.at || 0) < 5000;
+      return st && !st.blocked && now - (st.at || 0) < 5000;
     });
     // after a jump, streaming sites (Netflix & co) take a few seconds to load the new spot; that's
     // normal and not worth stopping everyone for
@@ -540,7 +549,7 @@ class Room {
       }
     }
     if (s.waiting && !s.playing) {
-      const notReady = watchers.filter(c => c.status.seq !== s.seq || !c.status.ready || c.status.buffering);
+      const notReady = watchers.filter(c => c.status.seq !== s.seq || !c.status.loaded || !c.status.ready || c.status.buffering);
       if ((!notReady.length && now - this.waitStart > 800) || now - this.waitStart > 30000) {
         this.setState({ playing: true, position: s.position, anchor: now + RESUME_DELAY_MS }, { action: 'resume' });
       } else {
