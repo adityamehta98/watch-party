@@ -18,14 +18,17 @@ export function deliverySources(movie, capabilities, key, clientId) {
   const sources = [];
   if (movie.url) sources.push({ type: 'direct', url: signed(movie.url) });
   if (movie.hls) {
-    // Chrome now reports built-in HLS too, but its player fails on a still-growing playlist
-    // (DEMUXER_ERROR_COULD_NOT_PARSE). Only Safari's native HLS is trusted over hls.js, and even
-    // there hls.js stays behind it as a fallback when Media Source is available.
-    const native = capabilities?.hls && (capabilities.nativeHlsPreferred || !capabilities?.mse);
-    const types = native ? ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])] : capabilities?.mse ? ['hls-js'] : [];
+    // Only Safari's native HLS is trusted (Chrome's fails on growing playlists).
+    const appleNative = capabilities?.hls && capabilities.nativeHlsPreferred;
+    // Anime is a proxied remote stream that stalls on Safari's short native buffer, so prefer hls.js
+    // there for its large forward buffer; local movies keep native HLS (disk is fast enough).
+    const remoteHls = movie.kind === 'anime';
+    let types;
+    if (appleNative && !(capabilities?.mse && remoteHls)) types = ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])];
+    else if (capabilities?.mse) types = ['hls-js', ...(appleNative ? ['native-hls'] : [])];
+    else types = capabilities?.hls ? ['native-hls'] : [];
     const hls = types.map(type => ({ type, url: signed(movie.hls) }));
-    // A growing stream is useful before a final MP4 exists. Completed movies retain the faster
-    // ranged MP4 first and use HLS as their cross-browser fallback.
+    // Completed movies keep the faster ranged MP4 first; HLS-only (growing or anime) leads.
     if (!movie.url || movie.progressive) sources.unshift(...hls);
     else sources.push(...hls);
   }
