@@ -1,7 +1,5 @@
 'use strict';
-// Makes a self-signed HTTPS certificate with nothing but Node's built-in crypto.
-// Browsers only allow camera/mic on https pages; this gives guests an https link without any
-// certificate company (they click past a one-time "not private" warning).
+
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');

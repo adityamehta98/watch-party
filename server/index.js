@@ -28,8 +28,6 @@ const pwa = require('./pwa');
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
 
-// WatchParty.exe runs without a window, so what it prints also goes to cache\watchparty.log
-// (started fresh each run; handy when something goes wrong).
 (function logToFile() {
   try {
     const dir = path.join(ROOT, 'cache');
@@ -76,8 +74,7 @@ const DEFAULT_CONFIG = {
   extraIceServers: [],      // optional extra STUN/TURN servers for webcams
   publicLink: false,        // Tailscale Funnel: a link that works for anyone (no Tailscale needed), TCP only
   webcamMode: 'auto',       // "relay": webcams only through this PC's own relay (nobody sees anyone's address)
-                            // "direct": webcams connect browser to browser (works over the public link; people see each other's internet address)
-                            // "auto": direct while the public link is on, relay otherwise
+
   cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
   safariExtensionUrl: '',   // optional App Store or TestFlight link shown to Apple-device guests
@@ -151,12 +148,10 @@ function publicHost() {
   if (ip && (!isPrivate(ip) || process.env.WP_TEST_PRIVATE_OK) && mapper.state.status === 'mapped') return ip;
   return null;
 }
-// Tailscale: a private network app. If it's running on this PC, friends who you've shared this PC with
-// can reach it at its Tailscale address, even when your internet provider blocks incoming connections.
+
 function tailscaleIp() {
   if (process.env.WP_TEST_TS_IP) return process.env.WP_TEST_TS_IP; // tests only
-  // Only while Tailscale is really connected. Other things on a PC (virtual machines, VPNs, some
-  // internet providers) use 100.64-127.x addresses too, and a link to those reaches nobody.
+
   if (ts.present && !ts.online) return null;
   const ifs = localIPv4s();
   const own = ts.ip && ifs.find(i => i.address === ts.ip);
@@ -179,8 +174,7 @@ function publicBase() {
   return `${config.linkMode === 'plain' ? 'http' : 'https'}://${h}:${port}`;
 }
 const joinUrl = () => { const b = publicBase(); return b ? `${b}/join/${room.roomKey}` : null; };
-// 127.0.0.1 rather than "localhost": on some Windows PCs "localhost" goes to the IPv6 address first,
-// and if another program sits there the browser shows "localhost didn't send any data".
+
 const localBase = () => `http://127.0.0.1:${config.port}`;
 
 function lanJoinUrl() {
@@ -194,11 +188,6 @@ function isLocalHostHeader(host) {
   return h === 'localhost' || h.startsWith('127.') || h === '::1';
 }
 
-// Webcams. Normally they go through this PC's own relay (UDP on the same port), so nobody ever sees
-// anyone else's internet address. The public link (Tailscale Funnel) only carries web traffic, not
-// that relay, so while it's on, webcams connect browser to browser instead, found with the help of
-// public "STUN" servers (they only tell each browser its own address). If two networks are too strict
-// for that, an optional Cloudflare TURN key adds a relay that always works.
 const PUBLIC_STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 const directCams = () => config.webcamMode === 'direct' || (config.webcamMode !== 'relay' && !!funnelBase());
 let cfTurn = { servers: null, at: 0, error: null };
@@ -261,8 +250,6 @@ async function info() {
 }
 function updatePending() { return fs.existsSync(path.join(ROOT, '_update', 'WatchParty.part00')); }
 
-// Try to open our own public link from here. Many routers support this "hairpin" trick; if it
-// works we know the port is open. If it fails, it may still work for friends outside.
 async function checkReachable() {
   const base = publicBase();
   if (!base || tunnel) { reachable = 'unknown'; return; }
@@ -287,8 +274,7 @@ async function startTailscale() {
     await ts.refresh();
   }
   if (!ts.online) {
-    // Not connected yet (Tailscale closed, or signed out): look again now and then, and carry on by
-    // itself the moment it's connected (the public link switches on without restarting Watch Party).
+
     const again = setInterval(async () => {
       await ts.refresh().catch(() => {});
       if (!ts.online) return;
@@ -308,8 +294,7 @@ async function startTailscale() {
   room.broadcastHosts({ type: 'network' });
   room.updateIce();
   printInvite();
-  // Waiting for you to allow Funnel in the browser: keep trying quietly, and switch the link over
-  // by itself the moment it works (no need to flip the switch off and on).
+
   setInterval(async () => {
     if (!config.publicLink || ts.funnel.on || ts.funnel.busy || !ts.funnel.error) return;
     if (await ts.setFunnel(true)) { console.log('  Public link is on.'); room.broadcastHosts({ type: 'network' }); room.updateIce(); printInvite(); }
@@ -353,14 +338,11 @@ function serveStatic(req, res, rel, extraHeaders = {}) {
   res.end(a.body);
 }
 
-// A request counts as "from this PC" only if it arrives on the loopback address with a localhost Host
-// header. (Checking the Host header also defeats "DNS rebinding" tricks from malicious websites.)
 const isLocal = req => /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '') && isLocalHostHeader(req.headers.host) &&
   !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'];
 // Through the optional Cloudflare tunnel, Cloudflare handles the encryption and tells us the real address.
 const viaTunnel = req => !!(tunnel && req.headers['cf-connecting-ip'] && /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || ''));
-// Through Tailscale Funnel (the public link), Tailscale handles the encryption on this PC and hands us
-// plain requests on the loopback address with the visitor's real address in X-Forwarded-For.
+
 const viaFunnel = req => !!(ts.funnel.on && req.headers['x-forwarded-for'] && (/^https$/i.test(String(req.headers['x-forwarded-proto'] || '')) || req.headers['tailscale-funnel-request'])
   && /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || ''));
 const clientIp = req => viaTunnel(req) ? norm(String(req.headers['cf-connecting-ip'])) : viaFunnel(req) ? norm(String(req.headers['x-forwarded-for']).split(',')[0].trim()) : norm(req.socket.remoteAddress);
@@ -382,14 +364,11 @@ function cookieKey(req) {
   return m ? m[1] : null;
 }
 
-// "Watch here" mode: the Watch Party Sync extension shows this page inside its own window, next to
-// Netflix / Prime Video / ... Only a browser extension may frame the page, never another website.
 function isTheaterPage(req) { return /[?&]theater=1(&|$)/.test(req.url || ''); }
 function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
-  // YouTube is the only outside site the page may load, and only when you show a YouTube video.
-  // megaplay.buzz is framed for extension-free anime playback; s4.anilist.co serves search posters.
+
   res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://megaplay.buzz; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -483,8 +462,7 @@ function media(req, res, p, u) {
   if (!role) return notFound(req, res, 'media key');
   const m = p.match(/^\/media\/(\w+)\/(video|sub\/(\w+)\.vtt|hls\/(index\.m3u8|init\.mp4|seg-\d{5}\.m4s))$/);
   if (!m) return notFound(req, res, 'media path');
-  // From here on the request carries the real room key: a miss (an old movie, a file that was
-  // cleaned up, a player prefetching after a switch) is a plain 404 and never counts as a guess.
+
   const missing = () => { res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('Not found'); };
   const id = m[1];
   if (role !== 'host' && (!room.movie || room.movie.id !== id)) return missing();
@@ -502,9 +480,7 @@ function media(req, res, p, u) {
       const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
       if (clientId) auth.set('c', clientId);
       const body = authorizeHlsPlaylist(fs.readFileSync(file, 'utf8'), auth.toString());
-      // Growing EVENT playlists must be re-fetched often. 'no-cache' tells Safari to
-      // revalidate on every request; 'no-store' can confuse iOS's HLS stack. Final (complete)
-      // playlists are small and change rarely, so the same policy works for both.
+
       res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     } catch { return missing(); }
@@ -518,8 +494,6 @@ function media(req, res, p, u) {
   } catch { res.writeHead(500); res.end(); }
 }
 
-// Reverse-proxy for native anime playback: fetch the playlist, segments and subtitles from the
-// resolved upstream and stream them back from this origin. Links are signed and room-key gated.
 async function animeProxy(req, res, p, u) {
   const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
   if (!role) return notFound(req, res, 'anime key');
@@ -601,8 +575,7 @@ async function handler(req, res) {
     if (p.startsWith('/media/')) return media(req, res, p, u);
     if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
-    // Icons are public and harmless. Browsers and iOS fetch them (and the install manifest) without
-    // cookies, so they must never count as a wrong guess: ten of those used to lock a guest out.
+
     if (PUBLIC_ASSETS.has(p)) {
       const rel = p.startsWith('/apple-touch-icon') ? 'icon-192.png' : p.slice(1);
       if (!assets.get(rel)) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
@@ -660,8 +633,7 @@ function onFrontConnection(sock) {
   });
 }
 const front = net.createServer(onFrontConnection);
-// Also answer on this PC's IPv6 address (::1), so "localhost" works in every browser. If another
-// program already sits there, say so: that's what makes http://localhost:8765 show an empty page.
+
 let localV6Note = null;
 function listenLocalV6() {
   if (!['0.0.0.0', ''].includes(String(config.bind || ''))) return;
@@ -739,8 +711,7 @@ front.on('error', async e => {
   if (e.code === 'EADDRINUSE') {
     // Most likely Watch Party is already running (in the background): just open its page again.
     const hostUrl = `${localBase()}/host/${config.adminKey}`;
-    // Ask it directly on 127.0.0.1 and ::1 (Windows sometimes resolves "localhost" to the one Watch
-    // Party isn't listening on), and as a fallback check the status file the running copy keeps fresh.
+
     const ask = host => new Promise(resolve => {
       const r = http.get({ host, port: config.port, path: '/', timeout: 4000, headers: { Host: `localhost:${config.port}` } }, res => { res.resume(); resolve(res.statusCode === 302 && String(res.headers.location || '') === `/host/${config.adminKey}`); });
       r.on('error', () => resolve(false)); r.on('timeout', () => { r.destroy(); resolve(false); });
@@ -801,8 +772,6 @@ let awake = null;
   try { awake = spawn('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { stdio: 'ignore', windowsHide: true }); awake.on('error', () => {}); } catch {}
 })();
 
-// Stop by itself a few seconds after the host page is closed (a reload or switching to the
-// "watch here" window reconnects well within that). Not while a movie is being prepared.
 let hostSeen = false, noHostSince = Date.now(), longestGap = 0;
 const STOP_AFTER_MS = Number(process.env.WP_STOP_AFTER_MS) || 5000;
 setInterval(() => {
@@ -835,8 +804,7 @@ async function shutdown() {
     if (n) console.log(`  Deleted ${n} prepared file(s), ${sizeText(freed)} freed.`);
   }
   turn.stop();
-  // close the router port and the public link again (best effort, quick); the public link comes back next start
-  // and disconnect Tailscale (it's connected again next start)
+
   const tsOff = (ts.funnel.on ? ts.setFunnel(false).then(() => { ts.funnel.on = false; }) : Promise.resolve()).then(() => ts.down());
   await Promise.race([Promise.all([mapper.stop(), ts.present ? tsOff : null]), new Promise(r => setTimeout(r, 6000))]);
   process.exit(0);

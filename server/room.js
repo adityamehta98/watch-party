@@ -28,8 +28,7 @@ class Room {
     this.animeSearch = animeSearch || anime.search;
     this.animeResolve = animeResolve || anime.resolveStream;
     this.jobOwner = new Map(); // movie id -> who started preparing it
-    // The secret in the invite link (about 140 bits: unguessable). It's kept in config.json, so the
-    // link stays the same every time Watch Party starts; "Make a new invite link" replaces it.
+
     if (!/^[A-Za-z0-9]{16,64}$/.test(String(config.roomKey || ''))) { config.roomKey = randKey(24); if (save) save(); }
     this.roomKey = config.roomKey;
     this.clients = new Map();   // clientId -> client
@@ -57,8 +56,6 @@ class Room {
 
   get adminKey() { return this.config.adminKey; }
 
-  // ---------------- connection lifecycle ----------------
-  // The host key only works from this PC itself; over the internet only the invite key works.
   roleForKey(key, local = false) {
     if (local && key && key === this.adminKey) return 'host';
     if (key && key === this.roomKey) return 'guest';
@@ -161,8 +158,6 @@ class Room {
   admitted() { return [...this.clients.values()].filter(c => c.admitted); }
   hasAdmittedIp(ip) { return !!ip && this.admitted().some(c => c.role !== 'host' && c.ip === ip); }
 
-  // The way webcams connect changed (public link switched on or off, a relay key added): tell
-  // everyone, and the host reconnects the cameras with the new settings.
   updateIce() {
     const key = JSON.stringify([...new Set(this.admitted().map(c => JSON.stringify([c.iceFor(), c.relayOnlyFor()])))].sort());
     if (key === this.lastIceKey) return;
@@ -170,7 +165,6 @@ class Room {
     for (const c of this.admitted()) this.send(c.ws, { type: 'ice', iceServers: c.iceFor(), relayOnly: c.relayOnlyFor() });
   }
 
-  // ---------------- messaging helpers ----------------
   send(ws, msg) {
     if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
   }
@@ -181,8 +175,7 @@ class Room {
   broadcastHosts(msg) {
     for (const c of this.clients.values()) if (c.role === 'host') this.send(c.ws, msg);
   }
-  // Playback permission applies to transport only. Every admitted member may select content, while
-  // arbitrary custom sites remain host-only through selectUrl's custom-site validation.
+
   canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback && !this.customOn())); }
   canChoose(client) { return !!client && !!client.admitted; }
   customOn() { return !!(this.movie && this.movie.service === 'custom'); }
@@ -343,7 +336,6 @@ class Room {
     for (const c of this.clients.values()) c.metrics = { corrections: [], lastCorrection: '' };
   }
 
-  // ---------------- timeline ----------------
   currentPosition(now = Date.now()) {
     const s = this.state;
     let p = s.playing ? s.position + Math.max(0, now - s.anchor) / 1000 : s.position;
@@ -357,8 +349,7 @@ class Room {
       this.bookmarks = [];
       this.broadcast({ type: 'bookmarks', bookmarks: [] });
     }
-    // Any ordinary command exits the wait state; passing waiting:true explicitly ENTERS it (used to
-    // hold the room while everyone loads a new movie before the first play).
+
     const enterWait = patch.waiting === true;
     const defaults = enterWait ? {} : { waiting: false, waitingFor: [] };
     this.state = { ...this.state, ...defaults, ...patch, seq: this.state.seq + 1 };
@@ -377,9 +368,7 @@ class Room {
     const clamp = p => Math.max(0, Math.min(Number(p) || 0, dur));
     const by = client.name;
     const ref = Number.isInteger(msg.ref) ? msg.ref : null; // lets the sender tell its own echoes apart
-    // The person who clicked already reacted on their screen at the moment of the click (msg.at, in
-    // room-clock time). Anchoring the timeline there means they feel no delay; everyone else lands on
-    // the same timeline a moment later and the sync engine closes the gap.
+
     const at = Number(msg.at);
     const clickAnchor = Number.isFinite(at) && Math.abs(at - now) < 1500 ? Math.max(at, now - 500) : null;
     switch (msg.action) {
@@ -423,9 +412,6 @@ class Room {
     this.system(`Now showing: ${p.title}`);
   }
 
-  // A YouTube / Netflix / Prime Video / ... link. Everyone watches from their own account or the embed.
-  // opts.follow: the host's streaming tab moved on to another title by itself (the host clicked
-  // something on Netflix, say), so the room follows it, starting from where that tab already is.
   selectUrl(client, url, inTabs, opts = {}) {
     if (!this.canChoose(client)) return;
     const previous = this.movie;
@@ -490,9 +476,7 @@ class Room {
       this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false, ...meta };
     }
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
-    // Enter the wait state so the room holds until every viewer has the manifest and the first
-    // segment ready. The checkWait resume path flips playing:true with a short anchor as soon as
-    // everyone reports ready (or after 30 s), so no player races ahead on the slow guest.
+
     this.setState({ movieId: id, playing: false, position: 0, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
     this.system(`Now showing "${title}" (Anime)`);
   }
@@ -515,15 +499,12 @@ class Room {
     if (!this.movie) return;
     const now = Date.now();
     const s = this.state;
-    // A client whose <video> hasn't loaded the manifest yet reports loaded:false, buffering:false
-    // (buffering requires loaded in player.js). Keep them in watchers so the resume path waits for
-    // them; autoWait is unaffected because its stall filter below needs bufferingSince.
+
     const watchers = this.admitted().filter(c => {
       const st = c.status;
       return st && !st.blocked && now - (st.at || 0) < 5000;
     });
-    // after a jump, streaming sites (Netflix & co) take a few seconds to load the new spot; that's
-    // normal and not worth stopping everyone for
+
     const settle = this.movie.kind === 'file' ? 1500 : 4500;
     if (this.settings.autoWait && s.playing && now > s.anchor + settle) {
       const stalled = watchers.filter(c => c.bufferingSince && now - c.bufferingSince > 1500 && now - c.lastWaitCause > 20000
@@ -531,9 +512,7 @@ class Room {
       if (stalled.length) {
         for (const c of stalled) {
           c.lastWaitCause = now;
-          // Someone who keeps buffering (a phone on weak Wi-Fi, say) would stop the movie for everyone
-          // again and again. After 3 times in 4 minutes the room stops waiting for them for 15 minutes:
-          // they catch up on their own (skipping what they missed) and the host is told why.
+
           c.waits = (c.waits || []).filter(t => now - t < 240000).concat(now);
           if (c.waits.length >= 3) {
             c.noWaitUntil = now + 15 * 60000;
@@ -581,7 +560,6 @@ class Room {
     if (c) c.bytes += n;
   }
 
-  // ---------------- messages ----------------
   onMessage(client, msg) {
     const isHost = client.role === 'host';
     if (!client.admitted) return;
@@ -677,7 +655,6 @@ class Room {
       }
       default:
     }
-    // ---------- every admitted member may pick what the room watches ----------
     if (this.canChoose(client)) {
       switch (msg.type) {
         case 'bookmark': {
@@ -749,7 +726,6 @@ class Room {
       }
     }
     if (!isHost) return;
-    // ---------- host-only ----------
     switch (msg.type) {
       case 'set-perm': {
         const target = this.clients.get(msg.clientId);

@@ -1,6 +1,5 @@
 'use strict';
-// Streaming services Watch Party can keep in sync. Each person watches from their own account;
-// Watch Party only syncs play / pause / seek (plus chat and webcams).
+
 const SERVICES = [
   { id: 'youtube', name: 'YouTube', hosts: ['youtube.com', 'youtu.be'] },
   { id: 'netflix', name: 'Netflix', hosts: ['netflix.com'] },

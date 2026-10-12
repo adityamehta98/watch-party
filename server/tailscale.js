@@ -1,8 +1,5 @@
 'use strict';
-// Talks to the Tailscale app on this PC (if installed) for three things:
-//  - the PC's Tailscale name (like aditya-pc.tail1234.ts.net) and address
-//  - a real, trusted HTTPS certificate for that name, so friends see no "not private" warning
-//  - Funnel: an optional public link that works for anyone on the internet, no Tailscale needed
+
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -30,8 +27,6 @@ function findTailscale() {
   return process.env.WP_TAILSCALE_BIN || null;
 }
 
-// stopWhen: stop waiting as soon as the output matches (Tailscale's "please allow this in your
-// browser" messages would otherwise keep the command waiting forever)
 function run(bin, args, timeout = 20000, stopWhen = null) {
   return new Promise(done => {
     let out = '', err = '', finished = false;
@@ -67,8 +62,6 @@ class Tailscale {
 
   get present() { return !!this.bin; }
 
-  // Connect Tailscale when Watch Party starts (it's disconnected again when Watch Party stops), so the
-  // public link is there from the start. Opens the Tailscale app too, in case it isn't running.
   async up() {
     if (!this.bin) return false;
     if (IS_WIN) {
@@ -112,8 +105,6 @@ class Tailscale {
     } catch (e) { this.online = false; this.statusError = 'Could not read the Tailscale status: ' + e.message; }
   }
 
-  // A certificate from Let's Encrypt for this PC's Tailscale name (Tailscale does the paperwork).
-  // Needs "HTTPS Certificates" enabled once in the Tailscale admin console (DNS page).
   async ensureCert() {
     if (!this.bin || !this.name) return null;
     const certFile = path.join(this.cacheDir, 'ts-cert.pem');
@@ -152,8 +143,6 @@ class Tailscale {
     } catch { return null; }
   }
 
-  // Public link for anyone: Tailscale relays https://<name>.ts.net to this PC. TCP only, so webcams
-  // (which need UDP) don't work over it, and Tailscale applies its own bandwidth limits.
   async setFunnel(on) {
     if (!this.bin) return false;
     this.funnel.busy = true;

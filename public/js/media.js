@@ -1,7 +1,4 @@
-// Media adapters: they look like a <video> element to the sync engine, but drive something else.
-//  - YouTubeMedia: a YouTube player embedded in the Watch Party page (no extension needed).
-//  - RemoteMedia:  the video in a Netflix / Prime Video / Hulu / ... tab, controlled through the
-//                  "Watch Party Sync" browser extension. Each person plays it from their own account.
+
 
 class TimeRangesLite {
   constructor(ranges = []) { this.r = ranges; }
@@ -148,10 +145,6 @@ export class YouTubeMedia extends AdapterBase {
   pause() { if (this.ready) this.p.pauseVideo(); }
 }
 
-// ------------------------------------------------------------------ anime (MegaPlay embed, in the page)
-// Plays inside MegaPlay's documented iframe, so no extension is needed on iPhone/iPad. MegaPlay
-// reports progress with {event:'time'} and {type:'watching-log'} postMessage events. Older player
-// builds also understand the command/event names retained below for synchronized controls.
 const MEGAPLAY_ORIGIN = 'https://megaplay.buzz';
 const isMegaplayUrl = value => {
   try {
@@ -178,8 +171,7 @@ export class MegaplayMedia extends AdapterBase {
     this.syncProfile = { hardSeek: 1.0, rate: false, pausedEps: 0.5 };
     this.onMsg = e => this.onMessage(e);
     window.addEventListener('message', this.onMsg);
-    // MegaPlay only reports position (no play/pause/buffer events), so a gap in those reports is a
-    // stall: a short one is buffering (the room waits), a long one is a real pause.
+
     this.stallCheck = setInterval(() => this.checkStall(), 400);
   }
 
@@ -214,22 +206,19 @@ export class MegaplayMedia extends AdapterBase {
     const url = this.sources[this.sourceIndex];
     this.src = `mp:${url}`;
     const f = document.createElement('iframe');
-    // Allow fullscreen so the embed's own bridge can request it (iOS/Safari fall back to native
-    // fullscreen); on desktop the bridge posts to us instead and we fullscreen the whole stage.
+
     f.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media';
     f.allowFullscreen = true;
     f.frameBorder = '0';
     f.scrolling = 'no';
-    // Keep private room paths hidden, but identify this as an embedded request instead of forbidden
-    // direct access. Only the local server's origin is disclosed to MegaPlay.
+
     f.referrerPolicy = 'origin';
     f.style.cssText = 'width:100%;height:100%;border:0;display:block';
     f.src = url;
     this.host.innerHTML = '';
     this.host.appendChild(f);
     this.frame = f;
-    // A removed mapping renders an error page that cannot be inspected cross-origin. Do not cycle
-    // merely because the viewer has not pressed play yet; MegaPlay reports a real failure itself.
+
     this.readyTimer = setTimeout(() => {
       if (!this.ready) {
         this.error = { code: 3, message: 'This episode did not start. Try another episode or language.' };
@@ -266,8 +255,7 @@ export class MegaplayMedia extends AdapterBase {
     const now = performance.now();
     if (action === this.lastUserAction && now - (this.lastUserAt || 0) < 500) return;
     this.lastUserAction = action; this.lastUserAt = now;
-    // The sync loop runs every 200 ms. Hold it before notifying the room so a native click cannot be
-    // toggled back while that room update is making its round trip.
+
     this.externalChangeAt = now;
     this.holdUntil = now + 1600;
     this.onUser({ action, t });
@@ -278,8 +266,7 @@ export class MegaplayMedia extends AdapterBase {
     let m = e.data;
     if (typeof m === 'string') { try { m = JSON.parse(m); } catch { return; } }
     if (!m || typeof m !== 'object') return;
-    // MegaPlay's fullscreen button drives the parent (see parent-fullscreen-bridge): toggle the whole
-    // stage so Watch Party's camera/chat/reaction bars stay on top in fullscreen. We echo the state back.
+
     if (m.megaCommand === 'toggleFullscreen') { this.onFullscreen('toggle'); return; }
     if (m.megaCommand === 'getFullscreenState') { this.onFullscreen('get'); return; }
     if (m.event === 'time') {
@@ -310,9 +297,7 @@ export class MegaplayMedia extends AdapterBase {
     const wasBuffering = this.buffering;
     if (this.buffering) { this.buffering = false; this.emit('playing'); }
     this.pauseReported = false;
-    // MegaPlay owns the visible transport controls and sends no play/pause events. Infer a start or a
-    // user seek from the progress, but never guess a pause from a stall (checkStall handles that) and
-    // never treat buffer catch-up as a seek — both would desync the room.
+
     if (this.seekingTarget == null && this.prevAt) {
       const elapsed = (now - this.prevAt) / 1000;
       if (elapsed > 0.15) {
@@ -345,8 +330,7 @@ export class MegaplayMedia extends AdapterBase {
   get currentTime() {
     if (this.seekingTarget != null) return this.seekingTarget;
     const since = performance.now() - this.tAt;
-    // Hold the last reported position during a stall; extrapolating would make the room think we ran
-    // ahead and yank everyone back with a big seek.
+
     const t = this.t + (this._playing && !this.buffering && since < 1300 ? since / 1000 : 0);
     return this.dur ? Math.min(t, this.dur) : t;
   }
@@ -444,14 +428,10 @@ export class RemoteMedia extends AdapterBase {
     if (st.url) this.lastUrl = st.url;
     this.stAt = performance.now();
     this.linked = true;
-    // the viewer pressed play/pause in the service's own player: give that a moment to reach the room
-    // before the sync engine would "correct" it back
+
     const now = performance.now();
     if (prev && prev.paused !== st.paused && this.pausedOverride == null) this.externalChangeAt = now;
-    // Hold off "correcting" the tab while the viewer is doing something in it:
-    //  - the tab says so (a jump or a pause is still settling there)
-    //  - it jumped by itself (the site's own +10 / -10, the keyboard, the timeline)
-    //  - it moved on to another title (next episode): the room follows it in a moment
+
     if (st.hold) this.holdUntil = Math.max(this.holdUntil || 0, now + 1200);
     if (prev && this.seekingTarget == null && !st.ad && !prev.ad) {
       const moving = !prev.paused && !prev.buffering;
@@ -570,9 +550,7 @@ export function canonicalUrl(raw) {
   if (svc === 'netflix') { const m = /\/watch\/(\d+)/.exec(p); if (m) p = `/watch/${m[1]}`; }
   return `https://${u.hostname.toLowerCase()}${p || '/'}${u.search}`;
 }
-// A page where a title plays: not a service's home page, browse rows, search, profile picker, sign-in or
-// a title's info page (those auto-play trailers). Only these may become what the room watches when
-// someone's tab moves on by itself.
+
 const NOT_A_TITLE = /^\/(?:$|browse|home|hub|search|profiles?|login|signin|sign-in|signup|account|settings|my-?stuff|my-?list|watchlist|collections?|genres?|categories|storefront|kids|title|welcome)(?:\/|$)/i;
 export function isTitlePage(raw) {
   let u;

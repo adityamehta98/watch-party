@@ -14,8 +14,6 @@ function loadHls() {
   return hlsLoader;
 }
 
-// Owns file sources for the shared <video>. SyncPlayer still reads and controls that same element,
-// so direct files, native Safari HLS and hls.js all keep the same room-sync behavior.
 export class FilePlayback {
   constructor(video, { loader = loadHls, onReady = () => {}, onFatal = () => {} } = {}) {
     this.video = video;
@@ -79,14 +77,9 @@ export class FilePlayback {
 
     const hls = new Hls({
       autoStartLoad: false,
-      // Our growing stream is a VOD-style EVENT playlist, NOT a live broadcast. Live-edge
-      // settings (liveSyncDurationCount / lowLatencyMode) make hls.js lock the playhead near
-      // the newest segment and refuse to play the earlier position the room is at, which looks
-      // like the video is frozen while the clock keeps advancing. Keep this strictly VOD.
+
       lowLatencyMode: false,
-      // Big files (4K HEVC) can take seconds per segment to decode. Hold a generous forward
-      // buffer so the player keeps up when the ffmpeg writer is only a few segments ahead,
-      // and let hls.js grow the buffer up to several minutes when bandwidth allows.
+
       maxBufferLength: 90,
       maxMaxBufferLength: 600,
       maxBufferSize: 240 * 1000 * 1000,

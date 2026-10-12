@@ -1,7 +1,5 @@
 'use strict';
-// Anime: AniList search + a native HLS stream resolved from megavid and proxied through this server,
-// so every viewer plays the same <video> the movies do (synced, no iframe, no ads). Falls back to
-// MegaPlay's iframe embed when a stream can't be resolved.
+
 const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
@@ -74,8 +72,6 @@ async function resolveStream(anilistId, malId, ep, lang) {
   return null;
 }
 
-// Signed proxy links carry their upstream URL + Referer and an HMAC, so a guest can't make the server
-// fetch an arbitrary address.
 const b64 = s => Buffer.from(String(s), 'utf8').toString('base64url');
 const unb64 = s => Buffer.from(String(s), 'base64url').toString('utf8');
 const sign = data => crypto.createHmac('sha256', SECRET).update(data).digest('hex').slice(0, 20);

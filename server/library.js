@@ -1,6 +1,5 @@
 'use strict';
-// Movie library: scans folders, reads codec info with ffprobe, decides whether a browser can
-// play a file as-is, and runs ffmpeg "prepare" jobs (repackage / fix audio / compress / subtitles).
+
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -147,8 +146,7 @@ function computePlan(info, ext) {
   }
   const audioDirect = !a || BROWSER_AUDIO_DIRECT.has(a.codec);
   if (v.dv) {
-    // Browsers play the sound but show a black picture for many Dolby Vision files.
-    // Removing the Dolby Vision layer leaves the normal HDR10/SDR picture, copied bit-for-bit.
+
     if (v.dv.profile === 5) reasons.push('This is Dolby Vision profile 5 (the streaming-service kind). Browsers can\'t show its colors correctly, so the picture may look purple or green even after preparing. A different (HDR10 or SDR) version of this movie will look right.');
     else reasons.push(`Dolby Vision${v.dv.profile ? ` (profile ${v.dv.profile})` : ''} makes browsers show a black screen, so it will be removed. The normal ${v.baseHdr || 'SDR'} picture underneath is copied bit-for-bit.`);
     if (!isMp4) reasons.push(`${ext.slice(1).toUpperCase()} files are repackaged as MP4 for browsers.`);
@@ -181,15 +179,7 @@ function buildHlsArgs({ source, info, options, videoCodec, stripDv, copyAudio = 
   const o = options;
   const videoMap = sourceStreams ? `0:${info.video.index}` : '0:v:0';
   const audioMap = sourceStreams && o.audio ? `0:${o.audio.index}` : '0:a:0?';
-  // Source MKV files often use timestamps whose first video packet is slightly before the first
-  // audio packet. We stream-copy video and re-encode audio, so without the fixes below the two
-  // tracks start on different clocks: the picture plays while the sound drifts seconds behind.
-  // MKV sources often have small timing hiccups. Without these fixes the stream-copied
-  // video keeps the source PTS while the re-encoded audio starts at 0, so the picture plays
-  // while the sound drifts seconds behind as the movie goes on.
-  // MKV sources often have small timing hiccups between tracks. +genpts rebuilds timestamps,
-  // and the -af aresample filter below keeps the re-encoded audio locked to the video clock
-  // so sound doesn't drift behind the picture over the length of a long movie.
+
   const args = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats',
     '-fflags', '+genpts+discardcorrupt', ...inputArgs, '-i', source,
     '-map', videoMap, '-map', audioMap];
@@ -198,8 +188,7 @@ function buildHlsArgs({ source, info, options, videoCodec, stripDv, copyAudio = 
   if (videoCodec === 'hevc') args.push('-tag:v', 'hvc1');
   const videoFilters = [];
   if (stripDv) videoFilters.push('dovi_rpu=strip=1');
-  // MKV HEVC commonly stores the parameter sets only in hvcC extradata. Rebuild them before the
-  // fragmented-MP4 muxer writes its init segment or iOS can wait forever on an undecodable stream.
+
   if (sourceStreams && !videoArgs?.length && videoCodec === 'hevc') videoFilters.push('hevc_mp4toannexb', 'extract_extradata');
   if (videoFilters.length) args.push('-bsf:v', videoFilters.join(','));
   if (copyAudio) args.push('-c:a', 'copy');
@@ -208,12 +197,10 @@ function buildHlsArgs({ source, info, options, videoCodec, stripDv, copyAudio = 
     const outChannels = o.audioMode === 'stereo' || channels < 6 ? 2 : 6;
     args.push('-c:a', audioEncoder, '-b:a', outChannels > 2 ? '640k' : '256k');
     if (channels !== outChannels) args.push('-ac', String(outChannels));
-    // Keep audio locked to the video clock even for very long movies. async=1 inserts tiny
-    // silence or drops samples when the source has gaps so playback never drifts.
+
     args.push('-af', 'aresample=async=1:min_hard_comp=0.100');
   }
-  // EVENT playlists are allowed to grow while ffmpeg is running. temp_file makes every playlist
-  // entry atomic: a player never sees a segment until ffmpeg has finished writing it.
+
   args.push('-sn', '-dn', '-f', 'hls', '-hls_time', '4', '-hls_list_size', '0', '-hls_playlist_type', 'event',
     '-hls_segment_type', 'fmp4', '-hls_flags', 'independent_segments+temp_file', '-hls_fmp4_init_filename', 'init.mp4',
     '-hls_segment_filename', 'seg-%05d.m4s', 'index.m3u8');
@@ -293,7 +280,6 @@ class Library extends EventEmitter {
       }
     };
     for (const f of this.folders) await walk(f, 0, f);
-    // keep running jobs attached
     this.items = found;
     for (const item of found.values()) {
       if (!item.prepared) item.prepared = this.loadPrepared(item);
@@ -304,7 +290,6 @@ class Library extends EventEmitter {
     }
     this.scanning = false;
     this.emit('update');
-    // background probe
     for (const item of found.values()) if (!item.info && !item.probeError) this.probe(item.id).catch(() => {});
   }
 
@@ -321,7 +306,6 @@ class Library extends EventEmitter {
       const r = await run(this.tools.ffprobe, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', '-probesize', '50M', '-analyzeduration', '20M', item.path], 60000);
       if (r.code !== 0) throw new Error((r.err || 'ffprobe failed').trim().split('\n').pop());
       const json = JSON.parse(r.out);
-      // trim what we store
       const slim = { format: { format_name: json.format.format_name, duration: json.format.duration, bit_rate: json.format.bit_rate, size: json.format.size }, streams: (json.streams || []).map(s => ({
         index: s.index, codec_type: s.codec_type, codec_name: s.codec_name, profile: s.profile, codec_tag_string: s.codec_tag_string,
         width: s.width, height: s.height, pix_fmt: s.pix_fmt, bits_per_raw_sample: s.bits_per_raw_sample, field_order: s.field_order,
@@ -346,8 +330,6 @@ class Library extends EventEmitter {
 
   preparedMetaPath(id) { return path.join(this.cacheDir, `${id}.json`); }
 
-  // A prepared copy of a Dolby Vision movie made by the first version still contains the Dolby Vision
-  // layer (black screen), so it has to be prepared again.
   goodPrepared(item) {
     const p = item.prepared;
     if (!p) return null;
@@ -360,9 +342,6 @@ class Library extends EventEmitter {
     return prepared?.hls?.dir === `${item.id}.hls` && fs.existsSync(path.join(this.cacheDir, prepared.hls.dir, 'index.m3u8')) ? prepared.hls : null;
   }
 
-  // While ffmpeg is still appending segments, expose only a playlist which already references two
-  // completely-written segments. This lets a movie start in seconds without treating a
-  // half-created package as a durable prepared copy.
   liveHls(item) {
     const hls = item?.job?.hls;
     if (!hls?.ready || item.job.state !== 'running' || hls.dir !== `${item.id}.hls.part`) return null;
@@ -472,7 +451,6 @@ class Library extends EventEmitter {
     };
   }
 
-  // ---------- prepare jobs ----------
   prepare(id, opts = {}) {
     const item = this.items.get(id);
     if (!item) throw new Error('Unknown movie');
@@ -566,7 +544,6 @@ class Library extends EventEmitter {
     job.state = 'running';
     this.emit('update');
 
-    // disk space check
     const outputEstimate = encodeVideo ? (o.targetMbps * 1e6 / 8) * info.duration : item.size;
     const estimate = o.subsOnly ? (o.hls ? item.size * 1.05 : 50e6) : outputEstimate * (o.hls ? 2.1 : 1.1);
     if (fsp.statfs) {
@@ -616,8 +593,7 @@ class Library extends EventEmitter {
           if (ch !== outCh) args.push('-ac', String(outCh));
         }
       }
-      // Browsers seek fine with the index at the end (they use range requests), so skip the slow
-      // "faststart" rewrite for bit-for-bit copies of huge files; keep it for (smaller) re-encodes.
+
       args.push('-sn', '-dn', '-max_muxing_queue_size', '4096');
       if (encodeVideo) args.push('-movflags', '+faststart');
       args.push('-f', 'mp4', tmpVideo);
@@ -685,9 +661,7 @@ class Library extends EventEmitter {
       attempts.push({ hwaccel: false, software: hwEncoder, softwareAudio: true });
     }
     if (o.hls) {
-      // Build the append-only HLS stream first, directly from the source. The old pipeline waited
-      // for a complete MP4 and then read that multi-gigabyte file a second time, so nobody could
-      // watch until both full passes finished. Two closed segments are enough to start safely.
+
       fs.rmSync(tmpHls, { recursive: true, force: true });
       fs.mkdirSync(tmpHls);
       job.hls = { dir: `${item.id}.hls.part`, ready: false, complete: false, readyAt: null };
@@ -741,13 +715,9 @@ class Library extends EventEmitter {
       }
 
       if (!o.subsOnly) {
-        // The expensive codec work is already in HLS. Turn those finished fragments into the
-        // conventional MP4 with stream-copy only, while extracting text subtitles from the source.
+
         subOuts = [];
-        // Read init + segments as one continuous fragmented MP4, not through the HLS demuxer. Each
-        // fragment stores its video before its audio; when segments run past 10 s (sources with
-        // sparse keyframes), ffmpeg takes that backwards jump as a timestamp break and starts the
-        // whole audio track one segment late in the finished MP4.
+
         const playlist = fs.readFileSync(path.join(tmpHls, 'index.m3u8'), 'utf8');
         const segments = [...playlist.matchAll(/^\s*(seg-\d{5}\.m4s)\s*$/gm)].map(m => m[1]);
         fs.writeFileSync(path.join(tmpHls, 'segments.txt'), ['init.mp4', ...segments].join('\n') + '\n');
@@ -799,7 +769,6 @@ class Library extends EventEmitter {
       }
     }
 
-    // finalize
     const subs = [];
     for (const s of subOuts) {
       try {
@@ -886,8 +855,6 @@ class Library extends EventEmitter {
     for (const it of this.items.values()) if (it.job && it.job.proc) { try { it.job.proc.kill('SIGKILL'); } catch {} }
   }
 
-  // Delete every prepared copy (converted movies, subtitles, half-finished ones) so they don't pile up
-  // on the disk. Keeps only the small things: settings, certificates, the scan list and the log.
   clearPrepared() {
     let freed = 0, n = 0;
     const isPrepared = f => /^[0-9a-f]{12}(\.json|\.mp4|\.part\.mp4|\.hls(?:\.part)?|\.[^.]+\.vtt|\.[^.]+\.part\.vtt)$/i.test(f);

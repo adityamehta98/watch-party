@@ -35,8 +35,6 @@ const key = parts[1] || '';
 const isHost = mode === 'host';
 if (isHost) app.classList.add('is-host');
 
-// "Watch here" window (the extension shows this page next to Netflix / Prime Video / ...).
-// It hands over who you are, so you stay the same person in the room (no new name, no new approval).
 const isTheater = new URLSearchParams(location.search).get('theater') === '1' && window.top !== window;
 const handoff = new URLSearchParams(location.hash.slice(1));
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -190,9 +188,7 @@ function wire() {
     player.setState(m.state);
     renderNotice();
     scheduleUi();
-    // Routine player actions (play/pause/seek) are shown in the shared timeline, not as toasts:
-    // toasts are reserved for things that need the viewer's attention (movie change, join/leave,
-    // buffering, permission changes, errors).
+
   });
   conn.on('movie', m => loadMovie(m.movie));
   conn.on('people', m => { S.people = m.people; S.totalMbps = m.totalMbps || 0; renderPeople(); renderNowPlaying(); renderCams(); renderNotice(); renderLibraryCurrent(); });
@@ -294,9 +290,7 @@ const ambientContext = ambientCanvas.getContext('2d', { willReadFrequently: true
 let ambientFrame = 0, ambientTimer = 0, ambientSampleAt = 0;
 
 function canUseAmbient() {
-  // Native playback (local file or proxied anime) feeds the shared <video>; both let us sample
-  // pixels without CORS taint, so ambient works for both. Service-tab / YouTube / Megaplay-iframe
-  // modes can't be sampled — skip them.
+
   return !!(visualPrefs.ambient && visuals.ambient && S.movie && isNativeMovie(S.movie) && video.readyState >= 2 && document.visibilityState === 'visible');
 }
 function renderVisualControls() {
@@ -347,9 +341,7 @@ function syncAmbient() {
 function applyVisualPolicy(next) { visuals = next; syncAmbient(); }
 
 const visualWatcher = observeVisualPolicy(applyVisualPolicy, () => visualPrefs.saver);
-// The toasts explain WHAT each toggle changes, since the effects (a soft colored halo around the
-// stage, UI animations frozen) are easy to miss on first click — especially if an auto-reason
-// (low battery, data saver, limited memory) is overriding the manual choice.
+
 $('#ambientBtn').addEventListener('click', () => {
   visualPrefs.ambient = !visualPrefs.ambient;
   store.set('wp.ambient', visualPrefs.ambient);
@@ -623,26 +615,20 @@ $('#servicePanel').addEventListener('click', e => {
   if (b && b.dataset.svc === 'theater') enterTheater();
 });
 
-// The viewer used the streaming site's own play/pause/seek: share it with the room.
-// It's held on this screen right away (so nothing undoes it), then sent to the room 0.7 s later,
-// unless an ad started in the meantime (an ad pausing the show is not someone pressing pause).
 let userActionTimer = null;
 function onRemoteUserAction(m) {
   if (kindOf(S.movie) !== 'service') return;
-  // the tab has moved on to another title (next episode, say): that's handled by following the tab,
-  // not by moving the current title around
+
   if (m.url && canonicalUrl(m.url) !== canonicalUrl(S.movie.url) && !S.movie.browsing && performance.now() - (remote.urlChangedAt || -1e9) < 8000) return;
   if (!canControl()) { toast(isCustom() ? 'Only the host controls this site. Your video follows the host.' : 'Only people the host allows can play, pause or seek. Your tab will follow the room.', { timeout: 3500 }); return; }
   const t = Number(m.t);
-  // (a jump that "landed": the site finished loading the new spot a moment after the room moved on,
-  // so the room lines up with this screen; everyone else is close already and catches up smoothly)
+
   if (m.action === 'seek' && Math.abs(t - player.expected()) <= (m.land ? 0.4 : 2)) return;
   const at = conn.clock.now();
   if (m.action === 'pause') predict({ playing: false, position: t, anchor: at });
   else if (m.action === 'play') predict({ playing: true, position: t, anchor: at });
   else predict({ position: t, anchor: at });
-  // A jump is sent to the room right away (an ad never jumps the show), so nothing in between can
-  // pull this screen back to the old spot. Play / pause wait a moment for the ad check.
+
   if (m.action === 'seek') { sendCmd('seek', t); return; }
   clearTimeout(userActionTimer);
   userActionTimer = setTimeout(() => {
@@ -652,8 +638,6 @@ function onRemoteUserAction(m) {
   }, 700);
 }
 
-// MegaPlay renders its own transport bar. A native click is authoritative for this viewer, so share
-// it immediately and let the room's normal permissions decide whether everybody follows it.
 function onMegaplayUserAction(m) {
   if (kindOf(S.movie) !== 'megaplay' || !Number.isFinite(Number(m.t))) return;
   if (!canControl()) { toast('Only people the host allows can play, pause or seek.', { timeout: 3000 }); return; }
@@ -735,8 +719,7 @@ function renderControls() {
   const mb = $('#muteBtn');
   const mi = muted ? 'mute' : 'vol';
   if (mb.dataset.icon !== mi) { mb.dataset.icon = mi; mb.innerHTML = icon(mi); }
-  // local buffering + "catching up" notices: renderNotice is heavy so we only refresh it when
-  // one of the inputs it watches has flipped
+
   const buffering = S.state && S.state.playing && conn.clock.now() > S.state.anchor + 600 && (M.readyState < 3 || M.seeking) && !M.error;
   const syncing = !!(player && player.syncing);
   const errored = !!(M.error && M.isAdapter);
@@ -800,8 +783,6 @@ $('#stageNotice').addEventListener('click', e => {
   renderNotice();
 });
 
-// --- permissions
-// a custom site (any website the host opened) is the host's alone: guests watch, the host drives
 const isCustom = () => !!(S.movie && S.movie.service === 'custom');
 const canControl = () => isHost || (!!S.perms.playback && !isCustom());
 function noPerm(perm) {
@@ -812,8 +793,7 @@ function noPerm(perm) {
 }
 function applyPerms() {
   const ctl = canControl();
-  // Content selection belongs to every admitted room member. Playback permission still controls
-  // play, pause and seek, but never hides the room's Library or removes its selection actions.
+
   $('#libGuestNote').hidden = isHost;
   if (!isHost) $('#libGuestNote').textContent = 'You can pick what everyone watches: a movie from the host\'s PC, YouTube, anime, Netflix, Prime Video, or another supported service. Everyone in the room follows your selection.';
   for (const id of ['#playBtn', '#backBtn', '#fwdBtn']) $(id).classList.toggle('denied', !ctl);
@@ -837,8 +817,6 @@ function applyPerms() {
   renderPeople();
 }
 
-// --- transport controls
-// Controls react instantly on your own screen; the room follows a moment later.
 function localPos() { return M.readyState >= 1 ? M.currentTime : player.expected(); }
 function predict(patch) {
   S.state = { ...S.state, waiting: false, waitingFor: [], ...patch };
@@ -846,9 +824,7 @@ function predict(patch) {
   renderNotice();
   scheduleUi();
 }
-// Every command carries a number; the room's answer says which one it answers. While more of our
-// own commands are on the way, an answer to an older one is not applied (it would pull the screen
-// back to an earlier spot in the middle of quick skips).
+
 let cmdRef = 0;
 const seekOut = { at: -1e9, timer: null, pos: null, clickAt: 0 };
 function sendCmd(action, position) {
@@ -862,8 +838,7 @@ function sendCmd(action, position) {
   if (action === 'pause') predict({ playing: false, position, anchor: at });
   else if (action === 'play') predict({ playing: true, position, anchor: at });
 }
-// Skips go out at most every 300 ms: the first one at once (no delay for a single skip), then one
-// with where a burst of quick skips ends up. Everyone else loads one new spot instead of five.
+
 function queueSeek(position, at) {
   seekOut.pos = position; seekOut.clickAt = at;
   const now = performance.now();
@@ -899,8 +874,7 @@ function seekBy(d) {
   const burst = !!(seekChain && performance.now() - seekChain.t < 1500);
   seekChain = { target, total, t: performance.now() };
   osd(`${total >= 0 ? '+' : '−'}${Math.abs(total)} s`);
-  // Netflix, YouTube & co take a moment to load each new spot: during a burst of skips, jump there
-  // once, where the burst ends, instead of loading every spot in between
+
   if (burst && M.isAdapter) {
     M.holdUntil = Math.max(M.holdUntil || 0, performance.now() + 330);
     clearTimeout(seekBy.t); seekBy.t = setTimeout(() => player.correct(), 350);
@@ -935,14 +909,12 @@ $('#fwdBtn').addEventListener('click', () => seekBy(10));
 $('#unmutePill').addEventListener('click', e => { e.stopPropagation(); unblock(); });
 let tapWasIdle = false, lastPointerType = 'mouse';
 stage.addEventListener('pointerdown', e => { lastPointerType = e.pointerType; }, true);
-// Swipe on the picture to skip 20 seconds: a finger on phones and tablets (swipe right: forward,
-// left: back), or two fingers sideways on a laptop trackpad. Several quick swipes add up.
+
 const SWIPE_SKIP = 20;
 let swipedAt = 0;
 (() => {
   const onPicture = t => t === video || (t && t.id === 'clickLayer');
-  // Finger swipes (phones, tablets, touch-screen laptops). Touch events where the device has them: a
-  // sideways move is claimed so the browser doesn't also scroll or go back a page. Pens: pointer events.
+
   const noSwipe = t => !t || !t.closest || !!t.closest('.controls, button, input, select, textarea, .cams, .chat-float, .quick-chat, .toasts, .pop');
   let sw = null;
   const begin = (x, y, target, id) => { sw = noSwipe(target) ? null : { id, x, y, at: performance.now(), wasIdle: stage.dataset.idle === 'true', claimed: false }; };
@@ -993,19 +965,15 @@ video.addEventListener('dblclick', () => toggleFullscreen());
 $('#clickLayer').addEventListener('click', onStageClick);
 $('#clickLayer').addEventListener('dblclick', () => toggleFullscreen());
 
-// volume
 const vol = $('#volume');
 video.volume = store.get('wp.volume', 1);
 vol.value = video.volume;
 vol.addEventListener('input', () => { M.volume = +vol.value; M.muted = +vol.value === 0; store.set('wp.volume', M.volume); if (player.autoMuted) unblock(); scheduleUi(); });
 $('#muteBtn').addEventListener('click', () => { if (player.autoMuted) { unblock(); return; } M.muted = !M.muted; scheduleUi(); });
 
-// seek bar
 (() => {
   const seek = $('#seek'), tip = $('#seekTip');
-  // Anime arrives with movie.duration == null; the real length only shows up on the <video> once
-  // its HLS manifest is parsed. Fall back to M.duration so the tooltip and the final seek target
-  // land on real seconds, not zero.
+
   const dur = () => S.movie?.duration || M.duration || 0;
   const frac = e => { const r = seek.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
   const showTip = f => { tip.textContent = fmtTime(f * dur()); tip.style.left = (f * 100) + '%'; };
@@ -1026,7 +994,6 @@ $('#muteBtn').addEventListener('click', () => { if (player.autoMuted) { unblock(
   seek.addEventListener('pointercancel', () => { dragFrac = null; seek.classList.remove('dragging'); });
 })();
 
-// fullscreen
 function isFs() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
 function toggleFullscreen() {
   if (isFs()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
@@ -1036,8 +1003,7 @@ function toggleFullscreen() {
   else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
 }
 $('#fsBtn').addEventListener('click', toggleFullscreen);
-// Anime fullscreen is driven by the MegaPlay player's own button through its bridge (handled in the
-// mpMedia onFullscreen callback), so Watch Party keeps a single fullscreen control, not two.
+
 const onFs = () => {
   const fs = isFs();
   stage.classList.toggle('is-fs', fs);
@@ -1047,11 +1013,6 @@ const onFs = () => {
 document.addEventListener('fullscreenchange', onFs);
 document.addEventListener('webkitfullscreenchange', onFs);
 
-// idle: hide controls while watching.
-// The controls are really removed (display: none) once they have faded out, and put back the
-// same way. Only fading them (opacity) is not enough on some Windows PCs: in fullscreen Chrome
-// hands the video straight to the graphics card and then never repaints a faded-in layer on top,
-// so the controls came back for key presses (which also show a new message) but not for the mouse.
 let idleTimer = null, goneTimer = null;
 const controlsEl = $('#controls');
 function setIdle(idle) {
@@ -1074,13 +1035,11 @@ function poke() {
     if (S.state && S.state.playing && !busy) setIdle(true); else poke();
   }, 2800);
 }
-// Listen on the whole page (capture phase, so nothing in between can swallow it) and for both
-// mouse and pointer events: some Windows setups only deliver one kind in fullscreen.
+
 let lastMove = 0;
 const wake = e => {
   if (e && e.type.endsWith('move')) { const now = performance.now(); if (now - lastMove < 60) return; lastMove = now; }
-  // remember whether the controls were hidden when this tap began (this runs before anything on the
-  // stage sees the tap, and is what brings the controls back): a first tap only shows them
+
   if (e && (e.type === 'pointerdown' || e.type === 'touchstart')) {
     const now = performance.now();
     if (now - (wake.tapAt || 0) > 400) tapWasIdle = stage.dataset.idle === 'true' || controlsEl.classList.contains('gone'); // one tap fires both events
@@ -1094,7 +1053,6 @@ document.addEventListener('fullscreenchange', () => poke());
 document.addEventListener('webkitfullscreenchange', () => poke());
 poke();
 
-// popovers
 function closePops(except) {
   for (const p of ['#reactPop', '#tbReactPop', '#animeReactPop', '#ccPop', '#chatEmojiPop']) if (p !== except) $(p).hidden = true;
   if (except !== '#chatEmojiPop') $('#chatEmojiBtn').setAttribute('aria-expanded', 'false');
@@ -1102,7 +1060,6 @@ function closePops(except) {
 function togglePop(id) { const el = $(id); const open = el.hidden; closePops(id); el.hidden = !open; poke(); }
 document.addEventListener('click', e => { if (!e.target.closest('.pop-wrap')) closePops(); });
 
-// subtitles
 function buildCcMenu() {
   const pop = $('#ccPop');
   const subs = S.movie?.subs || [];
@@ -1337,8 +1294,7 @@ document.addEventListener('keydown', e => {
   // in an empty chat box, up/down still change the volume
   if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && !field.value)) return;
   const k = e.key.toLowerCase();
-  // The cross-origin MegaPlay iframe owns transport input. Keeping a second set of hidden keyboard
-  // controls in the parent caused native play/pause to be immediately toggled back.
+
   if (kindOf(S.movie) === 'megaplay' && [' ', 'k', 'm', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k)) return;
   if (k === ' ' || k === 'k') { e.preventDefault(); togglePlay(); }
   else if (k === 'f') { if (theaterSvc()) theaterPost({ wpTheater: 'fullscreen' }); else toggleFullscreen(); }
@@ -1401,8 +1357,6 @@ $('#micBtn').addEventListener('click', () => (S.mic ? stopLocal('audio') : start
 $('#animeCamBtn').addEventListener('click', () => $('#camBtn').click());
 $('#animeMicBtn').addEventListener('click', () => $('#micBtn').click());
 
-// Camera tiles float over the movie. Drag a tile to move it, drag its corner to resize it,
-// double-click it to put it back. Each viewer arranges their own screen; it's remembered.
 const tiles = new Map();
 let camLayout = store.get('wp.camLayout', {});
 const layoutKey = id => (id === clientId ? 'self' : id);
@@ -2174,8 +2128,6 @@ $('#streamGo').addEventListener('click', () => {
 });
 $('#streamUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#streamGo').click(); } });
 
-// Any website with a video. It opens inside everyone's Watch Party window (the extension's "watch
-// here" window) and only the host controls it: the host presses play, everyone plays, in sync.
 $('#customGo').addEventListener('click', () => {
   if (!isHost) return;
   let url = $('#customUrl').value.trim();
@@ -2194,9 +2146,6 @@ $('#customGo').addEventListener('click', () => {
 }
 $('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#customGo').click(); } });
 
-// A small always-on-top window (Chrome, Edge, Brave on a computer) with the cameras, chat,
-// reactions and play controls. It floats over Netflix, Prime Video and the others, even in
-// fullscreen, so you never have to leave the video to see the party.
 function inPip() { return !!pipWin; }
 const canPip = () => 'documentPictureInPicture' in window;
 function partyPanelWidth() {
@@ -2204,8 +2153,7 @@ function partyPanelWidth() {
   return Math.round(Math.max(280, Math.min(520, width)));
 }
 async function togglePip(opts = {}) {
-  // In the combined Netflix/Prime window this page is a nested frame, and browsers only allow the
-  // top-level document to create Document PiP. Ask the extension wrapper to create it instead.
+
   if (theaterSvc()) {
     theaterPost({ wpTheater: 'pip', action: opts.keep || !theaterPipOpen ? 'open' : 'close', width: partyPanelWidth() });
     return;
@@ -2300,10 +2248,6 @@ $('#pipBtn').addEventListener('click', () => togglePip());
 // handy for troubleshooting from the browser console
 window.__wp = { S, get player() { return player; }, get conn() { return conn; }, get mesh() { return mesh; }, get remote() { return remote; }, pipDoc: () => pipWin && pipWin.document, clientId };
 
-
-// When you watch on Netflix, Prime Video and the others, the extension shows this party in Chrome's
-// side panel right next to the video: chat, reactions, people, cameras and the play controls.
-// This page stays the one that's connected to the room; the panel is just a view of it.
 const dock = { open: false, timer: null, last: '', pc: null, rtcKey: '', cams: [], pendingIce: [] };
 
 function dockSnapshot() {
@@ -2340,8 +2284,7 @@ function dockTime() {
   if (!dock.open || !remote || !S.state) return;
   remote.post({ type: 'ui-time', t: { pos: localPos(), dur: S.movie?.duration || M.duration || 0, playing: !!S.state.playing, at: Date.now() } });
 }
-// Snapshots only go out when something changed; the time is sent on its own, twice a second.
-// (Timers in a background tab can slow down, so both are also driven by the streaming tab's updates.)
+
 setInterval(() => { dockPush(); dockTime(); dockRtcSync(); }, 500);
 let dockTimeAt = 0;
 window.addEventListener('message', e => {
@@ -2385,8 +2328,6 @@ function onDockMessage(m) {
   dockPushSoon();
 }
 
-// Cameras in the panel: this page sends the camera pictures it already has to the panel over a
-// direct connection inside your own browser (nothing extra goes over the internet).
 function dockCamItems() {
   const items = [];
   if (S.cam && mesh && mesh.local.video) items.push({ id: S.me?.id || clientId, track: mesh.local.video, name: 'You', self: true });
@@ -2439,9 +2380,6 @@ async function onDockRtc(d) {
   } catch (e) { console.warn('panel cameras', e); }
 }
 
-
-// Chromium can build a side-by-side theater window. Safari opens a normal top-level player tab so
-// streaming sites see the environment they expect and iPhone/iPad can use the toolbar popup.
 function enterTheater() {
   if (!remote || !remote.present) return;
   const url = `${location.origin}${location.pathname}#wpcid=${encodeURIComponent(clientId)}&wpname=${encodeURIComponent(S.me?.name || S.name || '')}`;
@@ -2508,7 +2446,6 @@ if (isTheater) {
   setInterval(theaterReport, 1000);
 }
 
-
 // A phone that dims and locks its screen pauses the video. Ask it to stay awake while something plays.
 let wakeLock = null;
 async function keepAwake(on) {
@@ -2520,7 +2457,6 @@ async function keepAwake(on) {
 }
 setInterval(() => keepAwake(!!(S.movie && S.state && (S.state.playing || S.state.waiting) && document.visibilityState === 'visible')), 2000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.movie && S.state && S.state.playing) keepAwake(true); });
-
 
 function renderServiceTiles() {
   const grid = $('#svcGrid');
@@ -2534,8 +2470,7 @@ $('#svcGrid').addEventListener('click', e => {
   if (!b) return;
   const id = b.dataset.svcTile;
   if (id === 'youtube') { openYouTube(); return; }
-  // a guest picking the service the room is already watching: join the title that's on, don't send
-  // everyone back to the start page
+
   if (!isHost && S.movie && kindOf(S.movie) === 'service' && S.movie.service === id && !S.movie.browsing) {
     setTab('chat');
     if (!remote || !remote.present) return; // the panel shows how to add the extension
@@ -2569,28 +2504,20 @@ $('#svcGrid').addEventListener('click', e => {
   if (cb) { cb.checked = store.get('wp.autoSkip', true); cb.addEventListener('change', () => { store.set('wp.autoSkip', cb.checked); dockPush(true); }); }
 }
 
-// The room follows the host's streaming tab: when the host's tab starts playing a title whose page
-// differs from what the room has, that becomes the room's movie (starting where the host's tab is).
-// Every admitted guest can do this too: they pick something on Netflix in their own window and the
-// room, the host included, follows them. Play/pause/seek permission remains separate.
-// Only a tab that moved on by itself counts: a tab still on the page it was on when the room's title
-// changed (someone else picked something) doesn't pull the room back.
 let followTimer = null, lastFollowUrl = '', followBase = '';
 function maybeFollowTab() {
   if ((!isHost && isCustom()) || !remote || !remote.linked || !remote.st) return;
   const m = S.movie;
   if (!m || kindOf(m) !== 'service') return;
   const st = remote.st;
-  // On a custom site the video usually plays in a frame inside the page, which can't tell which page
-  // it's on: use the page the window shows.
+
   const pageNow = () => (remote.st && remote.st.url) || (m.service === 'custom' ? remote.pageUrl : '') || '';
   const url = canonicalUrl(pageNow());
   if (!url || url === canonicalUrl(m.url) || url === lastFollowUrl || url === followBase) return;
   if (!(st.dur > 60) || st.ad || st.paused) return; // nothing real is playing yet
   // a home page / browse rows / profile picker / info page plays trailers by itself: never a pick
   if (!isTitlePage(pageNow())) return;
-  // someone who just joined (and is still finding their way to the room's title, through "Who's
-  // watching?" and the home page) can't move the room; only once they've been on the room's title
+
   if (!isHost && !m.browsing && !reachedTitle) return;
   if (m.service === 'custom' ? !!serviceOfUrl(url) : serviceOfUrl(url) !== m.service) return; // wandered off to another site
   lastFollowUrl = url;
@@ -2604,8 +2531,7 @@ function maybeFollowTab() {
 }
 window.addEventListener('message', e => {
   if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
-  // once the tab has left the page it was on when someone else changed the title, anything it plays
-  // (even that same title again) is a new choice
+
   const u = e.data.type === 'page' ? e.data.url : e.data.type === 'status' && e.data.st ? e.data.st.url : '';
   if (followBase && u && canonicalUrl(u) !== followBase) followBase = '';
   if (e.data.type === 'status') maybeFollowTab();
@@ -2646,8 +2572,7 @@ function bringAlong(movie) {
   const prev = lastMovieUrl;
   lastMovieUrl = movie.url;
   if (prev !== movie.url) { followBase = remote ? canonicalUrl(remote.pageUrl || '') : ''; reachedTitle = false; clearTimeout(followTimer); lastFollowUrl = ''; }
-  // The host too: when any guest picks something, the host's tab (signed in to every service) is
-  // taken there.
+
   if (!remote || !remote.present || movie.browsing) return;
   if (!prev || prev === movie.url) return; // first load: the panel's Open button handles it
   if (tryServiceAdvance(movie, prev)) return;
@@ -2658,7 +2583,6 @@ function bringAlong(movie) {
     toast(`Taking your ${serviceName(movie)} tab to ${movie.title && movie.title !== serviceName(movie) ? `"${movie.title}"` : 'what the host is watching'}…`, { timeout: 5000 });
   }
 }
-
 
 // Phones following a streaming service by hand: a live clock of where the room is.
 setInterval(() => {
@@ -2681,9 +2605,6 @@ setInterval(() => {
 }, 250);
 let followSig = '', followFlashUntil = 0;
 
-
-// Search and pick right here, no account needed. The video then plays in the embedded YouTube
-// player for everyone, phones and tablets included, with no extension.
 const YT_CHIPS = ['Music', 'Movie trailers', 'Bollywood songs', 'Comedy', 'Cricket highlights', 'Cooking', 'Kids'];
 function openYouTube() {
   $('#ytChips').innerHTML = YT_CHIPS.map(c => `<button type="button" data-yq="${esc(c)}">${esc(c)}</button>`).join('');
@@ -2793,10 +2714,6 @@ $('#animeNext').addEventListener('click', () => {
   conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
 });
 
-
-// Signing in to Netflix and the others goes through their own pages (sign in, "Who's watching?",
-// profile PIN) and then usually lands on their home page instead of the show. Once a guest is past
-// all that, take them to what the room is watching. Never while they're still signing in.
 let keepOffSince = 0, keepLastGo = 0, reachedTitle = false;
 setInterval(() => {
   if (isHost || !remote || !remote.present || !S.movie || kindOf(S.movie) !== 'service' || S.movie.browsing) { keepOffSince = 0; return; }

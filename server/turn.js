@@ -1,7 +1,5 @@
 'use strict';
-// A small STUN/TURN server (RFC 5389 / 5766, UDP only) so webcams connect through your own PC
-// instead of Google/Cloudflare servers. Everyone's relay lives on this PC, so relay-to-relay traffic
-// is handed over inside the app and only one UDP port has to be open on the router.
+
 const dgram = require('dgram');
 const crypto = require('crypto');
 
@@ -289,8 +287,7 @@ class TurnServer {
       this.deliver(target, this.advertisedIp(), alloc.relayPort, data);
       return;
     }
-    // Security: never send traffic from your PC to arbitrary internet addresses. The relay only
-    // connects people who are in your party (they all have a relay here), so nothing else is needed.
+
     if (this.allowExternal) alloc.relay.send(data, port, ip);
   }
 

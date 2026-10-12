@@ -1,8 +1,5 @@
 'use strict';
-// Front-door protection for the one port the app opens to the internet.
-// - Anyone who doesn't have the secret invite link just gets "not found" (the app stays invisible).
-// - Too many wrong attempts from one internet address: that address is blocked for an hour.
-// - Limits on connections per address and on how long a silent connection may stay open.
+
 const net = require('net');
 
 const norm = ip => String(ip || '').replace(/^::ffff:/, '');

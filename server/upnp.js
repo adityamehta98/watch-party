@@ -1,6 +1,5 @@
 'use strict';
-// Asks your home router to forward a port to this PC (UPnP IGD), so friends can reach you directly.
-// Plain protocol code: SSDP discovery over UDP multicast + SOAP over HTTP. No outside services.
+
 const dgram = require('dgram');
 const http = require('http');
 const os = require('os');

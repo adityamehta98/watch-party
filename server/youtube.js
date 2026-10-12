@@ -1,7 +1,5 @@
 'use strict';
-// YouTube search without an account or an API key: this PC asks youtube.com the same way a signed-out
-// browser does, and reads the results out of the page. Videos then play in the embedded YouTube
-// player inside the party, for everyone (phones and tablets too, no extension needed).
+
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const cache = new Map(); // query -> { at, results }
 

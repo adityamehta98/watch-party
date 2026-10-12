@@ -1,6 +1,4 @@
-// Peer-to-peer webcam/mic mesh (fine for a handful of people).
-// The newest person in the room calls everyone else; each connection carries one audio + one video slot,
-// and turning the camera/mic on or off just swaps the track in that slot, with no renegotiation needed.
+
 
 const CAM_MAX_BITRATE = 450_000; // keep webcams light so your upload is saved for the movie
 
@@ -18,9 +16,7 @@ export class Mesh {
 
   createPeer(id) {
     this.closePeer(id);
-    // ?relay=1 forces everything through the host's built-in relay (for troubleshooting)
-    // Webcam video goes through the host's own relay, so guests never connect to (or learn the
-    // internet address of) each other. ?relay=1 forces this even if the host turned it off.
+
     const forceRelay = this.relayOnly || new URLSearchParams(location.search).has('relay');
     const pc = new RTCPeerConnection({ iceServers: this.iceServers, iceTransportPolicy: forceRelay ? 'relay' : 'all' });
     const peer = { id, pc, stream: new MediaStream(), pendingIce: [] };

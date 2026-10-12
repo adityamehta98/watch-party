@@ -53,8 +53,7 @@ function serveFile(req, res, file, { onBytes, type, maxChunk = 0 } = {}) {
       res.writeHead(416, { 'Content-Range': `bytes */${size}` });
       return res.end();
     }
-    // Answer open-ended ranges in bounded pieces. Browsers simply ask for the next piece, and it keeps
-    // tunnels/proxies from holding one giant multi-GB response open.
+
     if (maxChunk && end - start + 1 > maxChunk) end = start + maxChunk - 1;
     status = 206;
     headers['Content-Range'] = `bytes ${start}-${end}/${size}`;

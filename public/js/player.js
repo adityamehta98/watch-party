@@ -1,12 +1,8 @@
-// Keeps the local <video> locked to the room's shared timeline.
-// Every viewer plays the original file locally; this only nudges timing, it never touches quality.
+
 
 import { PLATFORM } from './platform.js';
 import { syncTuning } from './sync.js';
 
-// iPhone / iPad (and Safari on a Mac): Safari's player doesn't like having its speed nudged up and
-// down all the time (it re-buffers), and it reports time in coarse steps. So there we keep pace with
-// small jumps every now and then instead, like the YouTube player, and tolerate a little more drift.
 export const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
 export const DEVICE = PLATFORM.device;
 const APPLE_PROFILE = { hardSeek: 0.35, rate: false, nudge: 0.08, pausedEps: 0.2 };
@@ -72,9 +68,7 @@ export class SyncPlayer {
     for (const ev of ['waiting', 'playing', 'canplay', 'canplaythrough', 'pause', 'stalled', 'loadedmetadata', 'error']) {
       on(ev, () => { this.report(true); this.onChange(); });
     }
-    // count the times playback ran dry (not our own seeks), so the host can see who keeps stalling and why
-    // Only real stalls of the movie file count. YouTube and the streaming services report "buffering"
-    // after every jump and at every start, which isn't a problem, and a jump we just made isn't a stall either.
+
     on('waiting', () => {
       if (media.isAdapter || media.seeking || !this.state || !this.state.playing) return;
       const t = performance.now();
@@ -84,9 +78,7 @@ export class SyncPlayer {
     on('playing', () => { if (!this.playStartedAt || performance.now() - this.playStartedAt > 60000) this.playStartedAt = performance.now(); });
     on('timeupdate', () => {
       this.onChange();
-      // When you watch in a streaming tab, this page sits in a background tab where Chrome slows
-      // timers to once a second (or once a minute after a while). Status updates from the streaming
-      // tab still arrive instantly, so keep the sync running off those.
+
       if (media.isAdapter && document.hidden) {
         const t = performance.now();
         if (t - (this.lastCorrectAt || 0) > 600) this.correct(); // only when the regular 0.2 s loop has been slowed down
@@ -105,8 +97,7 @@ export class SyncPlayer {
       this.attach(media);
     }
     this.movie = movie;
-    // HLS streams need a longer initial seek estimate (fetching + decoding a 4-10s segment).
-    // The real latency is learned from the seeked event; this is just a starting guess.
+
     this.seekLatency = this.v.isAdapter ? 0.6 : (movie && movie.hls) ? 1.2 : 0.25;
     this.clearStart();
     this.drift = 0;
@@ -135,8 +126,7 @@ export class SyncPlayer {
 
   setState(state) {
     const prev = this.state;
-    // a new position from a play/seek/pause should be applied right away, not held back by the
-    // "don't re-seek too often" guard that protects against buffering loops
+
     if (!prev || state.position !== prev.position || state.anchor !== prev.anchor || state.playing !== prev.playing) this.lastHardSeek = 0;
     this.state = state;
     this.correct();
@@ -218,8 +208,7 @@ export class SyncPlayer {
   correct() {
     this.lastCorrectAt = performance.now();
     const v = this.v, s = this.state;
-    // v.src is empty when hls.js uses ManagedMediaSource (iPhone/iPad), which attaches via a
-    // <source> child instead; v.currentSrc reflects either path, so the sync loop runs there too.
+
     if (!this.movie || !s || !v.currentSrc || v.readyState < 1) return;
     if (this.movie.browsing) return; // the host is still picking something on the service: leave the tabs alone
     if (!this.clock.synced) return; // wait until we know the room's clock, or a late joiner lands in the wrong place
@@ -270,9 +259,7 @@ export class SyncPlayer {
     const tuning = syncTuning({ drift: this.driftEma, ahead, rtt: this.clock.rtt || 0, profile: prof });
     const hardSeek = tuning.hardSeek;
     if (Math.abs(diff) > hardSeek) {
-      // Far from the room (just joined, or fell behind): jump there first and only start playing once
-      // we've arrived, so a late joiner never hears the movie from the beginning.
-      // While waiting for data after a jump, don't keep re-seeking; it throws away buffer.
+
       if (!this.lastHardSeek || sinceSeek > 3 || (sinceSeek > 1.2 && v.readyState >= 3)) {
         if (!v.paused && !this.aligned) v.pause();
         this.seekTo(target + Math.min(this.seekLatency, 1), 'seek');
@@ -281,14 +268,12 @@ export class SyncPlayer {
       return;
     }
     if (v.paused && !this.blocked) this.tryPlay();
-    // HLS gets a larger alignment window: the real drift keeps correcting itself with
-    // the rate controller below, but the user shouldn't see "Catching up" forever.
+
     const alignEps = (this.movie && this.movie.hls) ? 0.8 : 0.3;
     if (!this.aligned && Math.abs(diff) < alignEps && !v.paused) { this.aligned = true; this.onChange(); }
     if (v.readyState < 3) { this.setRate(1); return; }
     if (prof.rate === false) {
-      // this player can't change speed smoothly: instead, a small precise jump now and then (at most
-      // every few seconds, and only when the buffer is healthy) keeps the sound in step
+
       const t = performance.now();
       if (this.nudgePending && !v.seeking && v.readyState >= 3 && t - this.lastNudge > 600) {
         // learn from where the last jump landed: too far ahead means we allowed too much for the seek
@@ -313,10 +298,6 @@ export class SyncPlayer {
     }
   }
 
-  // Detects "sound plays but the picture stays black": the browser can't decode this video.
-  // Careful not to cry wolf: Chrome stops drawing frames whenever the tab is hidden, minimized or
-  // covered by another window, so we only judge while the page is visible, need two bad checks in
-  // a row, and once real frames have shown up for this movie we stop suspecting the picture.
   watchFrames(v) {
     if (this.rvfcFor === v || !v.requestVideoFrameCallback) return;
     this.rvfcFor = v;

@@ -20,8 +20,7 @@ export function deliverySources(movie, capabilities, key, clientId) {
   if (movie.hls) {
     // Only Safari's native HLS is trusted (Chrome's fails on growing playlists).
     const appleNative = capabilities?.hls && capabilities.nativeHlsPreferred;
-    // Anime is a proxied remote stream that stalls on Safari's short native buffer, so prefer hls.js
-    // there for its large forward buffer; local movies keep native HLS (disk is fast enough).
+
     const remoteHls = movie.kind === 'anime';
     let types;
     if (appleNative && !(capabilities?.mse && remoteHls)) types = ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])];
@@ -37,9 +36,6 @@ export function deliverySources(movie, capabilities, key, clientId) {
 
 const sameSource = (a, b) => !!a && !!b && a.type === b.type && a.url === b.url;
 
-// Keep an already-working source attached when the server adds/removes delivery formats for the
-// same movie. Put it first so the normal fallback walk tries every newly available format after it.
-// A failed or removed source is replaced immediately; a failed source is retained as a last retry.
 export function reconcileDeliverySources(nextSources, activeSource, failed = false) {
   const sources = [...(nextSources || [])];
   const activeAt = sources.findIndex(source => sameSource(source, activeSource));
