@@ -95,6 +95,10 @@
       <div class="now-playing" id="nowPlaying"></div>
       <div class="top-actions">
         <span class="tb-media" id="tbMedia">
+          <span class="pop-wrap">
+            <button class="ctrl" id="tbReact" type="button" title="React" aria-label="React"><svg><use href="#i-smile"/></svg></button>
+            <div class="popover reactions-pop" id="tbReactPop" hidden></div>
+          </span>
           <button class="ctrl" id="tbCam" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
           <button class="ctrl" id="tbMic" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
         </span>
@@ -110,9 +114,10 @@
         <video id="video" playsinline preload="auto"></video>
         <div class="ambient-light" id="ambientLight" aria-hidden="true"></div>
         <div class="yt-host" id="ytHost"></div>
+        <div class="mp-host" id="mpHost"></div>
         <div class="click-layer" id="clickLayer"></div>
         <div class="service-panel" id="servicePanel" hidden></div>
-        <button class="yt-open ctl-only" id="ytOpen" type="button" hidden><svg><use href="#i-film"/></svg>Search YouTube</button>
+        <button class="yt-open" id="ytOpen" type="button" hidden><svg><use href="#i-film"/></svg>Search YouTube</button>
         <div class="yt-browser" id="ytBrowser" hidden>
           <div class="yt-top">
             <span class="yt-logo">YouTube</span>
@@ -129,7 +134,7 @@
             <svg class="empty-icon"><use href="#i-film"/></svg>
             <h2 id="emptyTitle">Nothing is playing yet</h2>
             <p class="muted" id="emptyText">The host will pick a movie.</p>
-            <div class="empty-actions ctl-only">
+            <div class="empty-actions">
               <button class="btn primary" type="button" data-open-tab="library"><svg><use href="#i-film"/></svg>Open library</button>
               <button class="btn host-only" type="button" id="emptyInvite"><svg><use href="#i-link"/></svg>Invite people</button>
             </div>
@@ -147,6 +152,19 @@
         <form class="quick-chat" id="quickChat" hidden>
           <input id="quickChatInput" maxlength="500" placeholder="Say something… (Esc to close)" autocomplete="off">
         </form>
+
+        <div class="anime-social" id="animeSocial" aria-label="Watch Party social controls">
+          <button class="ctrl" id="animeCamBtn" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
+          <button class="ctrl" id="animeMicBtn" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
+          <div class="pop-wrap">
+            <button class="ctrl" id="animeReactBtn" type="button" title="React" aria-label="React"><svg><use href="#i-smile"/></svg></button>
+            <div class="popover reactions-pop" id="animeReactPop" hidden></div>
+          </div>
+          <button class="ctrl" id="animeChatBtn" type="button" title="Chat" aria-label="Chat"><svg><use href="#i-chat"/></svg></button>
+        </div>
+        <div class="anime-actions">
+          <button class="anime-next" id="animeNext" type="button">Next episode</button>
+        </div>
 
         <div class="controls" id="controls">
           <div class="seek" id="seek">
@@ -193,15 +211,19 @@
       <nav class="tabs" role="tablist">
         <button class="tab" role="tab" data-tab="chat" type="button" title="Chat" aria-label="Chat"><svg><use href="#i-chat"/></svg><span>Chat</span><em class="badge" id="chatBadge" hidden></em></button>
         <button class="tab" role="tab" data-tab="people" type="button" title="People" aria-label="People"><svg><use href="#i-users"/></svg><span>People</span><em class="badge" id="peopleBadge" hidden></em></button>
-        <button class="tab host-only" role="tab" data-tab="observatory" type="button" title="Sync Observatory" aria-label="Sync Observatory"><svg><use href="#i-refresh"/></svg><span>Sync</span></button>
-        <button class="tab ctl-only" role="tab" data-tab="library" type="button" title="Library" aria-label="Library"><svg><use href="#i-film"/></svg><span>Library</span></button>
+        <button class="tab" role="tab" data-tab="observatory" type="button" title="Sync Observatory" aria-label="Sync Observatory"><svg><use href="#i-refresh"/></svg><span>Sync</span></button>
+        <button class="tab" role="tab" data-tab="library" type="button" title="Library" aria-label="Library"><svg><use href="#i-film"/></svg><span>Library</span></button>
         <button class="tab host-only" role="tab" data-tab="settings" type="button" title="Room settings" aria-label="Room settings"><svg><use href="#i-sliders"/></svg><span>Room</span></button>
       </nav>
 
       <section class="panel" data-panel="chat">
-        <div class="moments-bar" id="momentsBar"><button class="btn sm ghost ctl-only" id="bookmarkBtn" type="button"><svg><use href="#i-bookmark"/></svg>Save scene</button><div class="moment-list" id="bookmarkList"></div></div>
+        <div class="moments-bar" id="momentsBar"><button class="btn sm ghost" id="bookmarkBtn" type="button"><svg><use href="#i-bookmark"/></svg>Save scene</button><div class="moment-list" id="bookmarkList"></div></div>
         <div class="chat-list" id="chatList"></div>
         <form class="chat-form" id="chatForm">
+          <span class="pop-wrap chat-emoji-wrap">
+            <button class="icon-btn" id="chatEmojiBtn" type="button" title="Add emoji" aria-label="Add emoji" aria-expanded="false"><svg><use href="#i-smile"/></svg></button>
+            <div class="popover chat-emoji-pop" id="chatEmojiPop" hidden></div>
+          </span>
           <input id="chatInput" maxlength="500" placeholder="Message everyone" autocomplete="off">
           <button class="icon-btn accent" type="submit" aria-label="Send"><svg><use href="#i-send"/></svg></button>
         </form>
@@ -211,11 +233,11 @@
         <div class="panel-scroll" id="peopleList"></div>
       </section>
 
-      <section class="panel host-only" data-panel="observatory">
+      <section class="panel" data-panel="observatory">
         <div class="panel-scroll observatory" id="observatory"></div>
       </section>
 
-      <section class="panel ctl-only" data-panel="library">
+      <section class="panel" data-panel="library">
         <div class="panel-scroll">
           <div class="lib-head">
             <div class="search"><svg><use href="#i-search"/></svg><input id="libSearch" placeholder="Search movies" autocomplete="off"></div>
@@ -241,6 +263,13 @@
               <label class="check-row"><input type="checkbox" id="streamInTabs"> For YouTube: everyone opens it in their own tab (needs the extension; use this for videos that won't play here)</label>
               <div class="row end"><button class="btn sm primary" id="streamGo" type="button">Show in room</button></div>
             </details>
+          </details>
+          <details class="svc-pick" id="animePick">
+            <summary class="section-label">Anime — no extension (works on iPhone &amp; iPad)</summary>
+            <p class="fine">Search, pick an episode, and it plays right here in sync for everyone. No extension and no sign-in; subtitles or dub where available.</p>
+            <form class="yt-search" id="animeForm" autocomplete="off"><input id="animeQuery" placeholder="Search anime, e.g. Spy x Family" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
+            <div class="yt-status fine" id="animeStatus"></div>
+            <div class="anime-results" id="animeResults"></div>
           </details>
           <details class="folders host-only" id="foldersBox">
             <summary><svg><use href="#i-folder"/></svg><span id="foldersSummary">Movie folders</span></summary>

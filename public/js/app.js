@@ -5,7 +5,7 @@ import { playbackCapabilities, deliverySources, reconcileDeliverySources } from 
 import { FilePlayback } from './file-playback.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
-import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
+import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
 // ---------------------------------------------------------------- helpers
 const $ = s => document.querySelector(s);
@@ -62,8 +62,9 @@ const PLAYBACK = playbackCapabilities(video, globalThis, PLATFORM);
 const stage = $('#stage');
 // The media everything talks to: the <video> for your files, or a YouTube / streaming-tab adapter.
 let M = video;
-let ytMedia = null, remote = null;
+let ytMedia = null, mpMedia = null, remote = null;
 let pipWin = null; // pop-out camera window
+let theaterPipOpen = false;
 const room = $('#room');
 let conn = null, player = null, mesh = null;
 const filePlayback = new FilePlayback(video, {
@@ -129,6 +130,7 @@ function start(name) {
     onPeerGone: id => { S.remoteStreams.delete(id); renderCams(); },
   });
   ytMedia = new YouTubeMedia($('#ytHost'));
+  mpMedia = new MegaplayMedia($('#mpHost'), { onUser: onMegaplayUserAction, onFullscreen: cmd => { if (cmd === 'toggle') toggleFullscreen(); else mpMedia.fsState(isFs()); } });
   remote = new RemoteMedia({ onInfo: () => {
     renderServicePanel(); maybeSendMeta();
     if (remote.present && extOutdated(remote.version) && !S.extWarned) {
@@ -241,6 +243,7 @@ function wire() {
   conn.on('library-changed', () => loadLibrarySoon());
   conn.on('library', m => { if (isHost || !m.library) return; S.library = m.library; renderLibrary(); });
   conn.on('yt-results', m => onYtResults(m));
+  conn.on('anime-results', m => onAnimeResults(m));
   conn.on('job', m => updateJob(m.id, m.job));
   conn.on('network', () => refreshInfoSoon());
   conn.on('link-changed', () => { refreshInfo().then(() => openInvite()); toast('New invite link created. Share it with your guests again.'); });
@@ -270,8 +273,8 @@ function onWelcome(m) {
   applyPerms();
   renderSettings();
   renderNotice();
+  loadLibrary();
   if (isHost) {
-    loadLibrary();
     refreshInfo();
     if (!m.movie && S.tab === 'chat' && !S._openedLib) { S._openedLib = true; setTab('library'); }
   }
@@ -354,7 +357,7 @@ document.addEventListener('visibilitychange', syncAmbient);
 
 function mediaFor(movie) {
   const k = kindOf(movie);
-  return k === 'youtube' ? ytMedia : k === 'service' ? remote : video;
+  return k === 'youtube' ? ytMedia : k === 'megaplay' ? mpMedia : k === 'service' ? remote : video;
 }
 
 let fileStartTimer = null;
@@ -424,7 +427,8 @@ function loadMovie(movie) {
   syncAmbient();
   stage.classList.toggle('has-movie', !!movie);
   stage.dataset.kind = kindOf(movie);
-  $('#ytOpen').hidden = !((isHost || canControl()) && kindOf(movie) === 'youtube');
+  renderAnimeOverlay();
+  $('#ytOpen').hidden = kindOf(movie) !== 'youtube';
   renderNowPlaying();
   theaterReportSoon();
   renderServiceTiles();
@@ -553,12 +557,9 @@ function renderServicePanel() {
       : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder (replace the files).</li><li>Open <code>chrome://extensions</code> and click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol>`;
   } else if (!remote.linked || !st) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
-    const pickerName = m.by && m.by !== (S.me && S.me.name) ? m.by : hostName; // who picked it (the host, or a guest with control)
-    status = isHost || (m.browsing && canControl())
+    status = isHost || m.browsing
       ? `Open ${esc(name)} and sign in with <b>your own</b> account if it asks. Press play on anything: the whole room follows what you're watching${isHost ? '' : `, ${esc(hostName)} included`}, and the party (chat, cameras, controls) sits in a panel next to it.`
-      : m.browsing
-        ? `${esc(pickerName)} is picking something on ${esc(name)}. Open ${esc(name)} now and sign in with <b>your own</b> ${esc(name)} account, so you're ready when they press play.`
-        : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
+      : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
     button = isTheater ? '' : safariRuntime
       ? `<button class="btn primary" type="button" data-svc="theater">Watch ${esc(name)} with Watch Party</button>`
       : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
@@ -577,8 +578,7 @@ function renderServicePanel() {
     }
   } else {
     status = `<span class="svc-ok">Synced with your ${esc(name)} tab</span> · <span id="svcTime"></span>`;
-    if (m.browsing && (isHost || canControl())) status = `<span class="svc-ok">${esc(name)} is open</span> · press play on anything and everyone follows.`;
-    else if (m.browsing) status = `<span class="svc-ok">Ready on ${esc(name)}</span> · waiting for ${esc(m.by && m.by !== (S.me && S.me.name) ? m.by : 'the host')} to pick something.`;
+    if (m.browsing) status = `<span class="svc-ok">${esc(name)} is open</span> · press play on anything and everyone follows.`;
     if (st.ad) status += `<br>An ad is playing in your tab. The room waits until it's over.`;
     if (st.blocked) status += `<br>Click play once inside the ${esc(name)} tab. The browser needs one click there.`;
     button = safariRuntime
@@ -635,10 +635,23 @@ function onRemoteUserAction(m) {
   }, 700);
 }
 
+// MegaPlay renders its own transport bar. A native click is authoritative for this viewer, so share
+// it immediately and let the room's normal permissions decide whether everybody follows it.
+function onMegaplayUserAction(m) {
+  if (kindOf(S.movie) !== 'megaplay' || !Number.isFinite(Number(m.t))) return;
+  if (!canControl()) { toast('Only people the host allows can play, pause or seek.', { timeout: 3000 }); return; }
+  const t = Math.max(0, Number(m.t));
+  const at = conn.clock.now();
+  if (m.action === 'pause') predict({ playing: false, position: t, anchor: at });
+  else if (m.action === 'play') predict({ playing: true, position: t, anchor: at });
+  else predict({ position: t, anchor: at });
+  sendCmd(m.action, t);
+}
+
 // The host tells the room the real title and length once the player knows them.
 function maybeSendMeta() {
   const m = S.movie;
-  if (!(isHost || (canControl() && m && m.by && m.by === (S.me && S.me.name))) || !m || kindOf(m) === 'file' || !M.isAdapter) return;
+  if (!(isHost || (m && m.by && m.by === (S.me && S.me.name))) || !m || kindOf(m) === 'file' || !M.isAdapter) return;
   const title = (M === remote ? remote.st && remote.st.title : ytMedia.ready && ytMedia.p.getVideoData && ytMedia.p.getVideoData().title) || '';
   const duration = M.duration || 0;
   const key2 = `${m.id}|${title}|${Math.round(duration)}`;
@@ -709,8 +722,9 @@ function renderControls() {
   // one of the inputs it watches has flipped
   const buffering = S.state && S.state.playing && conn.clock.now() > S.state.anchor + 600 && (M.readyState < 3 || M.seeking) && !M.error;
   const syncing = !!(player && player.syncing);
-  if (buffering !== S._buffering || syncing !== S._syncing) {
-    S._buffering = buffering; S._syncing = syncing; renderNotice();
+  const errored = !!(M.error && M.isAdapter);
+  if (buffering !== S._buffering || syncing !== S._syncing || errored !== S._errored) {
+    S._buffering = buffering; S._syncing = syncing; S._errored = errored; renderNotice();
   }
 }
 
@@ -719,7 +733,7 @@ function renderNotice() {
   let html = '';
   if (S.movie) {
     if (M.error && M.isAdapter) {
-      html = `<span>${esc(M.error.yt === 101 || M.error.yt === 150 ? 'The owner of this YouTube video doesn\'t allow playing it outside YouTube. The host can show it with "Everyone opens it in their own tab" instead.' : 'This video couldn\'t be loaded.')}</span>`;
+      html = `<span>${esc(M.error.message || (M.error.yt === 101 || M.error.yt === 150 ? 'The owner of this YouTube video doesn\'t allow playing it outside YouTube. The host can show it with "Everyone opens it in their own tab" instead.' : 'This video couldn\'t be loaded.'))}</span>`;
     } else if (M === remote) {
       html = ''; // the service panel explains what to do
     } else if (S.filePlaybackError) {
@@ -781,23 +795,27 @@ function noPerm(perm) {
 }
 function applyPerms() {
   const ctl = canControl();
-  // guests with control also get the library and can pick what the room watches
-  const had = app.classList.contains('can-control');
-  app.classList.toggle('can-control', !isHost && ctl);
+  // Content selection belongs to every admitted room member. Playback permission still controls
+  // play, pause and seek, but never hides the room's Library or removes its selection actions.
   $('#libGuestNote').hidden = isHost;
-  if (!isHost && ctl && !had) loadLibrarySoon();
-  if (!isHost && !ctl && had && S.tab === 'library') setTab('chat');
+  if (!isHost) $('#libGuestNote').textContent = 'You can pick what everyone watches: a movie from the host\'s PC, YouTube, anime, Netflix, Prime Video, or another supported service. Everyone in the room follows your selection.';
   for (const id of ['#playBtn', '#backBtn', '#fwdBtn']) $(id).classList.toggle('denied', !ctl);
   $('#seek').classList.toggle('locked', !ctl);
   const chatOk = isHost || S.perms.chat;
   $('#chatInput').disabled = !chatOk;
   $('#quickChatInput').disabled = !chatOk;
+  $('#chatEmojiBtn').disabled = !chatOk;
+  $('#animeChatBtn').classList.toggle('denied', !chatOk);
   $('#chatInput').placeholder = chatOk ? 'Message everyone' : 'The host turned off chat for you';
   $('#chatForm').classList.toggle('disabled', !chatOk);
   $('#reactBtn').classList.toggle('denied', !(isHost || S.perms.react));
+  $('#tbReact').classList.toggle('denied', !(isHost || S.perms.react));
+  $('#animeReactBtn').classList.toggle('denied', !(isHost || S.perms.react));
   const camOk = isHost || S.perms.camera;
   $('#camBtn').classList.toggle('denied', !camOk);
   $('#micBtn').classList.toggle('denied', !camOk);
+  $('#animeCamBtn').classList.toggle('denied', !camOk);
+  $('#animeMicBtn').classList.toggle('denied', !camOk);
   renderBookmarks();
   renderPeople();
 }
@@ -993,10 +1011,18 @@ function toggleFullscreen() {
   if (isFs()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
   if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
   else if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
+  else if (kindOf(S.movie) === 'megaplay') toast('This browser cannot keep Watch Party controls visible in fullscreen.', { timeout: 4000 });
   else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
 }
 $('#fsBtn').addEventListener('click', toggleFullscreen);
-const onFs = () => { const fs = isFs(); stage.classList.toggle('is-fs', fs); $('#fsBtn').innerHTML = icon(fs ? 'fs-exit' : 'fs'); };
+// Anime fullscreen is driven by the MegaPlay player's own button through its bridge (handled in the
+// mpMedia onFullscreen callback), so Watch Party keeps a single fullscreen control, not two.
+const onFs = () => {
+  const fs = isFs();
+  stage.classList.toggle('is-fs', fs);
+  $('#fsBtn').innerHTML = icon(fs ? 'fs-exit' : 'fs');
+  if (kindOf(S.movie) === 'megaplay' && mpMedia) mpMedia.fsState(fs); // keep the embed's icon in sync
+};
 document.addEventListener('fullscreenchange', onFs);
 document.addEventListener('webkitfullscreenchange', onFs);
 
@@ -1048,7 +1074,10 @@ document.addEventListener('webkitfullscreenchange', () => poke());
 poke();
 
 // popovers
-function closePops(except) { for (const p of ['#reactPop', '#ccPop']) if (p !== except) $(p).hidden = true; }
+function closePops(except) {
+  for (const p of ['#reactPop', '#tbReactPop', '#animeReactPop', '#ccPop', '#chatEmojiPop']) if (p !== except) $(p).hidden = true;
+  if (except !== '#chatEmojiPop') $('#chatEmojiBtn').setAttribute('aria-expanded', 'false');
+}
 function togglePop(id) { const el = $(id); const open = el.hidden; closePops(id); el.hidden = !open; poke(); }
 document.addEventListener('click', e => { if (!e.target.closest('.pop-wrap')) closePops(); });
 
@@ -1076,11 +1105,33 @@ $('#ccBtn').addEventListener('click', e => { e.stopPropagation(); buildCcMenu();
 $('#ccPop').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (!b) return; selectSub(b.dataset.sub || null); closePops(); });
 
 // ---------------------------------------------------------------- reactions
+const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
 function buildReactions() {
-  $('#reactPop').innerHTML = S.reactions.map(r => `<button type="button" data-emoji="${r}">${r}</button>`).join('');
+  const html = S.reactions.map(r => `<button type="button" data-emoji="${r}">${r}</button>`).join('');
+  $('#reactPop').innerHTML = html;
+  $('#tbReactPop').innerHTML = html; // same reactions in the top bar (shown in the Netflix "watch here" window)
+  $('#animeReactPop').innerHTML = html;
 }
+function onReactClick(e) { const b = e.target.closest('[data-emoji]'); if (b) conn.send({ type: 'react', emoji: b.dataset.emoji }); }
 $('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
-$('#reactPop').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b) conn.send({ type: 'react', emoji: b.dataset.emoji }); });
+$('#reactPop').addEventListener('click', onReactClick);
+$('#tbReact').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#tbReactPop'); });
+$('#tbReactPop').addEventListener('click', onReactClick);
+$('#animeReactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#animeReactPop'); });
+$('#animeReactPop').addEventListener('click', onReactClick);
+$('#chatEmojiPop').innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
+$('#chatEmojiBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!(isHost || S.perms.chat)) return noPerm('chat');
+  togglePop('#chatEmojiPop');
+  $('#chatEmojiBtn').setAttribute('aria-expanded', String(!$('#chatEmojiPop').hidden));
+});
+$('#chatEmojiPop').addEventListener('click', e => {
+  const button = e.target.closest('[data-chat-emoji]'); if (!button) return;
+  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+  input.setRangeText(button.dataset.chatEmoji, start, end, 'end');
+  closePops(); input.focus();
+});
 function scheduleReaction(m) {
   const fire = () => {
     if (m.movieId && m.movieId !== S.movie?.id) return;
@@ -1124,20 +1175,42 @@ function seekToast(by, delta, position) {
     el.timer = setTimeout(() => el.remove(), 2500);
   } else skipToast.el = toast(text, { timeout: 2500 });
 }
+let theaterToastSeq = 0;
+const theaterToastActions = new Map();
 function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
   const box = $('#toasts');
   const el = document.createElement('div');
+  const theaterId = `notice-${++theaterToastSeq}`;
   el.className = `toast ${kind}`;
   el.innerHTML = `<span class="t">${esc(text)}</span>${actions.length ? `<span class="acts">${actions.map((a, i) => `<button type="button" class="btn sm ${a.primary ? 'primary' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}</span>` : ''}`;
   el.addEventListener('click', e => {
     const b = e.target.closest('[data-i]');
-    if (b) { actions[+b.dataset.i].run(); el.remove(); }
+    if (b) { actions[+b.dataset.i].run(); theaterToastActions.delete(theaterId); theaterPost({ wpTheater: 'toast-dismiss', id: theaterId }); el.remove(); }
   });
   box.appendChild(el);
   while (box.childElementCount > 4) box.firstElementChild.remove();
-  el.timer = setTimeout(() => el.remove(), timeout);
+  if (isTheater) {
+    if (actions.length) theaterToastActions.set(theaterId, actions);
+    theaterPost({ wpTheater: 'toast', id: theaterId, text: String(text || '').slice(0, 500), kind, timeout, actions: actions.map(a => ({ label: String(a.label || '').slice(0, 60), primary: !!a.primary })) });
+  }
+  el.timer = setTimeout(() => { el.remove(); theaterToastActions.delete(theaterId); }, timeout);
   return el;
 }
+window.addEventListener('message', e => {
+  if (!isTheater || e.source !== window.parent || !e.data) return;
+  if (e.data.wpTheater === 'pip-state') {
+    theaterPipOpen = !!e.data.open;
+    $('#pipBtn').classList.toggle('live', theaterPipOpen);
+    if (e.data.error) toast(String(e.data.error), { kind: 'error', timeout: 4500 });
+    return;
+  }
+  if (e.data.wpTheater !== 'toast-action') return;
+  const actions = theaterToastActions.get(String(e.data.id || ''));
+  const action = actions && actions[Number(e.data.index)];
+  if (!action) return;
+  theaterToastActions.delete(String(e.data.id || ''));
+  action.run();
+});
 
 // ---------------------------------------------------------------- chat
 function addChat(m, live) {
@@ -1158,7 +1231,7 @@ function addChat(m, live) {
     el.className = 'msg' + (cont ? ' cont' : '');
     const t = new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const moment = Number.isFinite(m.position) ? `<button class="chat-time" type="button" data-chat-position="${m.position}" data-chat-movie="${esc(m.movieId || '')}" title="Jump to this moment">${fmtTime(m.position)}</button>` : '';
-    el.innerHTML = `${avatar(m.name)}<div><div class="who">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${esc(m.text)}${moment}</div></div>`;
+    el.innerHTML = `${avatar(m.name)}<div><div class="who" style="color:hsl(${hue(m.name)} 70% 72%)">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${esc(m.text)}${moment}</div></div>`;
     if (live) floatChat(m);
     if (live && M === remote) remote.overlay({ kind: 'chat', name: m.name, text: m.text });
   }
@@ -1215,6 +1288,11 @@ $('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($(
 $('#quickChat').addEventListener('submit', e => { e.preventDefault(); sendChat($('#quickChatInput')); $('#quickChat').hidden = true; poke(); });
 function openQuickChat() { $('#quickChat').hidden = false; $('#quickChatInput').focus(); poke(); }
 $('#quickChatBtn').addEventListener('click', openQuickChat);
+$('#animeChatBtn').addEventListener('click', () => {
+  closePops();
+  if (isFs() || room.classList.contains('no-sidebar')) openQuickChat();
+  else { setTab('chat'); $('#chatInput').focus(); }
+});
 $('#quickChatInput').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#quickChat').hidden = true; e.stopPropagation(); } });
 
 function renderBadges() {
@@ -1263,6 +1341,9 @@ document.addEventListener('keydown', e => {
   // in an empty chat box, up/down still change the volume
   if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && !field.value)) return;
   const k = e.key.toLowerCase();
+  // The cross-origin MegaPlay iframe owns transport input. Keeping a second set of hidden keyboard
+  // controls in the parent caused native play/pause to be immediately toggled back.
+  if (kindOf(S.movie) === 'megaplay' && [' ', 'k', 'm', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k)) return;
   if (k === ' ' || k === 'k') { e.preventDefault(); togglePlay(); }
   else if (k === 'f') { if (theaterSvc()) theaterPost({ wpTheater: 'fullscreen' }); else toggleFullscreen(); }
   else if (k === 'm') { M.muted = !M.muted; if (player.autoMuted) unblock(); scheduleUi(); }
@@ -1316,14 +1397,14 @@ async function stopLocal(kind) {
 }
 function afterLocalChange() {
   conn.send({ type: 'media', cam: S.cam, mic: S.mic });
-  $('#camBtn').innerHTML = icon(S.cam ? 'cam' : 'cam-off');
-  $('#micBtn').innerHTML = icon(S.mic ? 'mic' : 'mic-off');
-  $('#camBtn').classList.toggle('live', S.cam);
-  $('#micBtn').classList.toggle('live', S.mic);
+  for (const id of ['#camBtn', '#animeCamBtn']) { $(id).innerHTML = icon(S.cam ? 'cam' : 'cam-off'); $(id).classList.toggle('live', S.cam); }
+  for (const id of ['#micBtn', '#animeMicBtn']) { $(id).innerHTML = icon(S.mic ? 'mic' : 'mic-off'); $(id).classList.toggle('live', S.mic); }
   renderCams();
 }
 $('#camBtn').addEventListener('click', () => (S.cam ? stopLocal('video') : startLocal('video')));
 $('#micBtn').addEventListener('click', () => (S.mic ? stopLocal('audio') : startLocal('audio')));
+$('#animeCamBtn').addEventListener('click', () => $('#camBtn').click());
+$('#animeMicBtn').addEventListener('click', () => $('#micBtn').click());
 
 // Camera tiles float over the movie. Drag a tile to move it, drag its corner to resize it,
 // double-click it to put it back. Each viewer arranges their own screen; it's remembered.
@@ -1398,9 +1479,10 @@ function makeDraggable(id, el) {
 function renderCams() {
   if (!mesh) return;
   const box = $('#cams');
+  // Only people sharing video get a tile; camera-off participants (mic-only or nothing) show no tile.
   const want = [];
-  if (S.cam || S.mic) want.push({ id: clientId, name: S.me?.name || S.name, self: true, media: { cam: S.cam, mic: S.mic } });
-  for (const [id, p] of S.peers) if (p.media && (p.media.cam || p.media.mic)) want.push({ id, name: p.name, self: false, media: p.media });
+  if (S.cam) want.push({ id: clientId, name: S.me?.name || S.name, self: true, media: { cam: S.cam, mic: S.mic } });
+  for (const [id, p] of S.peers) if (p.media && p.media.cam) want.push({ id, name: p.name, self: false, media: p.media });
   const keep = new Set(want.map(w => w.id));
   let changed = false;
   for (const [id, t] of tiles) if (!keep.has(id)) { t.el.remove(); tiles.delete(id); changed = true; }
@@ -1517,7 +1599,6 @@ function renderPeopleDrift() {
 }
 
 function renderObservatory() {
-  if (!isHost) return;
   const el = $('#observatory');
   if (!el) return;
   const obs = S.observatory || { confidence: null, timeline: [], recommendations: [] };
@@ -1843,11 +1924,11 @@ $('#safariExtensionSave').addEventListener('click', async () => {
 });
 $('#rotateBtn').addEventListener('click', () => { if (confirm('Make a new invite link? Everyone currently watching will be disconnected and will need the new link.')) conn.send({ type: 'rotate-link' }); });
 
-// ---------------------------------------------------------------- host: library
+// ---------------------------------------------------------------- shared library (host paths stay private)
 let libTimer = null;
 function loadLibrarySoon() { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 250); }
 async function loadLibrary() {
-  if (!isHost) { if (canControl()) conn.send({ type: 'lib-list' }); return; } // the answer arrives as 'library'
+  if (!isHost) { conn.send({ type: 'lib-list' }); return; } // the sanitized answer arrives as 'library'
   try { S.library = await api('/api/library'); } catch (e) { return; }
   const ta = $('#foldersInput');
   if (document.activeElement !== ta) ta.value = (S.library.folders || []).join('\n');
@@ -1942,7 +2023,6 @@ function prepFormHtml(it) {
 }
 
 function renderLibrary() {
-  if (!isHost && !canControl()) return;
   const list = $('#libList');
   const L = S.library;
   if (!L) { list.innerHTML = '<div class="empty-lib"><div class="spinner"></div></div>'; return; }
@@ -2015,7 +2095,7 @@ function renderLibrary() {
   }).join('');
 }
 
-function renderLibraryCurrent() { if ((isHost || canControl()) && S.library) renderLibrary(); }
+function renderLibraryCurrent() { if (S.library) renderLibrary(); }
 
 function updateJob(id, job) {
   const it = S.library && S.library.items.find(x => x.id === id);
@@ -2096,7 +2176,7 @@ $('#libList').addEventListener('click', async e => {
   loadLibrarySoon();
 });
 
-// ---------------------------------------------------------------- host: streaming links
+// ---------------------------------------------------------------- streaming links
 $('#streamGo').addEventListener('click', () => {
   const url = $('#streamUrl').value.trim();
   if (!url) return toast('Paste the link of a movie or episode first.', { timeout: 2500 });
@@ -2132,11 +2212,21 @@ $('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.pr
 // fullscreen, so you never have to leave the video to see the party.
 function inPip() { return !!pipWin; }
 const canPip = () => 'documentPictureInPicture' in window;
+function partyPanelWidth() {
+  const width = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 348;
+  return Math.round(Math.max(280, Math.min(520, width)));
+}
 async function togglePip(opts = {}) {
+  // In the combined Netflix/Prime window this page is a nested frame, and browsers only allow the
+  // top-level document to create Document PiP. Ask the extension wrapper to create it instead.
+  if (theaterSvc()) {
+    theaterPost({ wpTheater: 'pip', action: opts.keep || !theaterPipOpen ? 'open' : 'close', width: partyPanelWidth() });
+    return;
+  }
   if (pipWin) { if (!opts.keep) pipWin.close(); return; }
   if (!canPip()) { if (!opts.quiet) toast('The pop-out party needs Chrome, Edge or Brave on a computer.', { timeout: 4000 }); return; }
   try {
-    pipWin = await window.documentPictureInPicture.requestWindow({ width: 360, height: 520 });
+    pipWin = await window.documentPictureInPicture.requestWindow({ width: partyPanelWidth(), height: 520, preferInitialWindowPlacement: true });
   } catch (e) { if (!opts.quiet) toast('Could not open the pop-out party.', { kind: 'error' }); pipWin = null; return; }
   const doc = pipWin.document;
   for (const ss of [...document.styleSheets]) {
@@ -2144,7 +2234,7 @@ async function togglePip(opts = {}) {
   }
   const svg = document.querySelector('body > svg');
   if (svg) doc.body.appendChild(svg.cloneNode(true));
-  doc.body.className = 'pip-body';
+  doc.body.className = `pip-body${kindOf(S.movie) === 'megaplay' ? ' social-only' : ''}`;
   doc.title = 'Watch Party';
   const cams = $('#cams');
   doc.body.appendChild(cams);
@@ -2175,6 +2265,7 @@ async function togglePip(opts = {}) {
   doc.getElementById('popForm').addEventListener('submit', e => { e.preventDefault(); sendChat(doc.getElementById('popInput')); });
   doc.addEventListener('keydown', e => {
     if (e.target.closest('input')) return;
+    if (kindOf(S.movie) === 'megaplay') return;
     if (e.key === ' ') { e.preventDefault(); togglePlay(); }
     else if (e.key === 'ArrowLeft') seekBy(-10);
     else if (e.key === 'ArrowRight') seekBy(10);
@@ -2193,6 +2284,7 @@ let popChatKey = '';
 function popRender(force) {
   if (!pipWin) return;
   const doc = pipWin.document;
+  doc.body.classList.toggle('social-only', kindOf(S.movie) === 'megaplay');
   const t = doc.getElementById('popTime');
   if (!t) return;
   const playing = !!(S.state && S.state.playing);
@@ -2211,7 +2303,7 @@ function popRender(force) {
   if (force || key !== popChatKey) {
     popChatKey = key;
     const list = doc.getElementById('popChat');
-    list.innerHTML = S.chatLog.slice(-60).map(c => c.system ? `<div class="m sys">${esc(c.text)}</div>` : `<div class="m"><b>${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
+    list.innerHTML = S.chatLog.slice(-60).map(c => c.system ? `<div class="m sys">${esc(c.text)}</div>` : `<div class="m"><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
     list.scrollTop = list.scrollHeight;
   }
 }
@@ -2231,12 +2323,13 @@ const dock = { open: false, timer: null, last: '', pc: null, rtcKey: '', cams: [
 function dockSnapshot() {
   const m = S.movie;
   const peopleHere = (S.people || []).filter(p => p.admitted);
+  const ownId = S.me?.id || clientId;
   return {
     me: { name: S.me?.name || S.name || '', host: isHost },
     movie: m ? { title: m.title || '', service: kindOf(m) === 'service' ? serviceName(m) : kindOf(m) === 'youtube' ? 'YouTube' : 'Movie' } : null,
     canControl: canControl(), canChat: isHost || !!S.perms.chat, canReact: isHost || !!S.perms.react, canCam: isHost || !!S.perms.camera,
     reactions: S.reactions || [],
-    people: peopleHere.map(p => ({ name: p.name, host: p.role === 'host', me: p.id === clientId, cam: !!(p.media && p.media.cam), mic: !!(p.media && p.media.mic) })),
+    people: peopleHere.map(p => ({ id: p.id, name: p.name, host: p.role === 'host', me: p.id === ownId, cam: !!(p.media && p.media.cam), mic: !!(p.media && p.media.mic) })),
     chat: S.chatLog.slice(-80),
     cams: dock.cams,
     myCam: !!S.cam, myMic: !!S.mic,
@@ -2310,7 +2403,7 @@ function onDockMessage(m) {
 // direct connection inside your own browser (nothing extra goes over the internet).
 function dockCamItems() {
   const items = [];
-  if (S.cam && mesh && mesh.local.video) items.push({ id: clientId, track: mesh.local.video, name: 'You', self: true });
+  if (S.cam && mesh && mesh.local.video) items.push({ id: S.me?.id || clientId, track: mesh.local.video, name: 'You', self: true });
   for (const [id, p] of S.peers || []) {
     if (!(p.media && p.media.cam)) continue;
     const st = S.remoteStreams.get(id);
@@ -2336,7 +2429,7 @@ async function dockRtcSync() {
   for (const it of items) {
     const ms = new MediaStream([it.track]);
     pc.addTrack(it.track, ms);
-    dock.cams.push({ sid: ms.id, name: it.name, self: !!it.self });
+    dock.cams.push({ id: it.id, sid: ms.id, name: it.name, self: !!it.self });
   }
   pc.onicecandidate = e => { if (e.candidate && dock.pc === pc) remote.post({ type: 'dock-rtc', data: { ice: e.candidate.toJSON() } }); };
   try {
@@ -2416,7 +2509,7 @@ function theaterReport() {
   const r = stage.getBoundingClientRect();
   // a window like Invite is open: the streaming site (which sits on top of this page) steps aside so it can be seen
   const cover = !!document.querySelector('dialog[open]');
-  const msg = { wpTheater: 'stage', show, custom: isCustom(), strict: isCustom() && !!S.movie.strict, cover, linked: !!(remote && remote.linked && remote.st), browsing: !!(S.movie && S.movie.browsing), signin: !!(remote && remote.signingIn), current: remote ? canonicalUrl(remote.pageUrl) : '', url: S.movie && S.movie.url, rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } };
+  const msg = { wpTheater: 'stage', show, custom: isCustom(), strict: isCustom() && !!S.movie.strict, cover, linked: !!(remote && remote.linked && remote.st), browsing: !!(S.movie && S.movie.browsing), signin: !!(remote && remote.signingIn), transitioning: !!serviceAdvance, current: remote ? canonicalUrl(remote.pageUrl) : '', url: S.movie && S.movie.url, rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } };
   const json = JSON.stringify(msg);
   if (json === theaterLast) return;
   theaterLast = json;
@@ -2495,13 +2588,13 @@ $('#svcGrid').addEventListener('click', e => {
 
 // The room follows the host's streaming tab: when the host's tab starts playing a title whose page
 // differs from what the room has, that becomes the room's movie (starting where the host's tab is).
-// Guests the host lets control playback can do this too: they pick something on Netflix in their
-// own window and the room, the host included, follows them.
+// Every admitted guest can do this too: they pick something on Netflix in their own window and the
+// room, the host included, follows them. Play/pause/seek permission remains separate.
 // Only a tab that moved on by itself counts: a tab still on the page it was on when the room's title
 // changed (someone else picked something) doesn't pull the room back.
 let followTimer = null, lastFollowUrl = '', followBase = '';
 function maybeFollowTab() {
-  if (!(isHost || canControl()) || !remote || !remote.linked || !remote.st) return;
+  if ((!isHost && isCustom()) || !remote || !remote.linked || !remote.st) return;
   const m = S.movie;
   if (!m || kindOf(m) !== 'service') return;
   const st = remote.st;
@@ -2520,8 +2613,9 @@ function maybeFollowTab() {
   lastFollowUrl = url;
   clearTimeout(followTimer);
   followTimer = setTimeout(() => {
-    if (!remote.st || canonicalUrl(pageNow()) !== url || !(isHost || canControl())) return;
-    const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, title: remote.st.title || '', duration: remote.st.dur || 0, position: remote.currentTime, playing: !remote.st.paused || (!!remote.st.hold && !!S.state && !!S.state.playing) };
+    if (!remote.st || canonicalUrl(pageNow()) !== url || (!isHost && isCustom())) return;
+    const advanceFrom = m.service === 'netflix' && canonicalUrl(remote.st.advanceFrom) === canonicalUrl(m.url) ? m.url : '';
+    const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, advanceFrom, title: remote.st.title || '', duration: remote.st.dur || 0, position: remote.currentTime, playing: !remote.st.paused || (!!remote.st.hold && !!S.state && !!S.state.playing) };
     conn.send(msg);
   }, 1200);
 }
@@ -2532,18 +2626,49 @@ window.addEventListener('message', e => {
   const u = e.data.type === 'page' ? e.data.url : e.data.type === 'status' && e.data.st ? e.data.st.url : '';
   if (followBase && u && canonicalUrl(u) !== followBase) followBase = '';
   if (e.data.type === 'status') maybeFollowTab();
+  if (e.data.type === 'status' || e.data.type === 'page') setTimeout(settleServiceAdvance, 0);
 });
 // Guests: when the room's title changes on the service they have open, their tab is taken there.
-let lastMovieUrl = '';
+let lastMovieUrl = '', serviceAdvance = null;
+function clearServiceAdvance() {
+  if (!serviceAdvance) return;
+  clearTimeout(serviceAdvance.timer);
+  serviceAdvance = null;
+  theaterReportSoon();
+}
+function settleServiceAdvance() {
+  if (!serviceAdvance || canonicalUrl(remote && remote.pageUrl) !== serviceAdvance.to) return false;
+  clearServiceAdvance();
+  return true;
+}
+function tryServiceAdvance(movie, previousUrl) {
+  const from = canonicalUrl(movie && movie.advanceFrom);
+  const to = canonicalUrl(movie && movie.url);
+  if (!remote || !remote.linked || movie.service !== 'netflix' || !from || !to || from === to || from !== canonicalUrl(previousUrl) || canonicalUrl(remote.pageUrl) !== from) return false;
+  clearServiceAdvance();
+  const pending = { from, to, timer: null };
+  serviceAdvance = pending;
+  remote.advance(movie.url);
+  pending.timer = setTimeout(() => {
+    if (serviceAdvance !== pending || settleServiceAdvance()) return;
+    serviceAdvance = null;
+    theaterReportSoon();
+    if (!isTheater) remote.navigate(movie.url);
+  }, 8000);
+  theaterReportSoon();
+  return true;
+}
 function bringAlong(movie) {
-  if (!movie || kindOf(movie) !== 'service') { lastMovieUrl = ''; return; }
+  if (!movie || kindOf(movie) !== 'service') { lastMovieUrl = ''; clearServiceAdvance(); return; }
   const prev = lastMovieUrl;
   lastMovieUrl = movie.url;
   if (prev !== movie.url) { followBase = remote ? canonicalUrl(remote.pageUrl || '') : ''; reachedTitle = false; clearTimeout(followTimer); lastFollowUrl = ''; }
-  // the host too: when a guest with control picks something, the host's tab (signed in to every
-  // service) is taken there
-  if (!remote || !remote.present || movie.browsing || isTheater) return; // in the window, it follows by itself
+  // The host too: when any guest picks something, the host's tab (signed in to every service) is
+  // taken there.
+  if (!remote || !remote.present || movie.browsing) return;
   if (!prev || prev === movie.url) return; // first load: the panel's Open button handles it
+  if (tryServiceAdvance(movie, prev)) return;
+  if (isTheater) return; // other title changes are handled by the theater frame
   if (remote.signingIn) return; // they're signing in: keepOnTitle takes them there afterwards
   if (!(remote.linked && canonicalUrl(remote.pageUrl) === canonicalUrl(movie.url))) {
     remote.navigate(movie.url);
@@ -2579,7 +2704,6 @@ let followSig = '', followFlashUntil = 0;
 // player for everyone, phones and tablets included, with no extension.
 const YT_CHIPS = ['Music', 'Movie trailers', 'Bollywood songs', 'Comedy', 'Cricket highlights', 'Cooking', 'Kids'];
 function openYouTube() {
-  if (!isHost && !canControl()) return noPerm('playback');
   $('#ytChips').innerHTML = YT_CHIPS.map(c => `<button type="button" data-yq="${esc(c)}">${esc(c)}</button>`).join('');
   $('#ytBrowser').hidden = false;
   setTab('chat');
@@ -2596,7 +2720,7 @@ async function ytSearch(q) {
   if (/^https?:\/\//i.test(q) || /youtu\.?be/i.test(q)) { conn.send({ type: 'select-url', url: q }); closeYouTube(); $('#ytQuery').value = ''; return; }
   const seq = ++ytSeq;
   $('#ytStatus').textContent = `Searching for "${q}"…`;
-  // guests with control search through the host's PC too (over the room connection)
+  // Guests search through the host's PC too (over the room connection).
   if (!isHost) { ytPendingQ = q; conn.send({ type: 'yt-search', q }); return; }
   try {
     const r = await api(`/api/youtube/search?q=${encodeURIComponent(q)}`);
@@ -2633,6 +2757,61 @@ $('#ytClose').addEventListener('click', closeYouTube);
 $('#ytOpen').addEventListener('click', openYouTube);
 $('#ytBrowser').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeYouTube(); } });
 
+// ---------------------------------------------------------------- anime (no extension, iPad too)
+let animeSeq = 0, animePendingQ = null;
+async function animeSearch(q) {
+  q = String(q || '').trim();
+  if (!q) return;
+  const seq = ++animeSeq;
+  $('#animeStatus').textContent = `Searching for "${q}"…`;
+  if (!isHost) { animePendingQ = q; conn.send({ type: 'anime-search', q }); return; }
+  try {
+    const r = await api(`/api/anime/search?q=${encodeURIComponent(q)}`);
+    if (seq !== animeSeq) return;
+    showAnimeResults(q, r.results || []);
+  } catch (e) {
+    if (seq === animeSeq) $('#animeStatus').textContent = e.message;
+  }
+}
+function onAnimeResults(m) {
+  if (isHost || m.q !== animePendingQ) return;
+  if (m.error) { $('#animeStatus').textContent = m.error; return; }
+  showAnimeResults(m.q, m.results || []);
+}
+function showAnimeResults(q, list) {
+  $('#animeStatus').textContent = list.length ? '' : `Nothing found for "${q}".`;
+  $('#animeResults').innerHTML = list.map(a => `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${esc(a.title)}">
+    ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+    <div><div class="t">${esc(a.title)}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
+    <div class="pick"><input type="number" class="anime-ep" min="1" ${a.episodes ? `max="${a.episodes}"` : ''} value="1" aria-label="Episode number"><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="btn sm primary anime-play">Play</button></div></div>`).join('');
+}
+$('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
+$('#animeResults').addEventListener('click', e => {
+  const btn = e.target.closest('.anime-play');
+  if (!btn) return;
+  const card = btn.closest('.anime-card');
+  const ep = Math.max(1, parseInt(card.querySelector('.anime-ep').value, 10) || 1);
+  const lang = card.querySelector('.anime-lang').value === 'dub' ? 'dub' : 'sub';
+  conn.send({ type: 'select-anime', anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title: card.dataset.title });
+});
+
+function renderAnimeOverlay() {
+  const button = $('#animeNext');
+  const m = S.movie;
+  if (!m || kindOf(m) !== 'megaplay') { button.disabled = true; button.textContent = 'Next episode'; return; }
+  const episode = Math.max(1, Number(m.episode) || 1);
+  const atEnd = Number(m.episodes) > 0 && episode >= Number(m.episodes);
+  button.disabled = atEnd;
+  button.textContent = atEnd ? `Episode ${episode} · last episode` : `Next episode · ${episode + 1}`;
+}
+$('#animeNext').addEventListener('click', () => {
+  const m = S.movie;
+  if (!m || kindOf(m) !== 'megaplay' || !m.anilistId) return;
+  const episode = Math.max(1, Number(m.episode) || 1);
+  if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
+  conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+});
+
 
 // ---------------------------------------------------------------- guests: land on the room's title
 // Signing in to Netflix and the others goes through their own pages (sign in, "Who's watching?",
@@ -2644,8 +2823,8 @@ setInterval(() => {
   const want = canonicalUrl(S.movie.url);
   const here = canonicalUrl(remote.pageUrl);
   if (here && here === want) reachedTitle = true;
-  // someone with control who was on the title and then went browsing is picking the next thing: leave them be
-  if (canControl() && reachedTitle) { keepOffSince = 0; return; }
+  // Anyone who was on the title and then went browsing is picking the next thing: leave them be.
+  if (reachedTitle) { keepOffSince = 0; return; }
   const onService = here && (S.movie.service === 'custom' ? !serviceOfUrl(here) : serviceOfUrl(here) === S.movie.service);
   const fresh = remote.page && performance.now() - remote.page.at < 6000;
   if (!want || !onService || !fresh || remote.signingIn || here === want || (remote.linked && remote.st && !remote.st.ad && canonicalUrl(remote.st.url) === want)) { keepOffSince = 0; return; }
