@@ -2,6 +2,7 @@
 // The watch party room: who is here, what they may do, and the shared playback timeline.
 const crypto = require('crypto');
 const services = require('./services');
+const anime = require('./anime');
 
 const PERMS = ['playback', 'chat', 'react', 'camera'];
 const REACTIONS = ['😂', '😮', '😍', '👏', '🔥', '😱', '😢', '💀', '❤️', '👀'];
@@ -19,11 +20,12 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch }) {
+  constructor({ config, library, save, ytSearch, animeSearch }) {
     this.config = config;
     this.library = library;
     this.save = save;
     this.ytSearch = ytSearch || null;
+    this.animeSearch = animeSearch || anime.search;
     this.jobOwner = new Map(); // movie id -> who started preparing it
     // The secret in the invite link (about 140 bits: unguessable). It's kept in config.json, so the
     // link stays the same every time Watch Party starts; "Make a new invite link" replaces it.
@@ -178,13 +180,11 @@ class Room {
   broadcastHosts(msg) {
     for (const c of this.clients.values()) if (c.role === 'host') this.send(c.ws, msg);
   }
-  // the host, and guests the host lets control playback (they can also pick what the room watches)
-  // While a custom site is on, only the host controls it (and only the host can change what's on).
+  // Playback permission applies to transport only. Every admitted member may select content, while
+  // arbitrary custom sites remain host-only through selectUrl's custom-site validation.
   canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback && !this.customOn())); }
+  canChoose(client) { return !!client && !!client.admitted; }
   customOn() { return !!(this.movie && this.movie.service === 'custom'); }
-  broadcastControllers(msg) {
-    for (const c of this.clients.values()) if (this.canControl(c)) this.send(c.ws, msg);
-  }
   // what a guest may see of the library: no folder names or paths on the host's PC
   guestLibrary() {
     const L = this.library.list();
@@ -215,7 +215,8 @@ class Room {
     if (!this.movie) return null;
     const m = this.movie;
     if (m.kind !== 'file') {
-      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict };
+      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, sources: m.sources || null, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict, advanceFrom: m.advanceFrom || null,
+        anilistId: m.anilistId || null, malId: m.malId || null, episode: m.episode || null, episodes: m.episodes || null, language: m.language || null, animeTitle: m.animeTitle || null };
     }
     return {
       kind: 'file', id: m.id, title: m.title, duration: m.duration, width: m.width, height: m.height, hdr: m.hdr, codec: m.codec,
@@ -276,7 +277,10 @@ class Room {
         if (c.role === 'host') {
           if (hostChanged) c.ws.send(hostMsg);
           if (observatoryChanged) c.ws.send(observatoryMsg);
-        } else if (guestChanged) c.ws.send(guestMsg);
+        } else {
+          if (guestChanged) c.ws.send(guestMsg);
+          if (observatoryChanged) c.ws.send(observatoryMsg);
+        }
       } catch {}
     }
   }
@@ -388,7 +392,7 @@ class Room {
   }
 
   selectMovie(client, id) {
-    if (!this.canControl(client)) return;
+    if (!this.canChoose(client)) return;
     if (!id) {
       this.movie = null;
       this.setState({ movieId: null, playing: false, position: 0, anchor: Date.now() });
@@ -408,7 +412,8 @@ class Room {
   // opts.follow: the host's streaming tab moved on to another title by itself (the host clicked
   // something on Netflix, say), so the room follows it, starting from where that tab already is.
   selectUrl(client, url, inTabs, opts = {}) {
-    if (!this.canControl(client)) return;
+    if (!this.canChoose(client)) return;
+    const previous = this.movie;
     // a custom site: only the host picks one, and the room follows the host's window around that site
     const custom = client.role === 'host' && (!!opts.custom || (!!opts.follow && this.customOn()));
     const info = services.identify(url, { custom });
@@ -423,18 +428,45 @@ class Room {
     if (this.movie && this.movie.id === id) return;
     const browsing = !!opts.browsing; // the service's front page: the host is picking something
     const title = String(opts.title || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140);
-    this.movie = { id, kind, service: info.service, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name, strict };
+    const requestedFrom = opts.follow && opts.advanceFrom ? services.identify(opts.advanceFrom) : null;
+    const advanceFrom = requestedFrom && previous && previous.kind === 'service' && previous.service === 'netflix' && info.service === 'netflix'
+      && requestedFrom.url === previous.url && info.url !== previous.url ? previous.url : null;
+    this.movie = { id, kind, service: info.service, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name, strict, advanceFrom };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
     const pos = Math.max(0, Number(opts.position) || 0);
     this.setState({ movieId: id, playing: !!opts.playing && pos >= 0, position: pos, anchor: Date.now() + (opts.playing ? 300 : 0) }, { by: client.name, action: 'load' });
     this.system(browsing ? `${client.name} is picking something on ${info.name}` : `Now showing ${title ? `"${title}"` : 'something'} on ${info.name}`);
   }
 
+  // An anime episode, played in the page through MegaPlay's embed (no extension, works on iPad).
+  // Discovery is AniList; the embed is keyed by AniList id + episode and synced over postMessage.
+  selectAnime(client, msg) {
+    if (!this.canChoose(client)) return;
+    const anilistId = Math.trunc(Number(msg.anilistId));
+    const malId = Math.max(0, Math.trunc(Number(msg.malId)) || 0);
+    const episode = Math.max(1, Math.min(100000, Math.trunc(Number(msg.ep)) || 1));
+    const episodes = Math.max(0, Math.min(100000, Math.trunc(Number(msg.episodes)) || 0));
+    const language = msg.lang === 'dub' ? 'dub' : 'sub';
+    const sources = anime.embedSources(anilistId, malId, episode, language);
+    if (!sources.length) { this.toast(client, "That anime episode can't be played.", 'error'); return; }
+    const id = 'a' + crypto.createHash('sha1').update(sources[0]).digest('hex').slice(0, 11);
+    if (this.movie && this.movie.id === id) return;
+    const base = String(msg.title || 'Anime').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120) || 'Anime';
+    const title = `${base} · Ep ${episode}${language === 'dub' ? ' (Dub)' : ''}`;
+    this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false,
+      anilistId, malId, episode, episodes, language, animeTitle: base };
+    this.broadcast({ type: 'movie', movie: this.publicMovie() });
+    // MegaPlay auto-plays each episode; start the room playing (with a load delay) so everyone advances
+    // together, and let auto-wait hold for whoever is still loading instead of one player racing ahead.
+    this.setState({ movieId: id, playing: true, position: 0, anchor: Date.now() + 1500 }, { by: client.name, action: 'play' });
+    this.system(`Now showing "${title}" (Anime)`);
+  }
+
   // The host's player learned the real title / length of a streaming title.
   movieMeta(client, msg) {
     const m = this.movie;
     // the host's player, or the player of whoever picked this title (never two players arguing)
-    if (!m || m.kind === 'file' || msg.id !== m.id || !(client.role === 'host' || (this.canControl(client) && m.by === client.name))) return;
+    if (!m || m.kind === 'file' || msg.id !== m.id || !(client.role === 'host' || (this.canChoose(client) && m.by === client.name))) return;
     const title = String(msg.title || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140);
     const dur = Number(msg.duration);
     let changed = false;
@@ -607,8 +639,8 @@ class Room {
       }
       default:
     }
-    // ---------- the host and anyone allowed to control playback: pick what the room watches ----------
-    if (this.canControl(client)) {
+    // ---------- every admitted member may pick what the room watches ----------
+    if (this.canChoose(client)) {
       switch (msg.type) {
         case 'bookmark': {
           if (!this.movie) return;
@@ -625,7 +657,8 @@ class Room {
           return;
         }
         case 'select-movie': return this.selectMovie(client, msg.id);
-        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
+        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
+        case 'select-anime': return this.selectAnime(client, msg);
         case 'movie-meta': return this.movieMeta(client, msg);
         case 'lib-list': if (!isHost) this.send(client.ws, { type: 'library', library: this.guestLibrary() }); return;
         case 'lib-prepare': {
@@ -659,6 +692,19 @@ class Room {
           clearTimeout(client.ytTimer);
           const wait = client.lastYt ? 1000 - (Date.now() - client.lastYt) : 0;
           if (wait > 0) client.ytTimer = setTimeout(run, wait); else run();
+          return;
+        }
+        case 'anime-search': {
+          if (isHost || !this.animeSearch) return;
+          const q = String(msg.q || '').slice(0, 150);
+          const run = () => {
+            client.animeTimer = null; client.lastAnime = Date.now();
+            this.animeSearch(q).then(results => this.send(client.ws, { type: 'anime-results', q, results }))
+              .catch(e => this.send(client.ws, { type: 'anime-results', q, error: `Couldn't search anime right now (${e.message}).` }));
+          };
+          clearTimeout(client.animeTimer);
+          const wait = client.lastAnime ? 1000 - (Date.now() - client.lastAnime) : 0;
+          if (wait > 0) client.animeTimer = setTimeout(run, wait); else run();
           return;
         }
         default:

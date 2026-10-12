@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
+const anime = require('./anime');
 const { cleanAppleExtensionUrl, migrateConfig } = require('./settings');
 const pwa = require('./pwa');
 
@@ -125,7 +126,7 @@ const library = new Library({ config, tools: toolState, save });
 // YouTube search for guests with control (the host's page asks through /api/youtube/search)
 const ytFetch = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: () => fs.promises.readFile(process.env.WP_TEST_YT_HTML, 'utf8') }) : undefined;
 const ytSearchFn = q => youtube.search(q, ytFetch);
-const room = new Room({ config, library, save, ytSearch: ytSearchFn });
+const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q) });
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
 const turnCreds = { username: 'watchparty', password: randKey(18) };
@@ -138,9 +139,9 @@ let reachable = 'unknown';
 
 library.on('update', () => {
   room.refreshLibraryMovie();
-  room.broadcastControllers({ type: 'library-changed' });
+  room.broadcast({ type: 'library-changed' });
 });
-library.on('progress', p => room.broadcastControllers({ type: 'job', ...p }));
+library.on('progress', p => room.broadcast({ type: 'job', ...p }));
 
 const tcpMapping = () => mapper.state.mappings.find(m => m.protocol === 'TCP');
 const udpMapping = () => mapper.state.mappings.find(m => m.protocol === 'UDP');
@@ -390,7 +391,8 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
   // YouTube is the only outside site the page may load, and only when you show a YouTube video.
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  // megaplay.buzz is framed for extension-free anime playback; s4.anilist.co serves search posters.
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://megaplay.buzz; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -415,6 +417,11 @@ async function api(req, res, p) {
     try {
       return sendJson(res, 200, { results: await ytSearchFn(q) });
     } catch (e) { return sendJson(res, 502, { error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` }); }
+  }
+  if (p === '/api/anime/search') {
+    const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+    try { return sendJson(res, 200, { results: await anime.search(q) }); }
+    catch (e) { return sendJson(res, 502, { error: `Couldn't search anime right now (${e.message}).` }); }
   }
   if (p === '/api/library') return sendJson(res, 200, library.list());
   if (p === '/api/library/folders' && req.method === 'POST') return sendJson(res, 200, await library.setFolders(body.folders || []));
