@@ -60,7 +60,6 @@ function notify(text) {
   try { spawn('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(ps, 'utf16le').toString('base64')], { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {}
 }
 
-// ---------------- config ----------------
 const DEFAULT_CONFIG = {
   port: 8765,               // one port for everything: TCP for the page + movie, UDP for webcams
   bind: '0.0.0.0',
@@ -119,7 +118,6 @@ if (opt('--folder')) config.folders = [...new Set([...(config.folders || []), pa
 if (!config.adminKey) config.adminKey = randKey(20);
 save();
 
-// ---------------- parts ----------------
 const bins = { ffmpeg: tools.findBin('ffmpeg'), ffprobe: tools.findBin('ffprobe'), cloudflared: config.tunnel === 'cloudflare' ? tools.findBin('cloudflared') : null };
 const toolState = { ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, encoders: null };
 const library = new Library({ config, tools: toolState, save });
@@ -334,7 +332,6 @@ async function startNetwork() {
 }
 mapper.on('change', () => room.broadcastHosts({ type: 'network' }));
 
-// ---------------- http ----------------
 function sendJson(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
@@ -708,7 +705,6 @@ setInterval(() => {
   }
 }, 20000);
 
-// ---------------- startup ----------------
 function openBrowser(url) {
   if (flag('--no-open')) return;
   const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];

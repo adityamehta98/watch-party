@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
 
-// ---- tiny DER encoder ----
 function len(n) {
   if (n < 0x80) return Buffer.from([n]);
   const bytes = [];

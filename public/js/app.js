@@ -7,7 +7,6 @@ import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
-// ---------------------------------------------------------------- helpers
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,7 +28,6 @@ function randId() { const a = new Uint8Array(12); crypto.getRandomValues(a); ret
 function resLabel(w, h) { if (!w) return ''; if (w >= 3200 || h >= 1800) return '4K'; if (w >= 1800 || h >= 1000) return '1080p'; if (w >= 1200 || h >= 700) return '720p'; return `${h}p`; }
 function codecLabel(c) { return ({ hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', vc1: 'VC-1' })[c] || (c || '').toUpperCase(); }
 
-// ---------------------------------------------------------------- boot
 const app = $('#app');
 const parts = location.pathname.split('/').filter(Boolean);
 const mode = parts[0] === 'host' ? 'host' : parts[0] === 'join' ? 'guest' : null;
@@ -119,7 +117,6 @@ if (!mode || !key) {
   });
 }
 
-// ---------------------------------------------------------------- connection
 function start(name) {
   S.name = name;
   screen('loading');
@@ -283,7 +280,6 @@ function teardownMedia() {
   try { video.pause(); } catch {}
 }
 
-// ---------------------------------------------------------------- movie + player UI
 const trackEls = new Map();
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
@@ -498,7 +494,6 @@ function loadMovie(movie) {
   renderNotice();
 }
 
-// ---- streaming services (Netflix, Prime Video, ...) and YouTube
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
 
 function renderServicePanel() {
@@ -1130,7 +1125,6 @@ function selectSub(k, remember = true) {
 $('#ccBtn').addEventListener('click', e => { e.stopPropagation(); buildCcMenu(); togglePop('#ccPop'); });
 $('#ccPop').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (!b) return; selectSub(b.dataset.sub || null); closePops(); });
 
-// ---------------------------------------------------------------- reactions
 const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
 function buildReactions() {
   const html = S.reactions.map(r => `<button type="button" data-emoji="${r}">${r}</button>`).join('');
@@ -1180,27 +1174,6 @@ function floatReaction(emoji, name) {
   setTimeout(() => el.remove(), 2900);
 }
 
-// ---------------------------------------------------------------- toasts
-// Several quick skips by the same person become one popup that counts up: "skipped forward 40 sec".
-let skipToast = null;
-function seekToast(by, delta, position) {
-  const t = performance.now();
-  // the skip buttons move 10 s; time that played between clicks shouldn't turn 40 into 39
-  const snapped = Math.round(delta / 5) * 5;
-  if (snapped && Math.abs(delta - snapped) < 1.5) delta = snapped;
-  const live = skipToast && skipToast.by === by && t - skipToast.at < 3000 && skipToast.el.isConnected;
-  if (live) skipToast.total += delta; else skipToast = { by, total: delta, el: null };
-  skipToast.at = t;
-  const secs = Math.round(skipToast.total), abs = Math.abs(secs);
-  const amount = abs < 60 ? `${abs} sec` : `${Math.floor(abs / 60)} min${abs % 60 ? ` ${abs % 60} sec` : ''}`;
-  const text = abs >= 1 && abs <= 600 ? `${by} skipped ${secs > 0 ? 'forward' : 'back'} ${amount}` : `${by} jumped to ${fmtTime(position)}`;
-  if (live) {
-    skipToast.el.querySelector('.t').textContent = text;
-    clearTimeout(skipToast.el.timer);
-    const el = skipToast.el;
-    el.timer = setTimeout(() => el.remove(), 2500);
-  } else skipToast.el = toast(text, { timeout: 2500 });
-}
 let theaterToastSeq = 0;
 const theaterToastActions = new Map();
 function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
@@ -1238,7 +1211,6 @@ window.addEventListener('message', e => {
   action.run();
 });
 
-// ---------------------------------------------------------------- chat
 function addChat(m, live) {
   S.chatLog.push({ id: m.id, name: m.name || '', text: m.text || '', ts: m.ts || Date.now(), host: !!m.host, system: !!m.system, me: m.from === clientId, movieId: m.movieId || null, position: Number.isFinite(m.position) ? m.position : null });
   if (S.chatLog.length > 120) S.chatLog.splice(0, S.chatLog.length - 120);
@@ -1331,7 +1303,6 @@ function renderBadges() {
   pb.textContent = pending;
 }
 
-// ---------------------------------------------------------------- tabs / sidebar
 function setTab(t) {
   S.tab = t;
   for (const b of $$('.tab')) {
@@ -1357,7 +1328,6 @@ $('#sidebarBtn').addEventListener('click', () => {
   if (!room.classList.contains('no-sidebar') && S.tab === 'chat') { S.unread = 0; renderBadges(); }
 });
 
-// ---------------------------------------------------------------- keyboard
 document.addEventListener('keydown', e => {
   if (app.dataset.screen !== 'room') return;
   // sliders (volume, seek bar) and buttons keep focus after a click; the arrow keys should still work then
@@ -1391,7 +1361,6 @@ document.addEventListener('keydown', e => {
   poke();
 });
 
-// ---------------------------------------------------------------- camera / mic
 const localPreview = new MediaStream();
 async function startLocal(kind) {
   if (!(isHost || S.perms.camera)) return noPerm('camera');
@@ -1539,7 +1508,6 @@ function renderCams() {
 }
 if (window.ResizeObserver) new ResizeObserver(() => placeTiles()).observe(stage);
 
-// ---------------------------------------------------------------- people
 function renderPeople() {
   renderBadges();
   const el = $('#peopleList');
@@ -1687,7 +1655,6 @@ $('#peopleList').addEventListener('change', e => {
   if (t.matches('[data-perm]')) conn.send({ type: 'set-perm', clientId: t.dataset.client, perm: t.dataset.perm, value: t.checked });
 });
 
-// ---------------------------------------------------------------- host: API
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key, ...(opts.headers || {}) } });
   const data = await res.json().catch(() => ({}));
@@ -1695,7 +1662,6 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// ---------------------------------------------------------------- host: invite
 let infoTimer = null;
 function refreshInfoSoon() { clearTimeout(infoTimer); infoTimer = setTimeout(refreshInfo, 300); }
 async function refreshInfo() {
@@ -1847,7 +1813,6 @@ $('#inviteDialog').addEventListener('click', e => {
   if (e.target.closest('[data-goto-net]')) { $('#inviteDialog').close(); room.classList.remove('no-sidebar'); setTab('settings'); $('#netBox').scrollIntoView({ block: 'center' }); }
 });
 
-// ---------------------------------------------------------------- host: settings
 function renderSettings() {
   if (!isHost) return;
   const s = S.settings || {};
@@ -1950,7 +1915,6 @@ $('#safariExtensionSave').addEventListener('click', async () => {
 });
 $('#rotateBtn').addEventListener('click', () => { if (confirm('Make a new invite link? Everyone currently watching will be disconnected and will need the new link.')) conn.send({ type: 'rotate-link' }); });
 
-// ---------------------------------------------------------------- shared library (host paths stay private)
 let libTimer = null;
 function loadLibrarySoon() { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 250); }
 async function loadLibrary() {
@@ -2202,7 +2166,6 @@ $('#libList').addEventListener('click', async e => {
   loadLibrarySoon();
 });
 
-// ---------------------------------------------------------------- streaming links
 $('#streamGo').addEventListener('click', () => {
   const url = $('#streamUrl').value.trim();
   if (!url) return toast('Paste the link of a movie or episode first.', { timeout: 2500 });
@@ -2211,7 +2174,6 @@ $('#streamGo').addEventListener('click', () => {
 });
 $('#streamUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#streamGo').click(); } });
 
-// ---------------------------------------------------------------- host: a custom site
 // Any website with a video. It opens inside everyone's Watch Party window (the extension's "watch
 // here" window) and only the host controls it: the host presses play, everyone plays, in sync.
 $('#customGo').addEventListener('click', () => {
@@ -2232,7 +2194,6 @@ $('#customGo').addEventListener('click', () => {
 }
 $('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#customGo').click(); } });
 
-// ---------------------------------------------------------------- the pop-out party
 // A small always-on-top window (Chrome, Edge, Brave on a computer) with the cameras, chat,
 // reactions and play controls. It floats over Netflix, Prime Video and the others, even in
 // fullscreen, so you never have to leave the video to see the party.
@@ -2340,7 +2301,6 @@ $('#pipBtn').addEventListener('click', () => togglePip());
 window.__wp = { S, get player() { return player; }, get conn() { return conn; }, get mesh() { return mesh; }, get remote() { return remote; }, pipDoc: () => pipWin && pipWin.document, clientId };
 
 
-// ---------------------------------------------------------------- the party inside the streaming tab
 // When you watch on Netflix, Prime Video and the others, the extension shows this party in Chrome's
 // side panel right next to the video: chat, reactions, people, cameras and the play controls.
 // This page stays the one that's connected to the room; the panel is just a view of it.
@@ -2480,7 +2440,6 @@ async function onDockRtc(d) {
 }
 
 
-// ---------------------------------------------------------------- "watch here" window
 // Chromium can build a side-by-side theater window. Safari opens a normal top-level player tab so
 // streaming sites see the environment they expect and iPhone/iPad can use the toolbar popup.
 function enterTheater() {
@@ -2550,7 +2509,6 @@ if (isTheater) {
 }
 
 
-// ---------------------------------------------------------------- keep phones and tablets awake
 // A phone that dims and locks its screen pauses the video. Ask it to stay awake while something plays.
 let wakeLock = null;
 async function keepAwake(on) {
@@ -2564,7 +2522,6 @@ setInterval(() => keepAwake(!!(S.movie && S.state && (S.state.playing || S.state
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.movie && S.state && S.state.playing) keepAwake(true); });
 
 
-// ---------------------------------------------------------------- streaming service tiles
 function renderServiceTiles() {
   const grid = $('#svcGrid');
   if (!grid) return;
@@ -2725,7 +2682,6 @@ setInterval(() => {
 let followSig = '', followFlashUntil = 0;
 
 
-// ---------------------------------------------------------------- YouTube browser (host)
 // Search and pick right here, no account needed. The video then plays in the embedded YouTube
 // player for everyone, phones and tablets included, with no extension.
 const YT_CHIPS = ['Music', 'Movie trailers', 'Bollywood songs', 'Comedy', 'Cricket highlights', 'Cooking', 'Kids'];
@@ -2783,7 +2739,6 @@ $('#ytClose').addEventListener('click', closeYouTube);
 $('#ytOpen').addEventListener('click', openYouTube);
 $('#ytBrowser').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeYouTube(); } });
 
-// ---------------------------------------------------------------- anime (no extension, iPad too)
 let animeSeq = 0, animePendingQ = null;
 async function animeSearch(q) {
   q = String(q || '').trim();
@@ -2839,7 +2794,6 @@ $('#animeNext').addEventListener('click', () => {
 });
 
 
-// ---------------------------------------------------------------- guests: land on the room's title
 // Signing in to Netflix and the others goes through their own pages (sign in, "Who's watching?",
 // profile PIN) and then usually lands on their home page instead of the show. Once a guest is past
 // all that, take them to what the room is watching. Never while they're still signing in.
