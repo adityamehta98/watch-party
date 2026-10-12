@@ -298,7 +298,10 @@ const ambientContext = ambientCanvas.getContext('2d', { willReadFrequently: true
 let ambientFrame = 0, ambientTimer = 0, ambientSampleAt = 0;
 
 function canUseAmbient() {
-  return !!(visualPrefs.ambient && visuals.ambient && S.movie && kindOf(S.movie) === 'file' && video.readyState >= 2 && document.visibilityState === 'visible');
+  // Native playback (local file or proxied anime) feeds the shared <video>; both let us sample
+  // pixels without CORS taint, so ambient works for both. Service-tab / YouTube / Megaplay-iframe
+  // modes can't be sampled — skip them.
+  return !!(visualPrefs.ambient && visuals.ambient && S.movie && isNativeMovie(S.movie) && video.readyState >= 2 && document.visibilityState === 'visible');
 }
 function renderVisualControls() {
   const ambient = $('#ambientBtn'), eco = $('#ecoBtn');
@@ -348,8 +351,29 @@ function syncAmbient() {
 function applyVisualPolicy(next) { visuals = next; syncAmbient(); }
 
 const visualWatcher = observeVisualPolicy(applyVisualPolicy, () => visualPrefs.saver);
-$('#ambientBtn').addEventListener('click', () => { visualPrefs.ambient = !visualPrefs.ambient; store.set('wp.ambient', visualPrefs.ambient); syncAmbient(); });
-$('#ecoBtn').addEventListener('click', () => { visualPrefs.saver = !visualPrefs.saver; store.set('wp.saver', visualPrefs.saver); visualWatcher.refresh(); });
+// The toasts explain WHAT each toggle changes, since the effects (a soft colored halo around the
+// stage, UI animations frozen) are easy to miss on first click — especially if an auto-reason
+// (low battery, data saver, limited memory) is overriding the manual choice.
+$('#ambientBtn').addEventListener('click', () => {
+  visualPrefs.ambient = !visualPrefs.ambient;
+  store.set('wp.ambient', visualPrefs.ambient);
+  syncAmbient();
+  if (!visualPrefs.ambient) toast('Ambient theater lighting off — the stage keeps a plain background.', { timeout: 3500 });
+  else if (visuals.ambient) toast('Ambient theater lighting on — the stage glows with the dominant color of the scene.', { timeout: 3500 });
+  else toast(`Ambient theater lighting is paused automatically (${visuals.reasons.join(', ')}). It will resume once that clears.`, { timeout: 4500 });
+});
+$('#ecoBtn').addEventListener('click', () => {
+  visualPrefs.saver = !visualPrefs.saver;
+  store.set('wp.saver', visualPrefs.saver);
+  visualWatcher.refresh();
+  if (visuals.saver) {
+    const auto = visuals.reasons.filter(r => r !== 'manual');
+    const why = auto.length ? ` (also forced by: ${auto.join(', ')})` : '';
+    toast(`Battery saver on${why} — ambient halo paused and UI animations frozen to save power.`, { timeout: 4500 });
+  } else {
+    toast('Battery saver off — animations and ambient halo run at full quality.', { timeout: 3500 });
+  }
+});
 for (const event of ['play', 'pause', 'loadeddata', 'emptied']) video.addEventListener(event, syncAmbient);
 document.addEventListener('visibilitychange', syncAmbient);
 
