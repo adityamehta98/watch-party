@@ -147,6 +147,40 @@ test('Netflix next episode preserves the active profile session before falling b
   assert.match(theater, /show && !nativeTransition/);
 });
 
+test('anime HLS proxy signs links, rewrites playlists through itself, and converts subtitles', () => {
+  const anime = require('../server/anime');
+  anime.init('admin-secret-key');
+  const referer = 'https://megaplay.buzz/stream/ani/151801/2/dub';
+
+  // A signed link round-trips to its exact upstream URL + referer; a tampered one does not.
+  const link = anime.signedPath('m3u8', 'https://cdn.example/a/master.m3u8', referer);
+  assert.match(link, /^\/anime\/m3u8\/[A-Za-z0-9_-]+\/[0-9a-f]{20}\.m3u8$/);
+  const parsed = anime.parseProxyPath(link);
+  assert.equal(parsed.kind, 'm3u8');
+  assert.equal(parsed.url, 'https://cdn.example/a/master.m3u8');
+  assert.equal(parsed.referer, referer);
+  assert.equal(anime.parseProxyPath(link.replace(/([0-9a-f])(\.m3u8)$/, (_, c, e) => (c === 'a' ? 'b' : 'a') + e)), null, 'a tampered signature is rejected');
+  assert.equal(anime.parseProxyPath('/anime/seg/not-base64!!/0000000000000000000a.ts'), null);
+
+  // Every URI (variant playlist, segment, key, subtitle media) is routed back through us, with the
+  // room-auth query carried onto each child, and relative URIs resolved against the playlist.
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nv/720.m3u8\n#EXT-X-MEDIA:TYPE=SUBTITLES,URI="subs/en.m3u8"\n';
+  const rm = anime.rewriteM3u8(master, 'https://cdn.example/a/master.m3u8', referer, 'k=guestsecretkey1234&c=abc');
+  assert.doesNotMatch(rm, /cdn\.example/, 'no upstream URL leaks to the client');
+  for (const l of rm.split('\n').filter(x => x && x[0] !== '#' || /URI="/.test(x))) {
+    if (/\/anime\//.test(l)) assert.match(l, /k=guestsecretkey1234&c=abc/, 'children carry the room auth');
+  }
+  const media720 = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example/a/key.bin"\nseg0.ts\n#EXT-X-MAP:URI="init.mp4"\n';
+  const rmedia = anime.rewriteM3u8(media720, 'https://cdn.example/a/720.m3u8', referer, 'k=guestsecretkey1234');
+  const seg = rmedia.split('\n').find(l => l && l[0] !== '#');
+  assert.equal(anime.parseProxyPath(seg.split('?')[0]).url, 'https://cdn.example/a/seg0.ts');
+  assert.equal(anime.parseProxyPath(/URI="([^"]+)"/.exec(rmedia.match(/EXT-X-KEY[^\n]*/)[0])[1].split('?')[0]).kind, 'seg', 'the decryption key is proxied too');
+
+  // SubRip is converted to WebVTT; existing VTT is left alone.
+  assert.match(anime.toVtt('1\n00:00:01,000 --> 00:00:02,000\nHi\n'), /^WEBVTT\n\n00:00:01\.000 --> 00:00:02\.000\nHi/);
+  assert.match(anime.toVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHi\n'), /^WEBVTT/);
+});
+
 test('MegaPlay uses one native transport layer and shares native actions with the room', () => {
   const anime = require('../server/anime');
   assert.deepEqual(anime.embedSources(151801, 52211, 1, 'dub'), [
@@ -744,7 +778,9 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
     ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] }
     : id === 'live' ? { id, title: 'Live', file: null, duration: 100, hls: true, progressive: true, subs: [] } : null,
   list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
-  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {}, animeSearch: async q => [{ id: 151801, title: q }] });
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {}, animeSearch: async q => [{ id: 151801, title: q }],
+    // ep 2 resolves to a native HLS stream; anything else fails to resolve (exercises the iframe fallback)
+    animeResolve: async (anilistId, malId, ep) => ep === 2 ? { url: 'https://cdn.example/stream/master.m3u8', referer: 'https://megaplay.buzz/stream/ani/151801/2/dub', subtitles: [{ url: 'https://cdn.example/subs/en.vtt', label: 'English', lang: 'en', kind: 'captions' }], intro: { start: 0, end: 90 }, outro: null } : null });
   t.after(() => room.shutdown());
   assert.equal(room.roleForKey('admin-secret-key', true), 'host');
   assert.equal(room.roleForKey('admin-secret-key', false), null);
@@ -773,11 +809,17 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   assert.equal(room.movie.id, 'movie', 'content selection is independent of transport permission');
   room.selectUrl(guest, 'https://www.netflix.com/watch/444', false);
   assert.equal(room.movie.url, 'https://www.netflix.com/watch/444');
-  room.selectAnime(guest, { anilistId: 151801, malId: 52211, ep: 2, lang: 'dub', title: 'Mashle' });
-  assert.equal(room.movie.kind, 'megaplay'); assert.match(room.movie.url, /\/2\/dub$/);
-  assert.deepEqual({ anilistId: room.publicMovie().anilistId, episode: room.publicMovie().episode, language: room.publicMovie().language }, { anilistId: 151801, episode: 2, language: 'dub' });
-  room.selectAnime(guest, { ...room.publicMovie(), ep: room.movie.episode + 1, lang: room.movie.language, title: room.movie.animeTitle });
-  assert.equal(room.movie.episode, 3); assert.match(room.movie.url, /\/3\/dub$/);
+  await room.selectAnime(guest, { anilistId: 151801, malId: 52211, ep: 2, lang: 'dub', title: 'Mashle' });
+  assert.equal(room.movie.kind, 'anime', 'a resolved stream plays natively in the shared <video>, not an iframe');
+  const am = room.publicMovie();
+  assert.match(am.hls, /^\/anime\/m3u8\//, 'native anime is delivered as proxied HLS');
+  assert.equal(am.url, null, 'native anime has no direct MP4 url, so delivery uses HLS');
+  assert.equal(am.subs.length, 1); assert.match(am.subs[0].url, /^\/anime\/sub\//);
+  assert.deepEqual({ anilistId: am.anilistId, episode: am.episode, language: am.language }, { anilistId: 151801, episode: 2, language: 'dub' });
+  await room.selectAnime(guest, { ...am, ep: room.movie.episode + 1, lang: room.movie.language, title: room.movie.animeTitle });
+  assert.equal(room.movie.episode, 3);
+  assert.equal(room.movie.kind, 'megaplay', 'when no stream resolves it falls back to the iframe embed');
+  assert.match(room.movie.url, /\/3\/dub$/);
   const beforeCustom = room.movie.id;
   room.selectUrl(guest, 'https://example.com/watch', false, { custom: true });
   assert.equal(room.movie.id, beforeCustom, 'arbitrary custom sites remain host-only');
