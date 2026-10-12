@@ -291,6 +291,10 @@ function teardownMedia() {
 const trackEls = new Map();
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
+// A movie that plays in the shared <video> as a direct file or native HLS. Anime now resolves to a
+// real HLS stream (proxied by the server), so it rides exactly the same path as a library movie —
+// which is what keeps play/pause/seek in sync for everyone and leaves no room for ads.
+const isNativeMovie = movie => { const k = kindOf(movie); return k === 'file' || k === 'anime'; };
 
 // Visual effects are local-only: policy inputs, sampled colors and preferences never leave this browser.
 const visualPrefs = { ambient: store.get('wp.ambient', true), saver: store.get('wp.saver', false) };
@@ -383,7 +387,7 @@ function watchFileStart() {
   clearTimeout(fileStartTimer);
   if ((S.fileSources?.length || 0) < 2) return;
   fileStartTimer = setTimeout(() => {
-    if (kindOf(S.movie) === 'file' && video.readyState < 2) tryNextFileSource();
+    if (isNativeMovie(S.movie) && video.readyState < 2) tryNextFileSource();
   }, 20000);
 }
 
@@ -439,11 +443,11 @@ function loadMovie(movie) {
   renderBookmarks();
   if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
   if (same) {
-    if (kindOf(movie) === 'file') {
+    if (isNativeMovie(movie)) {
       player.movie = movie;
       refreshFileSources(movie);
       addSubtitleTracks(movie);
-      checkCodecSupport(movie);
+      if (kindOf(movie) === 'file') checkCodecSupport(movie);
       renderNotice();
     }
     return;
@@ -457,21 +461,21 @@ function loadMovie(movie) {
     try { M.volume = vol; } catch {}
   }
   S.metaSent = null;
-  S.fileSources = kindOf(movie) === 'file' ? deliverySources(movie, PLAYBACK, key, clientId) : [];
+  S.fileSources = isNativeMovie(movie) ? deliverySources(movie, PLAYBACK, key, clientId) : [];
   S.fileSourceIndex = 0;
   S.filePlaybackError = null;
   filePlayback.close();
   player.setMovie(movie, null, media);
-  if (kindOf(movie) === 'file' && S.fileSources[0]) openFileSource(S.fileSources[0]);
+  if (isNativeMovie(movie) && S.fileSources[0]) openFileSource(S.fileSources[0]);
   watchFileStart();
-  if (movie && kindOf(movie) === 'file') {
+  if (movie && isNativeMovie(movie)) {
     addSubtitleTracks(movie);
-    checkCodecSupport(movie);
+    if (kindOf(movie) === 'file') checkCodecSupport(movie);
   } else {
     $('#emptyTitle').textContent = 'Nothing is playing yet';
     $('#emptyText').textContent = isHost ? 'Pick a movie from your library, then invite people.' : canControl() ? 'Pick a movie or a streaming service in the Library tab, or wait for the host.' : 'The host will pick a movie.';
   }
-  if (movie && kindOf(movie) !== 'file') codecWarning = null;
+  if (movie && !isNativeMovie(movie)) codecWarning = null;
   buildCcMenu();
   renderNotice();
 }
@@ -2798,7 +2802,7 @@ $('#animeResults').addEventListener('click', e => {
 function renderAnimeOverlay() {
   const button = $('#animeNext');
   const m = S.movie;
-  if (!m || kindOf(m) !== 'megaplay') { button.disabled = true; button.textContent = 'Next episode'; return; }
+  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay')) { button.disabled = true; button.textContent = 'Next episode'; return; }
   const episode = Math.max(1, Number(m.episode) || 1);
   const atEnd = Number(m.episodes) > 0 && episode >= Number(m.episodes);
   button.disabled = atEnd;
@@ -2806,7 +2810,7 @@ function renderAnimeOverlay() {
 }
 $('#animeNext').addEventListener('click', () => {
   const m = S.movie;
-  if (!m || kindOf(m) !== 'megaplay' || !m.anilistId) return;
+  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
   conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
