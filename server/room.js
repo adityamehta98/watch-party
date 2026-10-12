@@ -20,12 +20,13 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch, animeSearch }) {
+  constructor({ config, library, save, ytSearch, animeSearch, animeResolve }) {
     this.config = config;
     this.library = library;
     this.save = save;
     this.ytSearch = ytSearch || null;
     this.animeSearch = animeSearch || anime.search;
+    this.animeResolve = animeResolve || anime.resolveStream;
     this.jobOwner = new Map(); // movie id -> who started preparing it
     // The secret in the invite link (about 140 bits: unguessable). It's kept in config.json, so the
     // link stays the same every time Watch Party starts; "Make a new invite link" replaces it.
@@ -214,6 +215,16 @@ class Room {
   publicMovie() {
     if (!this.movie) return null;
     const m = this.movie;
+    if (m.kind === 'anime') {
+      // Native-HLS anime: it rides the same <video> path as movies, so it carries `hls` + `subs`
+      // (pointing at this server's /anime proxy) plus the anime metadata the Next-episode button needs.
+      return { id: m.id, kind: 'anime', service: 'anime', serviceName: 'Anime', title: m.title, duration: m.duration || null,
+        url: null, hls: m.hlsPath || null, progressive: false,
+        subs: (m.subs || []).map(s => ({ key: s.key, label: s.label, lang: s.lang, url: s.url })),
+        intro: m.intro || null, outro: m.outro || null,
+        anilistId: m.anilistId || null, malId: m.malId || null, episode: m.episode || null, episodes: m.episodes || null, language: m.language || null, animeTitle: m.animeTitle || null,
+        browsing: false, by: m.by || null, strict: false };
+    }
     if (m.kind !== 'file') {
       return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, sources: m.sources || null, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict, advanceFrom: m.advanceFrom || null,
         anilistId: m.anilistId || null, malId: m.malId || null, episode: m.episode || null, episodes: m.episodes || null, language: m.language || null, animeTitle: m.animeTitle || null };
@@ -438,9 +449,10 @@ class Room {
     this.system(browsing ? `${client.name} is picking something on ${info.name}` : `Now showing ${title ? `"${title}"` : 'something'} on ${info.name}`);
   }
 
-  // An anime episode, played in the page through MegaPlay's embed (no extension, works on iPad).
-  // Discovery is AniList; the embed is keyed by AniList id + episode and synced over postMessage.
-  selectAnime(client, msg) {
+  // An anime episode. We resolve a real HLS stream server-side and play it natively in the shared
+  // <video> (so play/pause/seek sync for everyone and there are no ads); if that can't be resolved we
+  // fall back to MegaPlay's iframe embed (keyed by AniList id + episode), the previous behaviour.
+  async selectAnime(client, msg) {
     if (!this.canChoose(client)) return;
     const anilistId = Math.trunc(Number(msg.anilistId));
     const malId = Math.max(0, Math.trunc(Number(msg.malId)) || 0);
@@ -453,11 +465,31 @@ class Room {
     if (this.movie && this.movie.id === id) return;
     const base = String(msg.title || 'Anime').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120) || 'Anime';
     const title = `${base} · Ep ${episode}${language === 'dub' ? ' (Dub)' : ''}`;
-    this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false,
-      anilistId, malId, episode, episodes, language, animeTitle: base };
+    const meta = { anilistId, malId, episode, episodes, language, animeTitle: base };
+
+    // Resolve the native stream. Guard against a newer pick landing while we were awaiting.
+    const seq = (this.animeSeq = (this.animeSeq || 0) + 1);
+    let resolved = null;
+    try { resolved = await this.animeResolve(anilistId, malId, episode, language); } catch { resolved = null; }
+    if (seq !== this.animeSeq) return; // superseded by a later selection
+    if (this.movie && this.movie.id === id) return;
+
+    if (resolved && resolved.url) {
+      const subs = (resolved.subtitles || []).slice(0, 12).map((t, i) => ({
+        key: `s${i}`, label: String(t.label || `Track ${i + 1}`).slice(0, 60), lang: t.lang || '',
+        url: anime.signedPath('sub', t.url, resolved.referer),
+      }));
+      this.movie = { id, kind: 'anime', service: 'anime', serviceName: 'Anime', title, duration: null,
+        hlsPath: anime.signedPath('m3u8', resolved.url, resolved.referer), subs,
+        intro: resolved.intro || null, outro: resolved.outro || null,
+        browsing: false, by: client.name, strict: false, ...meta };
+    } else {
+      // Fallback: the old cross-origin iframe embed (ads + looser sync, but it still plays).
+      this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false, ...meta };
+    }
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
-    // MegaPlay auto-plays each episode; start the room playing (with a load delay) so everyone advances
-    // together, and let auto-wait hold for whoever is still loading instead of one player racing ahead.
+    // Start the room playing (with a load delay) so everyone advances together, and let auto-wait hold
+    // for whoever is still loading instead of one player racing ahead.
     this.setState({ movieId: id, playing: true, position: 0, anchor: Date.now() + 1500 }, { by: client.name, action: 'play' });
     this.system(`Now showing "${title}" (Anime)`);
   }

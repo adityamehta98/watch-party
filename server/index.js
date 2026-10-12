@@ -127,6 +127,7 @@ const library = new Library({ config, tools: toolState, save });
 const ytFetch = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: () => fs.promises.readFile(process.env.WP_TEST_YT_HTML, 'utf8') }) : undefined;
 const ytSearchFn = q => youtube.search(q, ytFetch);
 const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q) });
+anime.init(config.adminKey); // sign the anime proxy links with the admin key
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
 const turnCreds = { username: 'watchparty', password: randKey(18) };
@@ -520,6 +521,54 @@ function media(req, res, p, u) {
   } catch { res.writeHead(500); res.end(); }
 }
 
+// Reverse-proxy for native anime playback: the HLS playlist, its segments/keys and subtitle tracks
+// are fetched from the resolved upstream (with the Referer it expects) and streamed back from this
+// origin, so the browser plays raw video with no third-party iframe and no ads. Links are signed
+// (so a guest can't make us fetch an arbitrary URL) and still require the room key, exactly like
+// /media. A miss is a plain 404 and never counts as a wrong key guess.
+async function animeProxy(req, res, p, u) {
+  const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
+  if (!role) return notFound(req, res, 'anime key');
+  const target = anime.parseProxyPath(p);
+  const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
+  if (!target) return fail(404);
+  // Only a current-movie request is served to guests; the host (local) may prefetch freely.
+  if (role !== 'host' && (!room.movie || room.movie.kind !== 'anime')) return fail(404);
+  try {
+    if (target.kind === 'm3u8') {
+      const r = await anime.fetchUpstream(target.url, target.referer);
+      if (!r.ok) return fail(r.status === 404 ? 404 : 502);
+      const text = await r.text();
+      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
+      const c = u.searchParams.get('c'); if (c) auth.set('c', c);
+      const body = anime.rewriteM3u8(text, r.url || target.url, target.referer, auth.toString());
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      return req.method === 'HEAD' ? res.end() : res.end(body);
+    }
+    if (target.kind === 'sub') {
+      const r = await anime.fetchUpstream(target.url, target.referer);
+      if (!r.ok) return fail(r.status === 404 ? 404 : 502);
+      const body = anime.toVtt(await r.text());
+      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      return req.method === 'HEAD' ? res.end() : res.end(body);
+    }
+    // a media segment, encryption key or init segment: stream the bytes, relaying Range
+    const extra = req.headers.range ? { Range: req.headers.range } : {};
+    const r = await anime.fetchUpstream(target.url, target.referer, extra);
+    if (!(r.ok || r.status === 206)) return fail(r.status === 404 ? 404 : 502);
+    const h = { 'Cache-Control': 'public, max-age=30', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes' };
+    const ct = r.headers.get('content-type'); if (ct) h['Content-Type'] = ct;
+    const cl = r.headers.get('content-length'); if (cl) h['Content-Length'] = cl;
+    const cr = r.headers.get('content-range'); if (cr) h['Content-Range'] = cr;
+    res.writeHead(r.status === 206 ? 206 : 200, h);
+    if (req.method === 'HEAD' || !r.body) return res.end();
+    const stream = anime.Readable.fromWeb(r.body);
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    return stream.pipe(res);
+  } catch { return fail(502); }
+}
+
 async function handler(req, res) {
   let u, p;
   try { u = new URL(req.url, 'http://x'); p = decodeURIComponent(u.pathname); } catch { return notFound(req, res, 'bad url'); }
@@ -556,6 +605,7 @@ async function handler(req, res) {
     }
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/media/')) return media(req, res, p, u);
+    if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
     // Icons are public and harmless. Browsers and iOS fetch them (and the install manifest) without
     // cookies, so they must never count as a wrong guess: ten of those used to lock a guest out.
