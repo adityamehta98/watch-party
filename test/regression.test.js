@@ -456,6 +456,11 @@ test('playback capabilities select native or MSE HLS and allow a growing HLS-onl
   assert.match(app, /Instant start on phones, tablets and computers/);
   assert.match(app, /Ready to watch · still preparing in background/);
   assert.match(app, /if \(same\)[\s\S]{0,220}refreshFileSources\(movie\)/);
+  // iPhone/iPad run anime through hls.js with ManagedMediaSource, which leaves video.src empty and
+  // attaches via a <source> child. The sync loop must use currentSrc so it still seeks and plays there.
+  const player = read('public/js/player.js');
+  assert.match(player, /!v\.currentSrc \|\| v\.readyState < 1\) return/);
+  assert.doesNotMatch(player, /\|\| !v\.src \|\|/);
 });
 
 test('file playback owns HLS attachment, recovery, fallback, and stale loads', async () => {
