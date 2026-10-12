@@ -38,6 +38,13 @@ test('browser DOM and icon references resolve', () => {
   assert.match(css, /\.tab:not\(\.active\) span\s*\{\s*display:\s*none/);
   assert.match(css, /\.tab\.active\s*\{[^}]*flex-grow:\s*1\.5/);
   assert.doesNotMatch(css, /\.tab span\s*\{\s*display:\s*none/);
+  for (const tab of ['chat', 'people', 'observatory', 'library']) {
+    const tag = new RegExp(`<button class="([^"]*)"[^>]+data-tab="${tab}"`).exec(page);
+    assert.ok(tag, `${tab} tab`);
+    assert.doesNotMatch(tag[1], /host-only|ctl-only/, `${tab} must be visible to every admitted user`);
+  }
+  assert.match(page, /<section class="panel" data-panel="observatory">/);
+  assert.match(page, /<section class="panel" data-panel="library">/);
 
   for (const [htmlFile, jsFile] of [['extension/sidebar.html', 'extension/sidebar.js'], ['extension/theater.html', 'extension/theater.js']]) {
     const html = read(htmlFile), js = read(jsFile);
@@ -66,6 +73,141 @@ test('manifest and HTML local assets exist and extension versions agree', () => 
       if (!/^(?:https?:|\/)/.test(m[1])) assert.ok(fs.existsSync(path.resolve(dir, m[1])), `${html}: ${m[1]}`);
     }
   }
+});
+
+test('streaming overlays keep chat interactive, show every participant, and scatter reactions', () => {
+  const service = read('extension/service.js');
+  const sidebar = read('extension/sidebar.js');
+  const theater = read('extension/theater.js');
+  const theaterPage = read('extension/theater.html');
+  const theaterCss = read('extension/theater.css');
+  const app = read('public/js/app.js');
+  const css = read('public/css/app.css');
+  const page = read('public/index.html');
+
+  // The injected controls use the browser top layer and mirror Netflix's own control visibility,
+  // while an open chat is deliberately excluded from the idle-collapse selector.
+  assert.match(service, /host\.popover = 'manual'/);
+  assert.match(service, /host\.showPopover/);
+  assert.match(service, /netflixControlsVisible/);
+  assert.match(service, /native-controls-hidden/);
+  assert.doesNotMatch(service, /\.wrap\.idle \.bar, \.wrap\.idle \.chat/);
+
+  // Chat emoji insertion is separate from room reactions, and reactions choose both axes instead of
+  // using the old fixed upper-right notification stack.
+  assert.match(service, /data-chat-emoji/);
+  assert.match(sidebar, /data-chat-emoji/);
+  assert.match(page, /id="chatEmojiBtn"/);
+  assert.match(service, /Math\.random\(\) \* 86/);
+  assert.match(service, /Math\.random\(\) \* 62/);
+  assert.match(service, /if \(item\.kind === 'react'\) \{ floatReaction\(item\); return; \}/);
+
+  // Camera tiles show only participants sharing video; the service and side panels still derive
+  // cameras from the people list and merge in streams when available.
+  assert.match(service, /ui && ui\.people/);
+  assert.match(sidebar, /ui && ui\.people/);
+  assert.match(service, /selfCamera = cameras\.find\(c => c\.self\)/);
+  assert.match(sidebar, /selfCamera = cameras\.find\(c => c\.self\)/);
+  assert.match(service, /if \(cam\) active\.delete\(camKey\(cam\)\)/);
+  assert.match(sidebar, /if \(cam\) active\.delete\(camKey\(cam\)\)/);
+  assert.match(app, /const want = \[\];[\s\S]{0,160}for \(const \[id, p\] of S\.peers\) if \(p\.media && p\.media\.cam\) want\.push/);
+  assert.match(app, /peopleHere\.map\(p => \(\{ id: p\.id,/);
+
+  // Theater notifications live in the extension wrapper above the Netflix iframe. The hidden copy
+  // in the party iframe cannot leave clipped fragments, and action buttons route back to the party.
+  assert.match(theaterPage, /id="notices"/);
+  assert.match(theaterCss, /\.notices \{[^}]*z-index: 4/);
+  assert.match(app, /wpTheater: 'toast'/);
+  assert.match(app, /e\.data\.wpTheater !== 'toast-action'/);
+  assert.match(theater, /partyFrame\.contentWindow\.postMessage\(\{ wpTheater: 'toast-action'/);
+  assert.match(css, /#app\.theater-svc \.toasts \{ display: none; \}/);
+
+  // The party page is nested in theater mode, so its top-level extension wrapper owns Document PiP.
+  // The requested viewport width follows the same --sidebar token used by the normal room panel.
+  assert.match(app, /getPropertyValue\('--sidebar'\)/);
+  assert.match(app, /wpTheater: 'pip'/);
+  assert.match(theater, /documentPictureInPicture\.requestWindow\(\{ width, height: 520, preferInitialWindowPlacement: true \}\)/);
+  assert.match(theater, /sidebar\.html\?popout=1/);
+  assert.match(theater, /Math\.min\(520, Number\(requestedWidth\) \|\| 348\)/);
+});
+
+test('Netflix next episode preserves the active profile session before falling back to navigation', () => {
+  const service = read('extension/service.js');
+  const theater = read('extension/theater.js');
+  const media = read('public/js/media.js');
+  const app = read('public/js/app.js');
+
+  assert.match(service, /nextEpisodeIntent = \{ url: location\.href, at: Date\.now\(\) \}/);
+  assert.match(service, /advanceFrom: TOP && nextEpisodeIntent/);
+  assert.match(service, /c\.op === 'next' && NETFLIX/);
+  assert.match(media, /advance\(url\) \{ this\.cmd\(\{ op: 'next', url \}\); \}/);
+  assert.match(app, /remote\.advance\(movie\.url\)/);
+  assert.match(app, /transitioning: !!serviceAdvance/);
+  assert.match(theater, /nativeTransition = show && !!m\.transitioning/);
+  assert.match(theater, /show && !nativeTransition/);
+});
+
+test('MegaPlay uses one native transport layer and shares native actions with the room', () => {
+  const anime = require('../server/anime');
+  assert.deepEqual(anime.embedSources(151801, 52211, 1, 'dub'), [
+    'https://megaplay.buzz/stream/ani/151801/1/dub',
+    'https://megaplay.buzz/stream/mal/52211/1/dub',
+  ]);
+  assert.ok(anime.embedSources(151801, 52211, 1, 'dub').every(url => url.endsWith('/dub')));
+
+  const appended = [];
+  const window = { addEventListener() {}, postMessage() {} };
+  const document = { createElement: () => ({ contentWindow: { postMessage() {} }, style: {} }) };
+  const context = vm.createContext({ URL, Event, EventTarget, performance, window, document,
+    setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1 });
+  vm.runInContext(`${read('public/js/media.js').replace(/^export /gm, '')}\nglobalThis.TestMegaplayMedia = MegaplayMedia;`, context);
+  const host = { innerHTML: '', appendChild(node) { appended.push(node); } };
+  const actions = [];
+  const player = new context.TestMegaplayMedia(host, { onUser: action => actions.push(action) });
+  player.open({ url: 'https://megaplay.buzz/stream/ani/151801/1/dub' });
+  const frame = appended[0];
+  assert.equal(frame.src, 'https://megaplay.buzz/stream/ani/151801/1/dub');
+  assert.equal(frame.referrerPolicy, 'origin');
+  assert.equal(frame.frameBorder, '0');
+  assert.equal(frame.scrolling, 'no');
+  assert.equal(frame.allowFullscreen, true);
+  assert.match(frame.allow, /fullscreen/);
+  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 12, duration: 1420 } });
+  assert.equal(player.ready, true);
+  assert.equal(player.currentTime, 12);
+  assert.equal(player.duration, 1420);
+  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { type: 'watching-log', currentTime: 18, duration: 1420 } });
+  assert.equal(player.currentTime, 18);
+  player.prevAt = performance.now() - 1000; player.prevT = 18; player._playing = false;
+  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 19, duration: 1420 } });
+  assert.equal(actions.at(-1).action, 'play');
+  assert.ok(player.holdUntil > performance.now(), 'native play is held before the sync correction loop');
+  player.prevAt = performance.now() - 500; player.prevT = 19; player._playing = true;
+  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 40, duration: 1420 } });
+  assert.deepEqual({ ...actions.at(-1) }, { action: 'seek', t: 40 });
+  // A stall is never guessed as a pause inline: checkStall reports buffering first, then a real pause.
+  player.prevAt = performance.now() - 1000; player.prevT = 40; player._playing = true;
+  player.pausedOverride = null; player.seekingTarget = null; player.buffering = false; player.pauseReported = false;
+  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 40, duration: 1420 } });
+  assert.notEqual(actions.at(-1).action, 'pause');
+  player.tAt = performance.now() - 1500; player.checkStall();
+  assert.equal(player.buffering, true); assert.equal(player.readyState, 2); // short stall = buffering, room waits
+  player.tAt = performance.now() - 4000; player.checkStall();
+  assert.equal(actions.at(-1).action, 'pause'); assert.equal(player.paused, true); // long stall = real pause
+  player.onMessage({ source: frame.contentWindow, origin: 'https://evil.example', data: { event: 'time', time: 99, duration: 1420 } });
+  assert.equal(player.currentTime, 40);
+  const media = read('public/js/media.js'), css = read('public/css/app.css'), app = read('public/js/app.js'), page = read('public/index.html');
+  assert.doesNotMatch(media, /GET_TIME/);
+  assert.match(css, /\.stage\[data-kind="megaplay"\] \.controls \{ display: none !important; \}/);
+  assert.match(css, /\.stage\[data-kind="megaplay"\] \.anime-social \{ display: flex; \}/);
+  assert.match(page, /id="animeCamBtn"[\s\S]*id="animeMicBtn"[\s\S]*id="animeReactBtn"[\s\S]*id="animeChatBtn"/);
+  assert.match(page, /id="animeNext"/);
+  assert.doesNotMatch(page, /id="animeFsBtn"/); // one fullscreen control: MegaPlay's own, bridged to the stage
+  assert.match(media, /m\.megaCommand === 'toggleFullscreen'/);
+  assert.match(app, /onFullscreen: cmd =>/);
+  assert.match(media, /SKP_DATA/);
+  assert.doesNotMatch(app, /kindOf\(S\.movie\) === 'megaplay' && \[' ', 'k', 'f'/);
+  assert.match(app, /kindOf\(S\.movie\) === 'megaplay'.*'arrowleft'/);
 });
 
 function unzipEntries(file) {
@@ -595,19 +737,21 @@ test('library analysis preserves direct, remux, transcode, title, and audio deci
   assert.equal(info.plan.mode, 'direct'); assert.equal(info.defaultAudioIndex, 1);
 });
 
-test('room keys, permissions, URL selection, public data, and timeline commands work', t => {
+test('room keys, permissions, URL selection, public data, and timeline commands work', async t => {
   const { Room, randKey, PERMS, REACTIONS } = require('../server/room');
   assert.match(randKey(24), /^[A-Za-z0-9]{24}$/); assert.equal(new Set(PERMS).size, 4); assert.ok(REACTIONS.includes('👏'));
   const library = { playable: id => id === 'movie'
     ? { id, title: 'Movie', file: 'D:\\private\\movie.mp4', duration: 100, subs: [] }
     : id === 'live' ? { id, title: 'Live', file: null, duration: 100, hls: true, progressive: true, subs: [] } : null,
   list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
-  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {} });
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {}, animeSearch: async q => [{ id: 151801, title: q }] });
   t.after(() => room.shutdown());
   assert.equal(room.roleForKey('admin-secret-key', true), 'host');
   assert.equal(room.roleForKey('admin-secret-key', false), null);
   assert.equal(room.roleForKey('guestsecretkey1234'), 'guest');
   const host = { id: 'host01', name: 'Host', role: 'host', admitted: true, perms: Object.fromEntries(PERMS.map(p => [p, true])), ws: { readyState: 0 } };
+  const guestMessages = [];
+  const guest = { id: 'guest01', name: 'Alex', role: 'guest', admitted: true, perms: { playback: false, chat: true, react: true, camera: true }, ws: { readyState: 1, send: raw => guestMessages.push(JSON.parse(raw)) } };
   room.selectMovie(host, 'movie');
   assert.equal(room.publicMovie().file, undefined); assert.equal(room.publicMovie().url, '/media/movie/video');
   room.selectMovie(host, 'live');
@@ -619,8 +763,35 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   room.selectUrl(host, 'http://127.0.0.1/private', false, { custom: true }); assert.equal(room.movie.kind, 'file');
   room.selectUrl(host, 'https://example.com/watch?ep=2', false, { custom: true, strict: true });
   assert.equal(room.movie.service, 'custom'); assert.equal(room.movie.strict, true);
+  room.selectUrl(host, 'https://www.netflix.com/watch/111?trackId=7', false);
+  assert.equal(room.movie.advanceFrom, null);
+  room.selectUrl(host, 'https://www.netflix.com/watch/222?trackId=8', false, { follow: true, advanceFrom: 'https://www.netflix.com/watch/111?from=player', position: 2, playing: true });
+  assert.equal(room.publicMovie().advanceFrom, 'https://www.netflix.com/watch/111');
+  room.selectUrl(host, 'https://www.netflix.com/watch/333', false, { follow: true, advanceFrom: 'https://www.netflix.com/watch/999' });
+  assert.equal(room.publicMovie().advanceFrom, null, 'an unrelated page cannot request a native next-episode transition');
+  room.selectMovie(guest, 'movie');
+  assert.equal(room.movie.id, 'movie', 'content selection is independent of transport permission');
+  room.selectUrl(guest, 'https://www.netflix.com/watch/444', false);
+  assert.equal(room.movie.url, 'https://www.netflix.com/watch/444');
+  room.selectAnime(guest, { anilistId: 151801, malId: 52211, ep: 2, lang: 'dub', title: 'Mashle' });
+  assert.equal(room.movie.kind, 'megaplay'); assert.match(room.movie.url, /\/2\/dub$/);
+  assert.deepEqual({ anilistId: room.publicMovie().anilistId, episode: room.publicMovie().episode, language: room.publicMovie().language }, { anilistId: 151801, episode: 2, language: 'dub' });
+  room.selectAnime(guest, { ...room.publicMovie(), ep: room.movie.episode + 1, lang: room.movie.language, title: room.movie.animeTitle });
+  assert.equal(room.movie.episode, 3); assert.match(room.movie.url, /\/3\/dub$/);
+  const beforeCustom = room.movie.id;
+  room.selectUrl(guest, 'https://example.com/watch', false, { custom: true });
+  assert.equal(room.movie.id, beforeCustom, 'arbitrary custom sites remain host-only');
+  room.onMessage(guest, { type: 'lib-list' });
+  assert.equal(guestMessages.at(-1).library.items[0].rel, 'movie.mp4');
+  room.onMessage(guest, { type: 'anime-search', q: 'Mashle' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(guestMessages.at(-1).type, 'anime-results'); assert.equal(guestMessages.at(-1).results[0].title, 'Mashle');
   assert.equal(room.guestLibrary().folders[0], '(the host\'s movies)'); assert.equal(room.guestLibrary().items[0].rel, 'movie.mp4');
   assert.equal(room.publicSettings(false).safariExtensionUrl, 'https://testflight.apple.com/join/AbCd1234');
+  const app = read('public/js/app.js');
+  assert.doesNotMatch(app, /if \(!isHost && !canControl\(\)\) return noPerm\('playback'\);\s*\n\s*\$\('#ytChips'\)/);
+  assert.match(app, /if \(!isHost\) \{ conn\.send\(\{ type: 'lib-list' \}\); return; \}/);
+  assert.doesNotMatch(app, /function renderObservatory\(\) \{\s*if \(!isHost\) return/);
 });
 
 test('Sync Observatory keeps bounded in-memory health, corrections, and recommendations', t => {
@@ -674,7 +845,7 @@ test('Sync Observatory updates do not rebroadcast the people list', t => {
   sent.host.length = 0; sent.guest.length = 0;
   guest.status = { ...guest.status, drift: 250, health: 55, rtt: 220, rate: 1.04 };
   room.broadcastPeople(false);
-  assert.deepEqual(sent.guest, []);
+  assert.deepEqual(sent.guest.map(message => message.type), ['observatory']);
   assert.deepEqual(sent.host.map(message => message.type), ['observatory']);
 });
 
