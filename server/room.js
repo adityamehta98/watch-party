@@ -216,8 +216,7 @@ class Room {
     if (!this.movie) return null;
     const m = this.movie;
     if (m.kind === 'anime') {
-      // Native-HLS anime: it rides the same <video> path as movies, so it carries `hls` + `subs`
-      // (pointing at this server's /anime proxy) plus the anime metadata the Next-episode button needs.
+      // Native-HLS anime: same <video> path as movies, plus the metadata the Next-episode button needs.
       return { id: m.id, kind: 'anime', service: 'anime', serviceName: 'Anime', title: m.title, duration: m.duration || null,
         url: null, hls: m.hlsPath || null, progressive: false,
         subs: (m.subs || []).map(s => ({ key: s.key, label: s.label, lang: s.lang, url: s.url })),
@@ -449,9 +448,7 @@ class Room {
     this.system(browsing ? `${client.name} is picking something on ${info.name}` : `Now showing ${title ? `"${title}"` : 'something'} on ${info.name}`);
   }
 
-  // An anime episode. We resolve a real HLS stream server-side and play it natively in the shared
-  // <video> (so play/pause/seek sync for everyone and there are no ads); if that can't be resolved we
-  // fall back to MegaPlay's iframe embed (keyed by AniList id + episode), the previous behaviour.
+  // Resolve a native HLS stream and play it in the shared <video>; fall back to the iframe embed.
   async selectAnime(client, msg) {
     if (!this.canChoose(client)) return;
     const anilistId = Math.trunc(Number(msg.anilistId));

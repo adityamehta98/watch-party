@@ -291,9 +291,7 @@ function teardownMedia() {
 const trackEls = new Map();
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
-// A movie that plays in the shared <video> as a direct file or native HLS. Anime now resolves to a
-// real HLS stream (proxied by the server), so it rides exactly the same path as a library movie —
-// which is what keeps play/pause/seek in sync for everyone and leaves no room for ads.
+// Plays in the shared <video> as a direct file or native HLS (library movie or anime).
 const isNativeMovie = movie => { const k = kindOf(movie); return k === 'file' || k === 'anime'; };
 
 // Visual effects are local-only: policy inputs, sampled colors and preferences never leave this browser.

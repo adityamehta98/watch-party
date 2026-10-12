@@ -521,11 +521,8 @@ function media(req, res, p, u) {
   } catch { res.writeHead(500); res.end(); }
 }
 
-// Reverse-proxy for native anime playback: the HLS playlist, its segments/keys and subtitle tracks
-// are fetched from the resolved upstream (with the Referer it expects) and streamed back from this
-// origin, so the browser plays raw video with no third-party iframe and no ads. Links are signed
-// (so a guest can't make us fetch an arbitrary URL) and still require the room key, exactly like
-// /media. A miss is a plain 404 and never counts as a wrong key guess.
+// Reverse-proxy for native anime playback: fetch the playlist, segments and subtitles from the
+// resolved upstream and stream them back from this origin. Links are signed and room-key gated.
 async function animeProxy(req, res, p, u) {
   const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
   if (!role) return notFound(req, res, 'anime key');
