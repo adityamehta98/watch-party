@@ -2,10 +2,12 @@
 // Everything here is a view of the Watch Party tab: it shows what that tab knows and sends your
 // clicks back to it. The Watch Party tab stays the one connected to the room.
 const $ = s => document.querySelector(s);
+document.documentElement.classList.toggle('popout', new URLSearchParams(location.search).has('popout'));
 let ui = null;
 let time = null;
 let port = null;
 let pc = null, pendingIce = [], streams = new Map();
+const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
 
 function connect() {
   port = chrome.runtime.connect({ name: 'dock' });
@@ -27,6 +29,8 @@ function onMessage(m) {
 
 // ------------------------------------------------ rendering
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const hue = str => { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || '?';
 function fmt(t) {
   t = Math.max(0, Math.floor(t || 0));
   const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
@@ -42,6 +46,7 @@ function render() {
   $('#seek').classList.toggle('locked', !ui.canControl);
   $('#chatInput').disabled = !ui.canChat;
   $('#chatInput').placeholder = ui.canChat ? 'Say something…' : 'The host turned off chat for you';
+  $('#emojiBtn').disabled = !ui.canChat;
 
   let notice = '';
   if (ui.ad) notice = 'An ad is playing in your tab. The room waits until it\'s over.';
@@ -74,7 +79,7 @@ function render() {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
     list.innerHTML = ui.chat.map(c => c.system
       ? `<div class="msg system">${esc(c.text)}</div>`
-      : `<div class="msg${c.me ? ' me' : ''}"><div class="who">${esc(c.name)}${c.host ? ' · host' : ''}<time>${new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div><div class="body">${esc(c.text)}</div></div>`).join('');
+      : `<div class="msg${c.me ? ' me' : ''}"><div class="who" style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}${c.host ? ' · host' : ''}<time>${new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div><div class="body">${esc(c.text)}</div></div>`).join('');
     if (atBottom || (ui.chat.length && ui.chat[ui.chat.length - 1].me)) list.scrollTop = list.scrollHeight;
   }
   renderCams();
@@ -102,22 +107,37 @@ setInterval(renderTime, 500);
 // ------------------------------------------------ cameras (sent over from the Watch Party tab)
 function renderCams() {
   const box = $('#cams');
-  const want = (ui && ui.cams) || [];
-  const ids = new Set(want.map(c => c.sid));
-  for (const el of [...box.children]) if (!ids.has(el.dataset.sid)) el.remove();
+  const cameras = (ui && ui.cams) || [];
+  const camKey = c => c.id || `name:${c.name}`;
+  const active = new Map(cameras.map(c => [camKey(c), c]));
+  const selfCamera = cameras.find(c => c.self);
+  const want = ((ui && ui.people) || []).map(p => {
+    const key = p.id || `name:${p.name}`, cam = active.get(key) || (p.me ? selfCamera : null);
+    active.delete(key); if (cam) active.delete(camKey(cam));
+    return { ...cam, key, name: p.me ? 'You' : p.name, self: !!p.me, cam: !!(p.cam || cam), mic: !!p.mic };
+  });
+  for (const cam of active.values()) want.push({ ...cam, key: cam.id || `name:${cam.name}`, cam: true, mic: true });
+  const ids = new Set(want.map(c => c.key));
+  for (const el of [...box.children]) if (!ids.has(el.dataset.key)) el.remove();
   for (const c of want) {
-    let el = box.querySelector(`[data-sid="${CSS.escape(c.sid)}"]`);
+    let el = [...box.children].find(x => x.dataset.key === c.key);
     if (!el) {
       el = document.createElement('div');
-      el.className = 'cam' + (c.self ? ' self' : '');
-      el.dataset.sid = c.sid;
-      el.innerHTML = '<video autoplay playsinline muted></video><span></span>';
+      el.className = 'cam';
+      el.dataset.key = c.key;
+      el.innerHTML = '<video autoplay playsinline muted></video><div class="cam-avatar"><b></b></div><div class="cam-label"><span></span><i title="Microphone off">🔇</i></div>';
       box.appendChild(el);
     }
-    el.querySelector('span').textContent = c.name;
+    el.classList.toggle('self', !!c.self);
+    el.querySelector('.cam-label span').textContent = c.name;
+    const avatar = el.querySelector('.cam-avatar'); avatar.hidden = !!c.cam;
+    const avatarText = avatar.querySelector('b'); avatarText.textContent = initials(c.name); avatarText.style.background = `hsl(${hue(c.name)} 65% 68%)`;
+    el.querySelector('.cam-label i').hidden = !!c.mic;
     const v = el.querySelector('video');
     const s = streams.get(c.sid);
-    if (s && v.srcObject !== s) { v.srcObject = s; v.play().catch(() => {}); }
+    v.style.visibility = c.cam ? 'visible' : 'hidden';
+    if (!c.cam && v.srcObject) v.srcObject = null;
+    else if (c.cam && s && v.srcObject !== s) { v.srcObject = s; v.play().catch(() => {}); }
   }
 }
 function closeRtc() { if (pc) try { pc.close(); } catch {} pc = null; streams.clear(); pendingIce = []; }
@@ -159,6 +179,22 @@ $('#seek').addEventListener('click', e => {
 $('#camBtn').addEventListener('click', () => act({ op: 'cam' }));
 $('#micBtn').addEventListener('click', () => act({ op: 'mic' }));
 $('#reacts').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b) act({ op: 'react', emoji: b.dataset.emoji }); });
+$('#emojiPicker').innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
+$('#emojiBtn').addEventListener('click', () => {
+  const picker = $('#emojiPicker'), open = picker.hidden;
+  picker.hidden = !open; $('#emojiBtn').classList.toggle('on', open); $('#emojiBtn').setAttribute('aria-expanded', String(open));
+  if (!open) $('#chatInput').focus();
+});
+$('#emojiPicker').addEventListener('click', e => {
+  const button = e.target.closest('[data-chat-emoji]'); if (!button) return;
+  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+  input.setRangeText(button.dataset.chatEmoji, start, end, 'end');
+  $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false'); input.focus();
+});
+document.addEventListener('click', e => {
+  if (e.target.closest('#emojiBtn, #emojiPicker')) return;
+  $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false');
+});
 $('#chatForm').addEventListener('submit', e => {
   e.preventDefault();
   const i = $('#chatInput');

@@ -61,6 +61,10 @@
     <section class="chat">
       <div class="chat-list" id="chatList"></div>
       <form class="chat-form" id="chatForm" autocomplete="off">
+        <button class="emoji-btn" id="emojiBtn" type="button" aria-label="Add emoji" aria-expanded="false">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/></svg>
+        </button>
+        <div class="emoji-picker" id="emojiPicker" hidden></div>
         <input id="chatInput" maxlength="500" placeholder="Say something…">
         <button class="send" type="submit" aria-label="Send">
           <svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5z"/></svg>

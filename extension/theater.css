@@ -3,8 +3,17 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: #0f1013; overflow: hidden; }
 #party { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
-.svc-box { position: fixed; background: #000; z-index: 2; }
-.svc-box iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+.svc-box { position: fixed; background: #000; z-index: 2; overflow: hidden; }
+.svc-box iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #000; }
+.notices { position: absolute; z-index: 4; top: 14px; right: 14px; width: min(420px, calc(100% - 28px)); display: grid; justify-items: end; gap: 8px; pointer-events: none; }
+.notice { pointer-events: auto; max-width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; background: rgba(18,20,25,.94); color: #f4f5f7; box-shadow: 0 12px 32px rgba(0,0,0,.48); backdrop-filter: blur(12px); font: 600 13.5px/1.35 system-ui, "Segoe UI", sans-serif; animation: notice-in .18s ease-out; }
+.notice.error { border-color: rgba(239,93,93,.58); }
+.notice.knock, .notice.request { border-color: rgba(245,181,68,.62); }
+.notice > span { min-width: 0; overflow-wrap: anywhere; }
+.notice .actions { display: flex; gap: 6px; }
+.notice button { border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 5px 8px; background: #292c33; color: #f4f5f7; cursor: pointer; font: 700 12px/1.2 system-ui, "Segoe UI", sans-serif; white-space: nowrap; }
+.notice button.primary { border-color: #f5b544; background: #f5b544; color: #1a1300; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-6px); } }
 .bad { position: fixed; inset: 0; display: grid; place-items: center; color: #eceef2; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; text-align: center; padding: 24px; }
 .help { position: fixed; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 12px; background: rgba(15,16,19,.92); border: 1px solid rgba(255,255,255,.14); color: #eceef2; font: 13.5px/1.35 system-ui, "Segoe UI", sans-serif; box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: 520px; }
 .help button { font: inherit; border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; background: #f5b544; color: #1a1300; font-weight: 700; white-space: nowrap; }

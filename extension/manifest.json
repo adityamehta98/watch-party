@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watch Party Sync",
-  "version": "1.11.0",
+  "version": "1.14.1",
   "description": "Keeps Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, YouTube, and any website the host opens in the Watch Party window, in sync with your Watch Party.",
   "icons": {
     "16": "icon16.png",

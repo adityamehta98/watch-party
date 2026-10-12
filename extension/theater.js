@@ -4,6 +4,82 @@
 const partyFrame = document.getElementById('party');
 const box = document.getElementById('svcBox');
 const svc = document.getElementById('svc');
+const notices = document.getElementById('notices');
+const noticeTimers = new Map();
+let partyPopout = null;
+
+function reportPopout(open, error = '') {
+  try { partyFrame.contentWindow.postMessage({ wpTheater: 'pip-state', open: !!open, error }, partyOrigin()); } catch { /* party closed */ }
+}
+
+async function setPartyPopout(action, requestedWidth) {
+  if (partyPopout) {
+    if (action === 'close') partyPopout.close();
+    else { try { partyPopout.focus(); } catch { /* browser decides */ } reportPopout(true); }
+    return;
+  }
+  if (action === 'close') { reportPopout(false); return; }
+  if (!('documentPictureInPicture' in window)) {
+    reportPopout(false, 'The pop-out party needs Chrome, Edge or Brave on a computer.');
+    return;
+  }
+  const width = Math.round(Math.max(280, Math.min(520, Number(requestedWidth) || 348)));
+  try {
+    partyPopout = await window.documentPictureInPicture.requestWindow({ width, height: 520, preferInitialWindowPlacement: true });
+    const doc = partyPopout.document;
+    doc.title = 'Watch Party';
+    Object.assign(doc.documentElement.style, { width: '100%', height: '100%', background: '#0f1013' });
+    Object.assign(doc.body.style, { width: '100%', height: '100%', margin: '0', overflow: 'hidden', background: '#0f1013' });
+    const frame = doc.createElement('iframe');
+    frame.title = 'Watch Party controls';
+    frame.src = chrome.runtime.getURL('sidebar.html?popout=1');
+    frame.allow = 'autoplay; camera; microphone';
+    Object.assign(frame.style, { width: '100%', height: '100%', border: '0', display: 'block' });
+    doc.body.appendChild(frame);
+    reportPopout(true);
+    partyPopout.addEventListener('pagehide', () => { partyPopout = null; reportPopout(false); }, { once: true });
+  } catch {
+    partyPopout = null;
+    reportPopout(false, 'Could not open the pop-out party. Click the button again and allow pop-outs.');
+  }
+}
+
+function dismissNotice(id) {
+  clearTimeout(noticeTimers.get(id));
+  noticeTimers.delete(id);
+  const el = [...notices.children].find(x => x.dataset.id === id);
+  if (el) el.remove();
+}
+function showNotice(m) {
+  const id = String(m.id || '').slice(0, 80);
+  if (!id) return;
+  dismissNotice(id);
+  const el = document.createElement('div');
+  el.className = `notice ${['error', 'knock', 'request'].includes(m.kind) ? m.kind : ''}`;
+  el.dataset.id = id;
+  const text = document.createElement('span');
+  text.textContent = String(m.text || '').slice(0, 500);
+  el.appendChild(text);
+  const actions = Array.isArray(m.actions) ? m.actions.slice(0, 3) : [];
+  if (actions.length) {
+    const group = document.createElement('div'); group.className = 'actions';
+    actions.forEach((action, index) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = String(action.label || '').slice(0, 60);
+      if (action.primary) button.className = 'primary';
+      button.addEventListener('click', () => {
+        partyFrame.contentWindow.postMessage({ wpTheater: 'toast-action', id, index }, partyOrigin());
+        dismissNotice(id);
+      });
+      group.appendChild(button);
+    });
+    el.appendChild(group);
+  }
+  notices.appendChild(el);
+  while (notices.childElementCount > 4) dismissNotice(notices.firstElementChild.dataset.id);
+  const timeout = Math.max(1000, Math.min(30000, Number(m.timeout) || 4000));
+  noticeTimers.set(id, setTimeout(() => dismissNotice(id), timeout));
+}
 
 function allowedServiceUrl(url, custom) {
   try {
@@ -73,11 +149,15 @@ window.addEventListener('message', e => {
   const m = e.data;
   if (m.wpTheater === 'stage') {
     const show = !!m.show && allowedServiceUrl(m.url, !!m.custom);
+    // A Netflix episode change first uses Netflix's own Next control inside the existing frame. Keep
+    // this outer frame intact while that native transition is settling so its profile/PIN session is
+    // not recreated. The party removes `transitioning` after success or an eight-second fallback.
+    const nativeTransition = show && !!m.transitioning && svcOf(m.current || currentSvcUrl) === svcOf(m.url);
     // The room's title changed. If the frame is already on that page (the host clicked it in there
     // and the room followed), leave it alone; reloading would restart the video.
     // Never reload in the middle of signing in (that sent people back to the start of the sign-in, again
     // and again); the party takes them to the title once they're in.
-    if (show && (m.url !== currentSvcUrl || !!m.strict !== currentStrict)) {
+    if (show && !nativeTransition && (m.url !== currentSvcUrl || !!m.strict !== currentStrict)) {
       if (!currentSvcUrl || !!m.strict !== currentStrict) load(m.url, !!m.custom, !!m.strict);
       // (not in the middle of signing in, unless the room switched to another service altogether)
       else if ((!m.signin || svcOf(m.current) !== svcOf(m.url)) && wpCanonicalUrl(m.current) !== wpCanonicalUrl(m.url)) load(m.url, !!m.custom, !!m.strict);
@@ -100,8 +180,14 @@ window.addEventListener('message', e => {
   } else if (m.wpTheater === 'fullscreen') {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else box.requestFullscreen().catch(() => {});
+  } else if (m.wpTheater === 'pip') {
+    setPartyPopout(m.action, m.width);
   } else if (m.wpTheater === 'title') {
     document.title = String(m.text || 'Watch Party').slice(0, 120);
+  } else if (m.wpTheater === 'toast') {
+    showNotice(m);
+  } else if (m.wpTheater === 'toast-dismiss') {
+    dismissNotice(String(m.id || ''));
   } else if (m.wpTheater === 'exit') {
     // back to the normal Watch Party page (the streaming site opens in its own tab from there)
     if (allowedPartyUrl(partyUrl)) location.href = partyUrl.split('#')[0];

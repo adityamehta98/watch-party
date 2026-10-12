@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watch Party Sync",
-  "version": "1.11.0",
+  "version": "1.14.1",
   "description": "Keeps streaming video in sync with your Watch Party while blocking ads only on host-selected custom sites.",
   "icons": {
     "16": "icon16.png",

@@ -11,6 +11,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 svg .fill { fill: currentColor; stroke: none; }
 svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none; }
 [hidden] { display: none !important; }
+.popout #bigBtn { display: none; }
 
 .none { padding: 28px 20px; text-align: center; color: var(--muted); }
 .none img { width: 40px; height: 40px; }
@@ -45,7 +46,11 @@ svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none
 .cam { position: relative; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--border); }
 .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cam.self video { transform: scaleX(-1); }
-.cam span { position: absolute; left: 6px; bottom: 5px; font-size: 11.5px; font-weight: 600; background: rgba(0,0,0,.55); padding: 1px 7px; border-radius: 99px; }
+.cam-avatar { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(145deg, #242832, #15171c); }
+.cam-avatar b { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: #111; font-size: 16px; }
+.cam-label { position: absolute; left: 6px; right: 6px; bottom: 5px; display: flex; align-items: center; gap: 5px; }
+.cam-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; background: rgba(0,0,0,.6); padding: 1px 7px; border-radius: 99px; }
+.cam-label i { margin-left: auto; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: rgba(239,93,93,.88); font: normal 12px/1 system-ui; }
 
 .me-row { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .pill { height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--border-2); background: transparent; cursor: pointer; font-size: 12.5px; }
@@ -70,8 +75,13 @@ svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none
 .msg .who time { color: var(--faint); font-weight: 500; margin-left: 6px; }
 .msg .body { overflow-wrap: anywhere; }
 .msg.system { color: var(--faint); font-size: 12.5px; text-align: center; }
-.chat-form { display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.chat-form { position: relative; display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
 .chat-form input { flex: 1; min-width: 0; height: 36px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--panel); color: var(--text); padding: 0 10px; font: inherit; }
 .chat-form input:focus { outline: 2px solid rgba(245,181,68,.5); border-color: transparent; }
+.emoji-btn { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+.emoji-btn:hover, .emoji-btn.on { color: var(--text); background: var(--panel-2); }
+.emoji-picker { position: absolute; left: 10px; bottom: 54px; width: 228px; padding: 7px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; border: 1px solid var(--border-2); border-radius: 12px; background: rgba(22,24,29,.98); box-shadow: 0 12px 32px rgba(0,0,0,.55); z-index: 3; }
+.emoji-picker button { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-size: 19px; }
+.emoji-picker button:hover { background: rgba(255,255,255,.1); }
 .send { width: 36px; height: 36px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; display: grid; place-items: center; }
 .send svg { width: 18px; height: 18px; }

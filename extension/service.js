@@ -10,6 +10,19 @@
   const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && /^chrome-extension:/.test(location.ancestorOrigins[0]));
   const NETFLIX = SERVICE === 'netflix';
   const send = m => { try { chrome.runtime.sendMessage(m).catch(() => {}); } catch { /* extension was reloaded */ } };
+  const NEXT_EPISODE_SELECTOR = '[data-uia="control-next"], [data-uia="next-episode-seamless-button"], [data-uia="next-episode-seamless-button-draining"]';
+  let nextEpisodeIntent = null;
+
+  // Remember that Netflix moved because its own Next Episode control was used. The room includes
+  // this in the next title change so guests can press their own native control instead of hard-
+  // loading a /watch URL, which can send an embedded Netflix player back through Profiles/PIN.
+  if (NETFLIX && TOP) document.addEventListener('click', e => {
+    const el = e.target && e.target.closest && e.target.closest(`${NEXT_EPISODE_SELECTOR}, button, [role="button"]`);
+    if (!el || el.matches('[disabled], [aria-disabled="true"]')) return;
+    const text = (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!el.matches(NEXT_EPISODE_SELECTOR) && !/^\s*(next episode|play next( episode)?|watch next|start next episode)\s*$/i.test(text)) return;
+    nextEpisodeIntent = { url: location.href, at: Date.now() };
+  }, true);
 
   let video = null;          // the element we control
   let switchedAt = 0;        // when we last picked a different element
@@ -104,6 +117,7 @@
       service: SERVICE, t: ad ? lastContent.t : v.currentTime, paused: ad ? false : v.paused, rate: ad ? lastContent.rate : v.playbackRate, dur: ad ? maxDur : d,
       buffering: !v.paused && v.readyState < 3, ad, blocked, title: TOP ? title() : '', area: area(v), root: TOP, url: TOP ? location.href : '',
       vol: v.volume, muted: v.muted, hold: userBusy(),
+      advanceFrom: TOP && nextEpisodeIntent && Date.now() - nextEpisodeIntent.at < 20000 ? nextEpisodeIntent.url : '',
     };
   }
   setInterval(() => {
@@ -239,7 +253,15 @@
 
   // ------------------------------------------------ follow commands
   function netflix(op, t) { window.postMessage({ source: 'wp-cs', op, t }, location.origin); }
+  function nextEpisode() {
+    const exact = [...document.querySelectorAll(NEXT_EPISODE_SELECTOR)];
+    const labelled = [...document.querySelectorAll('button, [role="button"]')].filter(el => /^\s*(next episode|play next( episode)?|watch next|start next episode)\s*$/i.test(el.getAttribute('aria-label') || el.textContent || ''));
+    const el = [...exact, ...labelled].find(x => x.isConnected && !x.matches('[disabled], [aria-disabled="true"]'));
+    if (!el) return false;
+    try { el.click(); return true; } catch { return false; }
+  }
   function apply(c) {
+    if (c.op === 'next' && NETFLIX) { nextEpisode(); return; }
     const v = pick();
     if (!v) return;
     if (isAd(v) && c.op !== 'volume' && c.op !== 'mute') return; // leave ads alone; the room waits
@@ -272,8 +294,35 @@
 
   // ------------------------------------------------ chat and reactions on top of the player
   let box = null;
+  function floatReaction(item) {
+    const el = document.createElement('div');
+    el.popover = 'manual';
+    const x = 7 + Math.random() * 86, y = 16 + Math.random() * 62;
+    el.setAttribute('style', `all:initial;position:fixed;inset:auto;left:${x}vw;top:${y}vh;z-index:2147483647;margin:0;padding:0;border:0;background:transparent;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px;filter:drop-shadow(0 5px 12px rgba(0,0,0,.65));transform:translate(-50%,-50%);`);
+    const emoji = document.createElement('span');
+    emoji.setAttribute('style', 'all:initial;font:42px/1 "Apple Color Emoji","Segoe UI Emoji",sans-serif;');
+    emoji.textContent = String(item.emoji || '').slice(0, 8);
+    const name = document.createElement('span');
+    name.setAttribute('style', 'all:initial;color:#fff;background:rgba(0,0,0,.62);border-radius:99px;padding:2px 7px;font:600 11px/1.2 system-ui,"Segoe UI",sans-serif;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;');
+    name.textContent = String(item.name || '').slice(0, 32);
+    el.append(emoji, name);
+    (document.fullscreenElement || document.documentElement).appendChild(el);
+    try { el.showPopover?.(); } catch { el.removeAttribute('popover'); /* z-index fallback */ }
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const animation = el.animate(reduced
+      ? [{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .75 }, { opacity: 0 }]
+      : [
+          { opacity: 0, transform: 'translate(-50%,-20%) scale(.55)' },
+          { opacity: 1, transform: 'translate(-50%,-50%) scale(1.16)', offset: .16 },
+          { opacity: 1, transform: 'translate(-50%,-85%) scale(1)', offset: .62 },
+          { opacity: 0, transform: `translate(calc(-50% + ${(Math.random() - .5) * 90}px),-180%) scale(.9)` },
+        ], { duration: reduced ? 1800 : 2800, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' });
+    const remove = () => { try { el.hidePopover?.(); } catch {} el.remove(); };
+    animation.finished.then(remove, remove);
+  }
   function overlay(item) {
     if (!item) return;
+    if (item.kind === 'react') { floatReaction(item); return; }
     const host = document.fullscreenElement || document.body;
     if (!box) {
       box = document.createElement('div');
@@ -282,15 +331,12 @@
     if (box.parentNode !== host) host.appendChild(box);
     const el = document.createElement('div');
     el.setAttribute('style', 'background:rgba(0,0,0,.72);color:#fff;padding:7px 12px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.4);transition:opacity .6s;overflow-wrap:anywhere');
-    if (item.kind === 'react') { el.style.fontSize = '30px'; el.style.padding = '4px 10px'; el.textContent = `${item.emoji}`; el.title = item.name; }
-    else {
-      const b = document.createElement('b'); b.style.color = '#f5b544'; b.textContent = `${item.name}: `;
-      el.appendChild(b); el.appendChild(document.createTextNode(String(item.text || '').slice(0, 300)));
-    }
+    const b = document.createElement('b'); b.style.color = '#f5b544'; b.textContent = `${item.name}: `;
+    el.appendChild(b); el.appendChild(document.createTextNode(String(item.text || '').slice(0, 300)));
     box.appendChild(el);
     while (box.childElementCount > 5) box.firstElementChild.remove();
-    setTimeout(() => { el.style.opacity = '0'; }, item.kind === 'react' ? 2000 : 7000);
-    setTimeout(() => el.remove(), item.kind === 'react' ? 2700 : 7700);
+    setTimeout(() => { el.style.opacity = '0'; }, 7000);
+    setTimeout(() => el.remove(), 7700);
   }
 })();
 
@@ -312,7 +358,10 @@
     crunchyroll: ['#f47521', '#fff'], paramount: ['#0064ff', '#fff'], max: ['#002be7', '#fff'], disney: ['#1f4fe0', '#fff'],
     appletv: ['#f2f2f7', '#111'], youtube: ['#ff0033', '#fff'],
   }[SERVICE] || ['#f5b544', '#1a1300'];
-  let host = null, root = null, chatOpen = false, facesOpen = true;
+  let host = null, root = null, chatOpen = false, reactsOpen = false, chatEmojiOpen = false, facesOpen = true;
+  const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
+  const hue = str => { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || '?';
   let pc = null, pendingIce = [], streams = new Map();
   const POS_KEY = 'wpBarPos';
 
@@ -469,7 +518,10 @@
 
   function build() {
     host = document.createElement('div');
-    host.setAttribute('style', 'all:initial;position:fixed;z-index:2147483647;left:0;top:0;');
+    // A manual popover lives in the browser's top layer. Netflix can freely rebuild and animate its
+    // controls without covering this UI or changing its stacking order.
+    host.popover = 'manual';
+    host.setAttribute('style', 'all:initial;position:fixed;inset:auto;z-index:2147483647;left:0;top:0;margin:0;padding:0;border:0;background:transparent;overflow:visible;');
     root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>
       :host { all: initial; }
@@ -483,27 +535,40 @@
       button.on { background: var(--brand); color: var(--brand-ink); }
       .wrap { --brand: ${BRAND[0]}; --brand-ink: ${BRAND[1]}; }
       /* like the player's own controls: the bar fades away when the mouse rests, the cameras stay and slide into its place */
-      .bar, .chat { transition: opacity .3s, max-height .3s, margin .3s, padding .3s, border-width .3s; max-height: 60px; overflow: hidden; }
+      .bar { transition: opacity .3s, max-height .3s, margin .3s, padding .3s, border-width .3s; max-height: 60px; overflow: hidden; }
       .chat { max-height: 360px; }
-      .wrap.idle .bar, .wrap.idle .chat { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; margin: 0 0 -6px; pointer-events: none; }
-      .wrap.idle.up .bar, .wrap.idle.up .chat { margin: -6px 0 0; }
+      .wrap.idle .bar { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; margin: 0 0 -6px; pointer-events: none; }
+      .wrap.idle.up .bar { margin: -6px 0 0; }
+      .wrap.native-controls-hidden .bar { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; margin: 0 0 -6px; pointer-events: none; }
+      .wrap.native-controls-hidden.up .bar { margin: -6px 0 0; }
       button.off { background: rgba(239,93,93,.25); }
       button:disabled { opacity: .4; cursor: not-allowed; }
       svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
       .dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; border-radius: 50%; background: #ef5d5d; display: none; }
       .dot.show { display: block; }
+      .reacts { display: flex; gap: 4px; padding: 5px; border-radius: 99px; background: rgba(12,13,16,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+      .reacts button { width: 38px; height: 38px; font-size: 21px; background: rgba(255,255,255,.08); }
       .faces { display: flex; gap: 6px; flex-wrap: wrap; max-width: 560px; }
       .face { position: relative; width: 150px; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: #16181d; border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
       .face video { width: 100%; height: 100%; object-fit: cover; display: block; }
       .face.self video { transform: scaleX(-1); }
-      .face span { position: absolute; left: 6px; bottom: 5px; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,.55); padding: 1px 7px; border-radius: 99px; }
+      .face-avatar { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(145deg, #20242c, #111318); }
+      .face-avatar b { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; color: #111; font-size: 17px; }
+      .face-label { position: absolute; left: 6px; right: 6px; bottom: 5px; display: flex; align-items: center; gap: 5px; pointer-events: none; }
+      .face-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; color: #fff; background: rgba(0,0,0,.62); padding: 1px 7px; border-radius: 99px; }
+      .face-label i { margin-left: auto; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(239,93,93,.88); color: #fff; font: normal 12px/1 system-ui; }
       .chat { width: 320px; max-height: 340px; display: flex; flex-direction: column; border-radius: 14px; background: rgba(12,13,16,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); overflow: hidden; }
       .list { flex: 1; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; color: #eceef2; font-size: 13.5px; line-height: 1.35; max-height: 260px; }
       .list b { color: #f5b544; margin-right: 6px; }
       .list .sys { color: #8a8f99; font-size: 12px; text-align: center; }
-      form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.1); }
+      form { position: relative; display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.1); }
       input { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid rgba(255,255,255,.18); background: #1b1d23; color: #fff; padding: 0 10px; font-size: 13.5px; outline: none; }
-      form button { border-radius: 9px; width: auto; padding: 0 12px; height: 34px; background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 13px; }
+      form .send { border-radius: 9px; width: auto; padding: 0 12px; height: 34px; background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 13px; }
+      form .emoji-toggle { width: 34px; height: 34px; border-radius: 9px; flex: none; }
+      form .emoji-toggle svg { width: 18px; height: 18px; }
+      .emoji-menu { position: absolute; left: 8px; bottom: 48px; width: 228px; padding: 7px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(18,20,25,.98); box-shadow: 0 12px 32px rgba(0,0,0,.55); z-index: 2; }
+      .emoji-menu button { width: 32px; height: 32px; border-radius: 8px; background: transparent; font-size: 19px; }
+      .emoji-menu button:hover { background: rgba(255,255,255,.12); }
       .list b { color: var(--brand); }
       [hidden] { display: none !important; }
     </style>
@@ -512,20 +577,35 @@
         <div class="grip" title="Drag to move">⋮⋮</div>
         <button data-a="cam" title="Camera"><svg viewBox="0 0 24 24"><path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></button>
         <button data-a="mic" title="Microphone"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button data-a="react" title="React"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9h.01M15 9h.01"/></svg></button>
         <button data-a="chat" title="Chat"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><i class="dot"></i></button>
         <button data-a="faces" title="Show or hide everyone's cameras"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.5A5 5 0 0 1 21 19"/></svg></button>
       </div>
+      <div class="reacts" id="reacts" hidden></div>
       <div class="faces" id="faces"></div>
-      <div class="chat" id="chat" hidden><div class="list" id="list"></div><form id="form" autocomplete="off"><input id="input" maxlength="500" placeholder="Say something…"><button type="submit">Send</button></form></div>
+      <div class="chat" id="chat" hidden><div class="list" id="list"></div><form id="form" autocomplete="off"><button class="emoji-toggle" type="button" data-a="chat-emoji" title="Add emoji" aria-label="Add emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/></svg></button><div class="emoji-menu" id="chatEmoji" hidden></div><input id="input" maxlength="500" placeholder="Say something…"><button class="send" type="submit">Send</button></form></div>
     </div>`;
     // typing here must not reach the video player's keyboard shortcuts (space would pause it)
-    for (const ev of ['keydown', 'keyup', 'keypress']) root.addEventListener(ev, e => e.stopPropagation());
+    for (const ev of ['keydown', 'keyup', 'keypress']) root.addEventListener(ev, e => {
+      e.stopPropagation();
+      if (ev === 'keydown' && e.key === 'Escape' && chatEmojiOpen) { chatEmojiOpen = false; render(); }
+    });
     root.addEventListener('click', e => {
+      const chatEmoji = e.target.closest('button[data-chat-emoji]');
+      if (chatEmoji) {
+        const input = root.getElementById('input'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+        input.setRangeText(chatEmoji.dataset.chatEmoji, start, end, 'end');
+        chatEmojiOpen = false; input.focus({ preventScroll: true }); render(); return;
+      }
+      const em = e.target.closest('button[data-emoji]');
+      if (em) { if (ui && ui.canReact) act({ op: 'react', emoji: em.dataset.emoji }); reactsOpen = false; render(); return; }
       const b = e.target.closest('button[data-a]');
       if (!b) return;
       const a = b.dataset.a;
       if (a === 'cam' || a === 'mic') act({ op: a });
-      else if (a === 'chat') { chatOpen = !chatOpen; seenChat = ui ? ui.chat.length : 0; render(); if (chatOpen) setTimeout(() => root.getElementById('input').focus(), 30); }
+      else if (a === 'react') { reactsOpen = !reactsOpen; render(); }
+      else if (a === 'chat') { chatOpen = !chatOpen; chatEmojiOpen = false; seenChat = ui ? ui.chat.length : 0; render(); if (chatOpen) setTimeout(() => root.getElementById('input').focus(), 30); }
+      else if (a === 'chat-emoji') { chatEmojiOpen = !chatEmojiOpen; render(); if (!chatEmojiOpen) root.getElementById('input').focus({ preventScroll: true }); }
       else if (a === 'faces') { facesOpen = !facesOpen; if (facesOpen) send({ type: 'want-cams' }); render(); }
     });
     root.getElementById('form').addEventListener('submit', e => {
@@ -534,6 +614,13 @@
       const text = i.value.trim();
       if (text) act({ op: 'chat', text });
       i.value = '';
+    });
+    // Netflix occasionally blurs the active element while its native controls mount/unmount. Restore
+    // only an involuntary blur (no related target), so deliberate clicks on Netflix still work.
+    root.getElementById('input').addEventListener('blur', e => {
+      if (chatOpen && !e.relatedTarget) requestAnimationFrame(() => {
+        if (chatOpen && document.hasFocus()) root.getElementById('input').focus({ preventScroll: true });
+      });
     });
     // drag anywhere by the grip; remembered for next time (as a share of the screen)
     const grip = root.querySelector('.grip');
@@ -577,36 +664,80 @@
   let seenChat = 0;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function render() {
-    if (!wanted()) { if (host) host.remove(); return; }
+    if (!wanted()) { if (host) { try { host.hidePopover?.(); } catch {} host.remove(); } return; }
     if (!host) { build(); }
     const parent = document.fullscreenElement || document.documentElement;
-    if (host.parentNode !== parent) { parent.appendChild(host); restore(); for (const v of root.querySelectorAll('video')) v.play().catch(() => {}); }
+    if (host.parentNode !== parent) {
+      try { host.hidePopover?.(); } catch {}
+      parent.appendChild(host); restore(); for (const v of root.querySelectorAll('video')) v.play().catch(() => {});
+    }
+    try { if (host.showPopover && !host.matches(':popover-open')) host.showPopover(); } catch { host.removeAttribute('popover'); /* z-index fallback above */ }
+    root.querySelector('.wrap').classList.toggle('chat-open', chatOpen);
     const cam = root.querySelector('[data-a="cam"]'), mic = root.querySelector('[data-a="mic"]');
     cam.className = ui.myCam ? 'on' : ''; cam.disabled = !ui.canCam; cam.title = ui.myCam ? 'Turn your camera off' : 'Turn your camera on';
     mic.className = ui.myMic ? 'on' : ''; mic.disabled = !ui.canCam; mic.title = ui.myMic ? 'Mute your microphone' : 'Turn your microphone on';
     root.querySelector('[data-a="chat"]').className = chatOpen ? 'on' : '';
     root.querySelector('[data-a="faces"]').className = facesOpen ? 'on' : '';
+    const rb = root.querySelector('[data-a="react"]');
+    rb.className = reactsOpen ? 'on' : ''; rb.disabled = !ui.canReact;
+    const reacts = root.getElementById('reacts');
+    reacts.hidden = !reactsOpen || !ui.canReact;
+    if (reactsOpen && ui.canReact) {
+      const rhtml = (ui.reactions || []).slice(0, 8).map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
+      if (reacts.dataset.h !== rhtml) { reacts.dataset.h = rhtml; reacts.innerHTML = rhtml; }
+    }
     root.getElementById('chat').hidden = !chatOpen;
+    const chatEmojiButton = root.querySelector('[data-a="chat-emoji"]');
+    chatEmojiButton.disabled = !ui.canChat;
+    chatEmojiButton.classList.toggle('on', chatEmojiOpen);
+    chatEmojiButton.setAttribute('aria-expanded', String(chatEmojiOpen));
+    const chatEmoji = root.getElementById('chatEmoji');
+    chatEmoji.hidden = !chatOpen || !chatEmojiOpen || !ui.canChat;
+    if (!chatEmoji.dataset.ready) {
+      chatEmoji.dataset.ready = '1';
+      chatEmoji.innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
+    }
     if (chatOpen) seenChat = ui.chat.length;
     root.querySelector('.dot').classList.toggle('show', !chatOpen && ui.chat.length > seenChat && ui.chat.slice(seenChat).some(c => !c.system && !c.me));
     const list = root.getElementById('list');
-    const html = ui.chat.slice(-40).map(c => c.system ? `<div class="sys">${esc(c.text)}</div>` : `<div><b>${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
+    const html = ui.chat.slice(-40).map(c => c.system ? `<div class="sys">${esc(c.text)}</div>` : `<div><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
     if (list.dataset.h !== html) { list.dataset.h = html; list.innerHTML = html; list.scrollTop = list.scrollHeight; }
     root.getElementById('input').disabled = !ui.canChat;
     renderFaces();
   }
   function renderFaces() {
     const box = root.getElementById('faces');
-    const want = facesOpen ? (ui.cams || []) : [];
+    const cameras = (ui && ui.cams) || [];
+    const camKey = c => c.id || `name:${c.name}`;
+    const active = new Map(cameras.map(c => [camKey(c), c]));
+    const selfCamera = cameras.find(c => c.self);
+    const people = ((ui && ui.people) || []).map(p => {
+      const key = p.id || `name:${p.name}`, cam = active.get(key) || (p.me ? selfCamera : null);
+      active.delete(key); if (cam) active.delete(camKey(cam));
+      return { ...cam, key, name: p.me ? 'You' : p.name, self: !!p.me, cam: !!(p.cam || cam), mic: !!p.mic };
+    });
+    for (const cam of active.values()) people.push({ ...cam, key: cam.id || `name:${cam.name}`, cam: true, mic: true });
+    const want = facesOpen ? people : [];
     box.hidden = !want.length;
-    const ids = new Set(want.map(c => c.sid));
-    for (const el of [...box.children]) if (!ids.has(el.dataset.sid)) el.remove();
+    const ids = new Set(want.map(c => c.key));
+    for (const el of [...box.children]) if (!ids.has(el.dataset.key)) el.remove();
     for (const c of want) {
-      let el = [...box.children].find(x => x.dataset.sid === c.sid);
-      if (!el) { el = document.createElement('div'); el.className = 'face' + (c.self ? ' self' : ''); el.dataset.sid = c.sid; el.innerHTML = '<video autoplay playsinline muted></video><span></span>'; box.appendChild(el); }
-      el.querySelector('span').textContent = c.name;
+      let el = [...box.children].find(x => x.dataset.key === c.key);
+      if (!el) {
+        el = document.createElement('div'); el.className = 'face'; el.dataset.key = c.key;
+        el.innerHTML = '<video autoplay playsinline muted></video><div class="face-avatar"><b></b></div><div class="face-label"><span></span><i title="Microphone off">🔇</i></div>';
+        box.appendChild(el);
+      }
+      el.classList.toggle('self', !!c.self);
+      el.querySelector('.face-label span').textContent = c.name;
+      const av = el.querySelector('.face-avatar');
+      av.hidden = !!c.cam;
+      const avText = av.querySelector('b'); avText.textContent = initials(c.name); avText.style.background = `hsl(${hue(c.name)} 65% 68%)`;
+      el.querySelector('.face-label i').hidden = !!c.mic;
       const v = el.querySelector('video'), s = streams.get(c.sid);
-      if (s && v.srcObject !== s) { v.srcObject = s; v.play().catch(() => {}); }
+      v.style.visibility = c.cam ? 'visible' : 'hidden';
+      if (!c.cam && v.srcObject) v.srcObject = null;
+      else if (c.cam && s && v.srcObject !== s) { v.srcObject = s; v.play().catch(() => {}); }
     }
   }
   function closeRtc() { if (pc) try { pc.close(); } catch {} pc = null; streams.clear(); pendingIce = []; }
@@ -641,6 +772,33 @@
       wrap.classList.add('idle');
     }, 3000);
   }
+  // Netflix mounts and fades its own controls independently of page mouse events. Mirror that exact
+  // visible/hidden state on our separate bar so both layers feel like one control system without
+  // injecting anything into, or taking ownership of, Netflix's controls.
+  let nativeControlsSeen = false;
+  function netflixControlsVisible() {
+    if (SERVICE !== 'netflix') return null;
+    const nodes = [...document.querySelectorAll('[data-uia="controls-standard"], [data-uia="player-controls"], [data-uia^="control-"], [class*="PlayerControls"]')];
+    if (nodes.length) nativeControlsSeen = true;
+    if (!nativeControlsSeen) return null;
+    return nodes.some(el => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) return false;
+      if (el.checkVisibility) return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      for (let n = el; n && n !== document; n = n.parentElement) {
+        const s = getComputedStyle(n);
+        if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) < .05) return false;
+      }
+      return true;
+    });
+  }
+  setInterval(() => {
+    const wrap = root && root.querySelector('.wrap'); if (!wrap) return;
+    const visible = netflixControlsVisible();
+    if (visible == null) return;
+    wrap.classList.remove('idle');
+    wrap.classList.toggle('native-controls-hidden', !visible && !hovering);
+  }, 160);
   for (const ev of ['mousemove', 'pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart']) document.addEventListener(ev, wake, { capture: true, passive: true });
   document.addEventListener('fullscreenchange', () => { render(); if (host && host.isConnected) restore(); wake(); });
   addEventListener('resize', () => { if (host && host.isConnected) restore(); });
