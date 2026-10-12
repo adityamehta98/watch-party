@@ -64,12 +64,27 @@ node build\build-windows.js "!WIN_NODE!" "!FFMPEG_BIN!"
 if errorlevel 1 ( echo   Build failed. & pause & exit /b 1 )
 
 echo.
-echo   Done. The fresh build is in:
-echo     %CD%\dist\WatchParty\
-echo.
-echo   To use the new exe:
-echo     1. Close the running Watch Party page in your browser.
-echo     2. Copy  dist\WatchParty\WatchParty.exe  over your current WatchParty.exe.
-echo     3. Double-click WatchParty.exe (or refresh.bat) to start it.
+echo   Build done:  %CD%\dist\WatchParty\WatchParty.exe
+
+if exist "WatchParty.exe" (
+  echo   Replacing the WatchParty.exe in this folder with the fresh build...
+  taskkill /im WatchParty.exe /f >nul 2>nul
+  rem Give Windows a moment to release the file lock after taskkill.
+  powershell -NoProfile -Command "Start-Sleep -Milliseconds 1500" >nul 2>nul
+  copy /y "dist\WatchParty\WatchParty.exe" "WatchParty.exe" >nul
+  if errorlevel 1 (
+    echo   Could not overwrite WatchParty.exe (still in use?). Close its browser tab,
+    echo   wait a few seconds, and copy dist\WatchParty\WatchParty.exe over it by hand.
+    pause
+    exit /b 1
+  )
+  echo   WatchParty.exe is now the fresh build. Starting it...
+  start "" "%CD%\WatchParty.exe"
+) else (
+  echo.
+  echo   No WatchParty.exe in this folder yet. Copy  dist\WatchParty\WatchParty.exe
+  echo   next to refresh.bat and double-click it (or run refresh.bat).
+)
+
 echo.
 pause
