@@ -19,6 +19,7 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path d="M6 5.5v13l9-6.5z" fill="currentColor" stroke="none"/><rect x="16.4" y="5.5" width="2.3" height="13" rx="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
     <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 6 6M22 9l-6 6"/></symbol>
@@ -143,6 +144,7 @@
 
         <div class="stage-notice" id="stageNotice" hidden></div>
         <div class="osd" id="osd" hidden aria-live="polite"></div>
+        <button class="anime-skip" id="animeSkip" type="button" hidden><span class="lbl"></span></button>
         <button class="unmute-pill" id="unmutePill" type="button" hidden><svg><use href="#i-mute"/></svg>Tap to turn sound on</button>
         <div class="tune-in" id="tuneIn" hidden aria-live="polite">
           <div class="tune-in-core">
@@ -207,6 +209,7 @@
             <button class="ctrl" id="playBtn" type="button" title="Play / pause (Space)" aria-label="Play"><svg><use href="#i-play"/></svg></button>
             <button class="ctrl hide-sm" id="backBtn" type="button" title="Back 10 seconds (← key)" aria-label="Back 10 seconds"><svg><use href="#i-back10"/></svg></button>
             <button class="ctrl hide-sm" id="fwdBtn" type="button" title="Forward 10 seconds (→ key)" aria-label="Forward 10 seconds"><svg><use href="#i-fwd10"/></svg></button>
+            <button class="ctrl host-only" id="autoSkipBtn" type="button" hidden title="Auto-skip intros & credits" aria-label="Auto-skip intros and credits" aria-pressed="true"><svg><use href="#i-skip"/></svg></button>
             <div class="volume">
               <button class="ctrl" id="muteBtn" type="button" title="Mute (M) · volume: ↑ ↓ keys" aria-label="Mute"><svg><use href="#i-vol"/></svg></button>
               <input type="range" id="volume" min="0" max="1" step="0.01" value="1" aria-label="Volume">

@@ -168,7 +168,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .anime-card .t { font-weight: 600; }
 .anime-card .m { color: var(--faint); font-size: 12px; margin-top: 2px; }
 .anime-card .pick { margin-left: auto; display: flex; gap: 6px; align-items: center; flex: none; }
-.anime-card .pick input { width: 56px; }
 .service-panel { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; overflow: auto;
   background: radial-gradient(900px 500px at 50% 0%, rgba(245,181,68,.10), transparent 60%), #07080a; z-index: 1; }
 .service-panel[hidden] { display: none !important; }
@@ -792,13 +791,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   align-self: start;
   padding-top: 2px;
 }
-.anime-card > .anime-play {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-}
 .anime-card .t {
   font-weight: 700; font-size: 14.5px; line-height: 1.3;
   color: var(--text);
@@ -872,35 +864,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   background: linear-gradient(0deg, rgba(245,181,68,.25), rgba(245,181,68,.25)), #1b2028;
   color: var(--accent-2);
 }
-
-.anime-card .anime-play {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 0;
-  font-weight: 800;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-  color: var(--accent-ink);
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.35),
-    0 6px 16px -8px rgba(245,181,68,.6);
-  transition: transform .12s, box-shadow .2s, filter .12s;
-}
-.anime-card .anime-play:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 10px 22px -8px rgba(245,181,68,.8), 0 0 24px -8px rgba(245,181,68,.5); }
-.anime-card .anime-play:active { transform: translateY(0); }
-.anime-card .anime-play::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
-  transform: translateX(-100%);
-  transition: transform .5s ease;
-}
-.anime-card .anime-play:hover::before { transform: translateX(100%); }
 
 #animeStatus { padding: 10px 2px 0; color: var(--muted); font-size: 13px; }
 #animeStatus:not(:empty)::before {
@@ -1112,12 +1075,12 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 
 .anime-card .anime-play {
   position: absolute;
-  top: 50%;
-  right: 12px;
-  transform: translateY(-50%);
+  top: 40px;
+  right: 18px;
+  transform: none;
   z-index: 3;
   display: inline-grid; place-items: center;
-  height: 28px; width: 28px;
+  height: 32px; width: 32px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -1132,7 +1095,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .anime-card .anime-play svg { width: 13px; height: 13px; stroke: none; margin-left: 1px; }
 .anime-card .anime-play:hover {
-  transform: translateY(calc(-50% - 1px));
+  transform: translateY(-1px);
   filter: brightness(1.08);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.5),
@@ -1140,7 +1103,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
     0 0 24px -8px rgba(245,181,68,.6);
 }
 .anime-card .anime-play:hover svg { transform: scale(1.1); transition: transform .18s; }
-.anime-card .anime-play:active { transform: translateY(-50%); filter: brightness(.96); }
+.anime-card .anime-play:active { transform: translateY(0); filter: brightness(.96); }
 .anime-card .anime-play::before {
   content: '';
   position: absolute; inset: 0;
@@ -1218,3 +1181,43 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   transition: transform .25s cubic-bezier(.4,0,.2,1);
 }
 .anime-lang-toggle[data-lang="dub"] .l-pill { transform: translateX(100%); }
+
+
+/* ===== Auto-skip intro/outro button (native anime player) ===== */
+.anime-skip {
+  position: absolute; right: 24px; bottom: 78px; z-index: 14;
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 40px; padding: 0 18px; border-radius: 11px;
+  border: 1px solid rgba(245,181,68,.55);
+  background: linear-gradient(180deg, rgba(22,26,33,.92), rgba(14,18,24,.92));
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  color: var(--text); font: inherit; font-size: 13px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; cursor: pointer; overflow: hidden;
+  box-shadow: 0 10px 28px -12px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.03) inset, 0 0 22px -10px rgba(245,181,68,.5);
+  transition: transform .14s, border-color .18s, box-shadow .2s, background .18s;
+  animation: skip-in .22s ease-out;
+}
+.anime-skip[hidden] { display: none; }
+.anime-skip::before {
+  content: ''; width: 15px; height: 15px; flex: none; background: var(--accent);
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><rect x="18" y="4" width="2.3" height="16" rx="1"/></svg>') center / contain no-repeat;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><rect x="18" y="4" width="2.3" height="16" rx="1"/></svg>') center / contain no-repeat;
+}
+.anime-skip .lbl { white-space: nowrap; }
+.anime-skip:hover {
+  transform: translateY(-1px); border-color: rgba(245,181,68,.85);
+  background: linear-gradient(180deg, rgba(28,33,41,.95), rgba(18,23,30,.95));
+  box-shadow: 0 14px 32px -12px rgba(0,0,0,.95), 0 0 26px -8px rgba(245,181,68,.7);
+}
+.anime-skip:active { transform: translateY(0); }
+.anime-skip .count {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  transform-origin: left center; background: linear-gradient(90deg, var(--accent), var(--accent-2)); opacity: .95;
+}
+.anime-skip.counting .count { animation: skip-count var(--count-dur, 3s) linear forwards; }
+@keyframes skip-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes skip-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .anime-skip { animation: none; }
+  .anime-skip.counting .count { animation: none; transform: scaleX(0); }
+}

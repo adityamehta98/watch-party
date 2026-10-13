@@ -2853,3 +2853,107 @@ setInterval(() => {
   if (c.dataset.i !== ci) { c.dataset.i = ci; c.innerHTML = icon(ci); c.classList.toggle('on', !!S.cam); c.title = S.cam ? 'Turn your camera off' : 'Turn your camera on'; }
   if (m.dataset.i !== mi) { m.dataset.i = mi; m.innerHTML = icon(mi); m.classList.toggle('on', !!S.mic); m.title = S.mic ? 'Mute your microphone' : 'Turn your microphone on'; }
 }, 400);
+
+
+/* ---- Auto-skip intro / outro for the native anime player (host only) ----- */
+const AUTO_SKIP_DELAY = 3000; // host waits this long before auto-advancing at the outro
+const skipBtn = $('#animeSkip');
+skipBtn.appendChild(Object.assign(document.createElement('span'), { className: 'count' }));
+const autoSkipBtn = $('#autoSkipBtn');
+const autoSkipOn = () => store.get('wp.autoSkip', true);   // ON by default
+let skipCtx = null, skipAutoTimer = null;
+
+function animeSkipTarget() {
+  const m = S.movie;
+  if (!m || kindOf(m) !== 'anime') return null;            // native HLS only; never the iframe fallback
+  const pos = localPos();
+  const inRange = r => r && Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start && pos >= r.start && pos < r.end - 0.3;
+  if (inRange(m.intro)) return { kind: 'intro', label: 'Skip Intro', to: m.intro.end };
+  if (inRange(m.outro)) {
+    const ep = Math.max(1, Number(m.episode) || 1);
+    const hasNext = Number(m.episodes) > 0 && ep < Number(m.episodes) && m.anilistId;
+    if (!hasNext) return null;                             // last episode: show nothing at the outro
+    return { kind: 'outro', label: 'Next Episode', next: true };
+  }
+  return null;
+}
+function doAnimeSkip(t) {
+  if (!t) return;
+  if (!canControl()) { noPerm('playback'); return; }
+  if (t.next) {
+    const m = S.movie, ep = Math.max(1, Number(m.episode) || 1);
+    conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: ep + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+  } else if (Number.isFinite(t.to)) {
+    sendCmd('seek', t.to);                                 // host-authoritative seek -> syncs to the whole room
+  }
+}
+function hideSkip() { if (!skipBtn.hidden) skipBtn.hidden = true; skipBtn.classList.remove('counting'); }
+function stopCount() { if (skipAutoTimer) { clearTimeout(skipAutoTimer); skipAutoTimer = null; } skipBtn.classList.remove('counting'); }
+
+function updateAnimeSkip() {
+  if (!isHost) { hideSkip(); skipCtx = null; return; }     // overlay is host-only; guests follow synced actions
+  const t = animeSkipTarget();
+  if (!t) { hideSkip(); skipCtx = null; return; }
+  const playing = !!(S.state && S.state.playing);
+  const auto = autoSkipOn();
+  if (!skipCtx || skipCtx.kind !== t.kind) skipCtx = { kind: t.kind, cancelled: false, armed: false, done: false };
+
+  // auto ON + intro + playing -> skip directly, no overlay
+  if (t.kind === 'intro' && auto && playing && !skipCtx.cancelled && !skipCtx.done) {
+    hideSkip(); doAnimeSkip(t); toast('Skipped intro', { timeout: 2000 });
+    skipCtx.done = true; return;
+  }
+  if (skipCtx.done) { hideSkip(); return; }                // intro skip issued; waiting for the seek to land
+
+  if (skipBtn.hidden) { skipBtn.hidden = false; skipBtn.classList.remove('counting'); void skipBtn.offsetWidth; }
+  skipBtn.querySelector('.lbl').textContent = t.label;
+
+  // outro auto-advance countdown: auto ON + playing + not cancelled
+  const wantCount = t.kind === 'outro' && auto && playing && !skipCtx.cancelled;
+  if (wantCount && !skipCtx.armed) {
+    skipCtx.armed = true;
+    skipBtn.style.setProperty('--count-dur', (AUTO_SKIP_DELAY / 1000) + 's');
+    skipBtn.classList.add('counting');
+    skipAutoTimer = setTimeout(() => {
+      skipAutoTimer = null; skipBtn.classList.remove('counting');
+      const now = animeSkipTarget();
+      if (now && now.kind === 'outro' && S.state && S.state.playing && !(skipCtx && skipCtx.cancelled)) {
+        doAnimeSkip(now); toast('Next episode', { timeout: 2500 });
+      }
+    }, AUTO_SKIP_DELAY);
+  } else if (!wantCount && skipCtx.armed) {
+    skipCtx.armed = false; stopCount();
+    if (!playing) skipCtx.cancelled = true;                // pausing (e.g. clicking the screen) = "not now"
+  }
+}
+skipBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const t = animeSkipTarget();
+  stopCount(); if (skipCtx) { skipCtx.armed = false; skipCtx.done = true; }
+  doAnimeSkip(t);
+});
+setInterval(updateAnimeSkip, 400);
+
+/* control-bar auto-skip toggle (host only, shown for native anime) */
+function renderAutoSkipBtn() {
+  if (!autoSkipBtn) return;
+  const show = S.movie && kindOf(S.movie) === 'anime';
+  if (autoSkipBtn.hidden !== !show) autoSkipBtn.hidden = !show;
+  const on = autoSkipOn();
+  autoSkipBtn.classList.toggle('on', on);
+  autoSkipBtn.setAttribute('aria-pressed', String(on));
+  autoSkipBtn.title = on ? 'Auto-skip intros & credits: on' : 'Auto-skip intros & credits: off';
+}
+if (autoSkipBtn) {
+  autoSkipBtn.addEventListener('click', () => {
+    const on = !autoSkipOn();
+    store.set('wp.autoSkip', on);
+    const cb = $('#svcAutoSkip'); if (cb) cb.checked = on;  // keep Settings checkbox in sync
+    if (!on && skipCtx) { skipCtx.armed = false; stopCount(); }
+    renderAutoSkipBtn();
+    try { dockPush(true); } catch {}
+    toast(on ? 'Auto-skip on' : 'Auto-skip off', { timeout: 1800 });
+  });
+  setInterval(renderAutoSkipBtn, 500);
+  renderAutoSkipBtn();
+}
