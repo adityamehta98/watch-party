@@ -1885,17 +1885,25 @@ function guestCount() { return Math.max(1, S.people.filter(p => p.admitted && p.
 function nativeHlsViewerHere() { return S.people.some(p => p.admitted && p.status?.hls); }
 
 // A one-line explanation from the server becomes a short tag; the full text opens on click.
-function reasonTag(text) {
-  const t = (tag, friendly, bad = false) => ({ tag, text: friendly || text, bad });
+function reasonLine(text) {
   let m;
-  if (/profile 5/.test(text)) return t('Needs fixing', 'This file is in a format most browsers show as a black screen. Prepare it once to fix the picture.', true);
-  if (/Dolby Vision/.test(text)) return t('Needs preparing', 'This file uses a format browsers can\'t play directly. One quick preparation makes it work for everyone.');
-  if ((m = /^(\w+) files /.exec(text))) return t('Needs preparing', 'This video format isn\'t supported by browsers. One quick preparation makes it work for everyone.');
-  if ((m = /^(.+?) audio /.exec(text))) return t('Audio needs fixing', 'The audio format isn\'t supported by browsers. Preparing the file will convert the audio.');
-  if (/re-encoded/.test(text)) return t('Needs re-encoding', 'This file needs to be re-encoded so browsers can play it.');
-  if (/hev1/.test(text)) return t('Needs preparing', 'This video uses a format Apple devices skip. Preparing fixes it.');
-  if (/No video track/.test(text)) return t('No picture', 'This file has no video track inside.', true);
-  return t('Needs preparing', text);
+  if (/profile 5/.test(text)) return { label: 'Dolby Vision Profile 5', why: 'A fancy HDR format most browsers show as a black screen. Preparing the file re-encodes it so the picture comes back.' };
+  if (/Dolby Vision/.test(text)) return { label: 'Dolby Vision', why: 'A newer HDR format browsers can\'t play directly. Preparing the file converts it so everyone sees the picture.' };
+  if ((m = /^(\w+) files /.exec(text))) return { label: `${m[1]} container`, why: `.${m[1].toLowerCase()} files aren\'t supported by browsers for streaming. One quick repackage into .mp4 fixes it (no quality loss).` };
+  if ((m = /^(.+?) audio /.exec(text))) return { label: `${m[1].split(' ')[0]} audio`, why: 'The audio format in this file (DTS / TrueHD / AC-3 / …) isn\'t supported by browsers. Preparing will convert it to AAC without changing the picture.' };
+  if (/re-encoded/.test(text)) return { label: 'Format needs re-encoding', why: 'The video has to be re-encoded before browsers can play it.' };
+  if (/hev1/.test(text)) return { label: 'Apple-incompatible HEVC', why: 'This HEVC file uses a stream tag Apple devices skip. Preparing re-tags it so iPhone, iPad and Safari can play it.' };
+  if (/No video track/.test(text)) return { label: 'No video track', why: 'This file contains no video inside, only audio or metadata.' };
+  return { label: 'Needs preparing', why: text };
+}
+function aggregatedPrepTag(reasons, blocking) {
+  const lines = reasons.map(reasonLine);
+  return {
+    tag: 'Needs preparing',
+    bad: !!blocking,
+    text: 'This file needs a quick preparation before it can stream to browsers.',
+    reasons: lines,
+  };
 }
 const whyPop = Object.assign(document.createElement('div'), { className: 'why-pop', hidden: true });
 whyPop.setAttribute('role', 'dialog');
@@ -1906,10 +1914,18 @@ document.addEventListener('click', e => {
   if (!tag) { if (!whyPop.contains(e.target)) closeWhy(); return; }
   e.stopPropagation();
   if (whyPop.anchor === tag && !whyPop.hidden) return closeWhy();
-  whyPop.textContent = tag.dataset.why;
+  let reasons = null;
+  try { reasons = JSON.parse(tag.dataset.whyJson || 'null'); } catch {}
+  if (Array.isArray(reasons) && reasons.length) {
+    const intro = tag.dataset.why || '';
+    const bullets = reasons.map(r => `<li><b>${esc(r.label)}</b><span>${esc(r.why)}</span></li>`).join('');
+    whyPop.innerHTML = `${intro ? `<p>${esc(intro)}</p>` : ''}<ul class="why-list">${bullets}</ul>`;
+  } else {
+    whyPop.textContent = tag.dataset.why;
+  }
   whyPop.anchor = tag;
   whyPop.hidden = false;
-  const r = tag.getBoundingClientRect(), w = Math.min(280, innerWidth - 24);
+  const r = tag.getBoundingClientRect(), w = Math.min(320, innerWidth - 24);
   whyPop.style.width = w + 'px';
   whyPop.style.left = Math.max(12, Math.min(r.left, innerWidth - w - 12)) + 'px';
   const below = r.bottom + 6, h = whyPop.offsetHeight;
@@ -2015,10 +2031,10 @@ function renderLibrary() {
           ? `<div class="fine">Ready for every device · ${esc(it.prepared.sizeLabel)}</div>`
           : `<div class="fine">Ready to play · ${esc(it.prepared.sizeLabel)}${it.prepared.compressed ? ' · smaller for streaming' : ''}</div>`);
       } else if (plan.mode === 'unsupported') {
-        tags.push(...plan.reasons.map(reasonTag));
+        if (plan.reasons.length) tags.push(aggregatedPrepTag(plan.reasons, true));
       } else {
         if (it.stalePrepared) tags.push({ tag: 'Old copy', bad: true, text: 'The copy made by an older version can show a black screen. Prepare it again to fix it; the old copy will be replaced.' });
-        tags.push(...plan.reasons.map(reasonTag));
+        if (plan.reasons.length) tags.push(aggregatedPrepTag(plan.reasons, false));
         const est = plan.mode === 'remux' ? ` (~${Math.max(1, Math.round(it.size / 120e6 / 60))} min)` : '';
         if (!S.prepOpen.has(it.id)) acts = `<button class="btn sm primary" data-act="quickprep" data-id="${it.id}">Prepare${est}</button><button class="btn sm ghost" data-act="openprep" data-id="${it.id}">Options</button>`;
       }
@@ -2033,7 +2049,7 @@ function renderLibrary() {
     }
     return `<div class="movie ${current ? 'current' : ''}" data-movie="${it.id}">
       <div class="movie-top"><div style="min-width:0;flex:1"><div class="mt">${esc(it.title)}</div><div class="mf" title="${esc(it.rel)}">${esc(it.rel)}</div></div></div>
-      <div class="chips">${movieChips(it)}${tags.map(t => `<button type="button" class="chip why-tag ${t.bad ? 'bad' : 'warn'}" data-why="${esc(t.text)}" title="What does this mean?">${esc(t.tag)}</button>`).join('')}</div>
+      <div class="chips">${movieChips(it)}${tags.map(t => `<button type="button" class="chip why-tag ${t.bad ? 'bad' : 'warn'}" data-why="${esc(t.text)}" data-why-json="${esc(JSON.stringify(t.reasons || null))}" title="What does this mean?">${esc(t.tag)}${t.reasons?.length > 1 ? ` <span class="chip-count">${t.reasons.length}</span>` : ''}</button>`).join('')}</div>
       ${why}${status}${warn}
       ${acts ? `<div class="acts">${acts}</div>` : ''}
       ${S.prepOpen.has(it.id) && i ? prepFormHtml(it) : ''}
@@ -2692,10 +2708,11 @@ function showAnimeResults(q, list) {
   $('#animeResults').innerHTML = list.map(a => {
     const count = Math.min(Math.max(1, Number(a.episodes) || 1), 2000);
     const epOpts = Array.from({ length: count }, (_, i) => `<option value="${i + 1}">Ep ${i + 1}</option>`).join('');
-    return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${esc(a.title)}">
+    const title = esc(a.title);
+    return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${title}">
     ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
-    <div class="meta"><div class="t">${esc(a.title)}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
-    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="btn sm primary anime-play">Play</button></div></div>`;
+    <div class="meta"><div class="t" data-tip="${title}">${title}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
+    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button></div></div>`;
   }).join('');
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
@@ -2746,12 +2763,18 @@ video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTune
 
 function renderAnimeOverlay() {
   const button = $('#animeNext');
+  const toggle = $('#animeLangToggle');
   const m = S.movie;
-  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay')) { button.disabled = true; button.textContent = 'Next episode'; return; }
+  const isAnime = m && (kindOf(m) === 'anime' || kindOf(m) === 'megaplay');
+  if (!isAnime) { button.disabled = true; button.textContent = 'Next episode'; toggle.hidden = true; return; }
   const episode = Math.max(1, Number(m.episode) || 1);
   const atEnd = Number(m.episodes) > 0 && episode >= Number(m.episodes);
   button.disabled = atEnd;
   button.textContent = atEnd ? `Episode ${episode} · last episode` : `Next episode · ${episode + 1}`;
+  const lang = m.language === 'dub' ? 'dub' : 'sub';
+  toggle.hidden = false;
+  toggle.dataset.lang = lang;
+  toggle.querySelectorAll('.l-opt').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
 }
 $('#animeNext').addEventListener('click', () => {
   const m = S.movie;
@@ -2759,6 +2782,19 @@ $('#animeNext').addEventListener('click', () => {
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
   conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+});
+$('#animeLangToggle').addEventListener('click', e => {
+  const b = e.target.closest('.l-opt');
+  if (!b) return;
+  const m = S.movie;
+  if (!canControl()) return noPerm('playback');
+  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
+  const next = b.dataset.lang === 'dub' ? 'dub' : 'sub';
+  if (next === (m.language === 'dub' ? 'dub' : 'sub')) return;
+  const episode = Math.max(1, Number(m.episode) || 1);
+  const title = m.animeTitle || 'Anime';
+  showTuneIn(`${title} · Ep ${episode}${next === 'dub' ? ' (Dub)' : ''}`);
+  conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode, episodes: m.episodes || 0, lang: next, title });
 });
 
 let keepOffSince = 0, keepLastGo = 0, reachedTitle = false;

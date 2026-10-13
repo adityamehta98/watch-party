@@ -1048,3 +1048,169 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 @media (prefers-reduced-motion: reduce) {
   .tune-in-ring, .tune-in-ring.r2, .tune-in-ring.r3, .tune-in-glyph, .tune-in-orbit { animation: none; }
 }
+
+/* ======================================================================
+   Round 3 polish: title tooltip, play icon button, select theming,
+   consolidated "needs preparing" popup
+   ====================================================================== */
+
+.anime-card .meta { position: relative; min-width: 0; }
+.anime-card .t {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+}
+.anime-card .t[data-tip]:hover::before,
+.anime-card .t[data-tip]:hover::after {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  pointer-events: none;
+  z-index: 20;
+  animation: tip-rise .18s ease-out;
+}
+.anime-card .t[data-tip]:hover::before {
+  content: attr(data-tip);
+  width: max-content;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #171b22, #0e1218);
+  border: 1px solid rgba(245,181,68,.4);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0;
+  white-space: normal;
+  box-shadow:
+    0 14px 36px -14px rgba(0,0,0,.9),
+    0 0 0 1px rgba(255,255,255,.03) inset,
+    0 0 28px -10px rgba(245,181,68,.55);
+}
+.anime-card .t[data-tip]:hover::after {
+  content: '';
+  bottom: calc(100% + 4px);
+  left: 18px;
+  width: 10px; height: 10px;
+  background: #171b22;
+  border-right: 1px solid rgba(245,181,68,.4);
+  border-bottom: 1px solid rgba(245,181,68,.4);
+  transform: rotate(45deg);
+}
+@keyframes tip-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.anime-card .pick {
+  grid-template-columns: 1fr 1fr 40px;
+}
+
+.anime-card .pick select {
+  color-scheme: dark;
+  accent-color: var(--accent);
+}
+
+.anime-card .pick .anime-play {
+  display: inline-grid; place-items: center;
+  height: 36px; width: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: var(--accent-ink);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.4),
+    0 6px 16px -8px rgba(245,181,68,.6);
+  transition: transform .12s, box-shadow .2s, filter .12s;
+}
+.anime-card .pick .anime-play svg { width: 18px; height: 18px; stroke: none; }
+.anime-card .pick .anime-play:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.5),
+    0 10px 22px -8px rgba(245,181,68,.85),
+    0 0 24px -8px rgba(245,181,68,.6);
+}
+.anime-card .pick .anime-play:hover svg { transform: scale(1.1); transition: transform .18s; }
+.anime-card .pick .anime-play:active { transform: translateY(0); filter: brightness(.96); }
+.anime-card .pick .anime-play::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4), transparent);
+  transform: translateX(-100%);
+  transition: transform .6s ease;
+}
+.anime-card .pick .anime-play:hover::before { transform: translateX(100%); }
+
+.chip.why-tag .chip-count {
+  display: inline-grid; place-items: center;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: rgba(245,181,68,.22);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.why-pop p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
+.why-pop .why-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.why-pop .why-list li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: rgba(245,181,68,.06); border: 1px solid rgba(245,181,68,.18); }
+.why-pop .why-list b { color: var(--accent); font-size: 12px; letter-spacing: .02em; }
+.why-pop .why-list span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.anime-actions { gap: 8px; }
+.anime-lang-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  height: 40px;
+  background: rgba(10,11,14,.72);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 28px rgba(0,0,0,.4);
+  isolation: isolate;
+}
+.anime-lang-toggle .l-opt {
+  position: relative;
+  z-index: 2;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-size: 12px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .22s;
+}
+.anime-lang-toggle .l-opt[aria-pressed="true"] { color: var(--accent-ink); }
+.anime-lang-toggle .l-opt:hover:not([aria-pressed="true"]) { color: var(--text); }
+.anime-lang-toggle .l-pill {
+  position: absolute;
+  z-index: 1;
+  top: 3px; bottom: 3px;
+  width: calc(50% - 3px);
+  left: 3px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.45),
+    0 4px 14px -4px rgba(245,181,68,.6);
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+}
+.anime-lang-toggle[data-lang="dub"] .l-pill { transform: translateX(100%); }
