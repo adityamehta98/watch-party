@@ -48,6 +48,7 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
 - [Security model](#security-model)
 - [Network setup](#network-setup)
 - [Streaming services (Netflix, YouTube, …)](#streaming-services-netflix-youtube-)
+- [Movies & TV (no extension)](#movies--tv-no-extension)
 - [Hosting a watch party](#hosting-a-watch-party)
 - [Configuration (`config.json`)](#configuration-configjson)
 - [Project structure](#project-structure)
@@ -77,6 +78,7 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
 - **Capability-aware delivery.** Each viewer gets the best path their browser can play: byte-range MP4 for finished movies, Safari's native HLS on Mac/iPhone/iPad, and [hls.js](https://github.com/video-dev/hls.js) everywhere else. A source that fails or stalls on start falls back to the next one without reloading the page.
 - **Movie library.** Watch Party scans your folders, checks each file with `ffprobe`, and offers one-click **Prepare** (repackage, fix audio, strip Dolby Vision, compress, extract subtitles, instant-start stream) with `ffmpeg`. Short tags such as **MKV** or **Dolby Vision** explain why a file needs work; click one for the details.
 - **Streaming services.** Syncs Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, Apple TV+ and YouTube. Everyone plays from their own account and Watch Party keeps you together.
+- **Movies & TV, no extension.** Search TMDB plus a free Public Domain/Creative Commons catalog, choose a movie or TV episode, and switch between available languages. Playback stays in Watch Party's own synchronized player; HLS uses its adaptive renditions and direct files use the highest available resolution.
 - **Anime, no extension.** Search by title and play an episode right in the page on any device, iPad and iPhone included. Watch Party resolves a real HLS stream and proxies it through the host, so it is synced exactly like a movie, carries subtitles and intro/outro skips, and shows no ads. If a stream can't be resolved it falls back to an embedded player.
 - **Webcams and mic.** A built-in TURN relay runs on the host PC, so guests never learn each other's IP addresses. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
@@ -476,6 +478,63 @@ In **Library → Watch together on a streaming service → Custom site**, the ho
 
 ---
 
+## Movies & TV (no extension)
+
+The **Movies & TV** picker plays in Watch Party's own player, so neither the host nor guests need a browser extension. It searches two sources, and can also hand a mainstream title off to a licensed streaming service:
+
+- **Free & legal:** explicitly licensed Public Domain, CC0, CC BY, and CC BY-SA video from curated Internet Archive collections. Watch Party rejects restricted items, unsupported files, licenses with extra restrictions, and unlicensed uploads. The result card links to the source and license.
+- **Mainstream metadata:** TMDB supplies search results, posters and episode metadata; it does **not** supply video. For these titles, the host must configure media URLs they own, license, or are otherwise authorized to redistribute.
+- **Watch on a licensed service:** for a mainstream title with no authorized source, the result card lists the subscription services that carry it (from TMDB watch providers, US region) as **Watch on …** buttons. Choosing one opens that service — deep-linked to the title's search — through Watch Party's streaming-service sync: everyone signs in with their own account and the room stays in sync. Like the Streaming services tab, this path uses the Watch Party Sync extension.
+
+There is no legal source that makes every commercial movie or series free. A mainstream title won't play in Watch Party's own player unless the host supplies an authorized source — but the **Watch on a licensed service** buttons let the room watch it together on a subscription service you already pay for.
+
+1. Free licensed search works immediately and needs no account or extension. Optionally create a TMDB API Read Access Token, then paste it under **Room → Movies & TV catalog** to add mainstream metadata. The token stays on the host PC.
+2. Add authorized HLS or direct-file sources to `movieTvSources` in `config.json`.
+3. Restart Watch Party, open **Movies & TV**, search, choose a title or episode, and select a language.
+
+Example:
+
+```json
+{
+  "tmdbToken": "your TMDB API Read Access Token",
+  "movieTvSources": [
+    {
+      "type": "movie",
+      "tmdbId": 603,
+      "language": "en",
+      "languageLabel": "English",
+      "quality": 2160,
+      "format": "hls",
+      "url": "https://media.example.com/movies/example/master.m3u8",
+      "subtitles": [
+        {
+          "language": "en",
+          "label": "English",
+          "url": "https://media.example.com/movies/example/en.vtt"
+        }
+      ]
+    },
+    {
+      "type": "tv",
+      "tmdbId": 1396,
+      "season": 1,
+      "episode": 1,
+      "language": "fr",
+      "languageLabel": "French",
+      "quality": 1080,
+      "format": "mp4",
+      "url": "https://media.example.com/shows/example/s01e01-fr.mp4"
+    }
+  ]
+}
+```
+
+Each source may also include `duration`, `referer`, and a `headers` object when your authorized media host requires them. Source URLs and credentials never appear in room state: the server validates the destination, assigns an opaque media URL, proxies playlists, segments, direct-file ranges and subtitles, and only makes the currently selected title available to guests.
+
+For a selected language, Watch Party chooses the source with the largest `quality` value. If equally rated HLS and direct sources exist, HLS is preferred so its rendition ladder can adapt to each viewer's connection. Put the highest-quality authorized master playlist in `url` when you want the player to select among 4K/1080p/etc. automatically.
+
+---
+
 ## Hosting a watch party
 
 1. Double-click **refresh.bat** (or **WatchParty.exe**).
@@ -516,6 +575,9 @@ Created automatically on first run, next to `WatchParty.exe` (or in the repo roo
 | `cacheDir` | `"cache"` | Where prepared copies, certs and logs go. Point it at a big drive if needed. |
 | `keepPrepared` | `false` | Keep prepared copies after the app stops |
 | `safariExtensionUrl` | `""` | Signed `apps.apple.com` or `testflight.apple.com` install link shown to Safari guests |
+| `tmdbToken` | `""` | TMDB API Read Access Token used server-side for Movies & TV search and episode metadata |
+| `freeMedia` | `true` | Search explicitly licensed Public Domain/Creative Commons video from curated Internet Archive collections |
+| `movieTvSources` | `[]` | Authorized HLS/direct movie and TV episode sources; see [Movies & TV](#movies--tv-no-extension) |
 | `linkMode` | `"secure"` | `"secure"` = HTTPS (webcams work). `"plain"` = HTTP (no warning, no webcams). |
 | `upnp` | `true` | Ask the router to open the port automatically |
 | `publicHost` | `""` | Your public IP or hostname if you forward the port yourself |
@@ -545,6 +607,9 @@ watch-party/
 │   ├── room.js             room state, guests, permissions, shared playback timeline
 │   ├── library.js          folder scanning, ffprobe analysis, ffmpeg "prepare" jobs
 │   ├── media.js            HTTP byte-range file serving
+│   ├── catalog.js          TMDB metadata and authorized Movies & TV source selection
+│   ├── free-media.js       legal free-media search, license validation, and best-file selection
+│   ├── remote-media.js     guarded opaque proxy for remote HLS, files and subtitles
 │   ├── guard.js            secret-key gate, brute-force lockout, connection limits
 │   ├── cert.js             self-signed HTTPS certificate (built-in crypto only)
 │   ├── turn.js             built-in STUN/TURN server for webcams (UDP)

@@ -919,6 +919,117 @@ test('room moments anchor chat, reactions, and bookmarks to movie time in memory
   assert.equal(room.config.bookmarks, undefined);
 });
 
+test('Movies & TV catalog searches TMDB and picks the best configured language source', async () => {
+  const remoteMedia = require('../server/remote-media');
+  remoteMedia.init('catalog-test-secret');
+  const calls = [];
+  const fetchFn = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return { ok: true, status: 200, json: async () => ({ results: [
+      { media_type: 'movie', id: 603, title: 'The Matrix', release_date: '1999-03-30', overview: 'Neo wakes up.', vote_average: 8.2, poster_path: '/matrix.jpg' },
+      { media_type: 'person', id: 1, name: 'Ignore Me' },
+      { media_type: 'tv', id: 1396, name: 'Breaking Bad', first_air_date: '2008-01-20', overview: 'Chemistry.', vote_average: 8.9, poster_path: '/bb.jpg' },
+    ] }) };
+  };
+  const config = { tmdbToken: 'tmdb-test-token', movieTvSources: [
+    { type: 'movie', tmdbId: 603, language: 'en', languageLabel: 'English', quality: 1080, url: 'https://media.example/matrix-1080.m3u8' },
+    { type: 'movie', tmdbId: 603, language: 'en', languageLabel: 'English', quality: 2160, url: 'https://media.example/matrix-4k.m3u8', subtitles: [{ label: 'English CC', lang: 'en', url: 'https://media.example/matrix.vtt' }] },
+    { type: 'movie', tmdbId: 603, language: 'fr', languageLabel: 'Français', quality: 1080, url: 'https://media.example/matrix-fr.mp4' },
+    { type: 'tv', tmdbId: 1396, season: 1, episode: 1, language: 'en', languageLabel: 'English', quality: 1080, url: 'https://media.example/bb-s1e1.m3u8' },
+  ] };
+  const { Catalog } = require('../server/catalog');
+  const catalog = new Catalog({ config, remoteMedia, fetchFn });
+  const results = await catalog.search('matrix');
+  assert.deepEqual(results.map(item => item.type), ['movie', 'tv']);
+  assert.equal(results[0].languages.length, 2);
+  assert.equal(results[1].hasSources, true);
+  assert.match(calls[0].url, /\/search\/multi\?.*query=matrix/);
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer tmdb-test-token');
+  const playback = catalog.resolve({ type: 'movie', tmdbId: 603 }, 'en');
+  assert.equal(playback.quality, 2160);
+  assert.match(playback.hlsPath, /^\/catalog-media\/m3u8\/[0-9a-f]{32}\.m3u8$/);
+  assert.ok(!playback.hlsPath.includes('media.example'));
+  assert.equal(playback.subtitles.length, 1);
+  const target = remoteMedia.parsePath(playback.hlsPath);
+  assert.equal(target.url, 'https://media.example/matrix-4k.m3u8');
+  assert.equal(target.scope, playback.sourceId);
+  assert.throws(() => catalog.resolve({ type: 'movie', tmdbId: 603 }, 'de'), /language is not available/i);
+
+  const originalFetch = global.fetch;
+  let redirectCalls = 0;
+  global.fetch = async () => { redirectCalls++; return { status: 302, headers: new Headers({ location: 'http://127.0.0.1/private' }) }; };
+  try {
+    await assert.rejects(remoteMedia.fetchUpstream({ url: 'https://8.8.8.8/source', headers: {} }), /blocked host/);
+    assert.equal(redirectCalls, 1, 'a redirect to a private host is rejected before it is fetched');
+  } finally { global.fetch = originalFetch; }
+});
+
+test('Movies & TV finds only explicitly licensed free media and selects its best browser file', async () => {
+  const remoteMedia = require('../server/remote-media');
+  const { FreeMedia, licenseInfo } = require('../server/free-media');
+  const { Catalog } = require('../server/catalog');
+  remoteMedia.init('free-catalog-test-secret');
+  const calls = [];
+  const fetchFn = async url => {
+    calls.push(String(url));
+    if (String(url).includes('advancedsearch.php')) return { ok: true, status: 200, json: async () => ({ response: { docs: [
+      { identifier: 'licensed-film-test', title: 'Licensed Film', collection: ['feature_films'] },
+    ] } }) };
+    return { ok: true, status: 200, json: async () => ({
+      metadata: { mediatype: 'movies', title: 'Licensed Film', date: '1941', creator: 'Example Studio', language: 'English', collection: ['feature_films'], licenseurl: 'https://creativecommons.org/publicdomain/mark/1.0/' },
+      files: [
+        { name: 'licensed-film-480.mp4', height: '480', size: '2000', length: '01:02:03', format: 'h.264' },
+        { name: 'licensed-film-1080.mp4', height: '1080', size: '8000', length: '01:02:03', format: 'h.264' },
+        { name: 'licensed-film.en.srt', size: '5000', format: 'SubRip' },
+      ],
+    }) };
+  };
+  const freeMedia = new FreeMedia({ fetchFn, secret: 'test-secret' });
+  const catalog = new Catalog({ config: { freeMedia: true, adminKey: 'test-secret' }, remoteMedia, fetchFn, freeMedia });
+  const results = await catalog.search('Licensed Film');
+  assert.equal(results.length, 1);
+  assert.equal(results[0].type, 'free');
+  assert.equal(results[0].attribution.licenseLabel, 'Public Domain');
+  assert.equal(results[0].languages[0].bestQuality, 1080);
+  const playback = catalog.resolve({ type: 'free', freeId: results[0].freeId }, 'en');
+  assert.equal(playback.quality, 1080);
+  assert.equal(playback.subtitles.length, 1);
+  assert.equal(remoteMedia.parsePath(playback.urlPath).url, 'https://archive.org/download/licensed-film-test/licensed-film-1080.mp4');
+  assert.ok(calls[0].includes('collection%3Aprelinger') || calls[0].includes('collection%3Afeature_films'));
+  assert.equal(licenseInfo('https://creativecommons.org/licenses/by-nc/4.0/'), null, 'licenses with extra restrictions are not included');
+});
+
+test('Movies & TV selections use native playback, preserve position across languages, and expose no upstream URL', t => {
+  const { Room, PERMS } = require('../server/room');
+  let language = 'en';
+  const catalog = {
+    configured: () => true,
+    resolve(ref, requested) {
+      language = requested;
+      return { ref, language: requested, languageLabel: requested === 'fr' ? 'Français' : 'English', languages: [{ code: 'en', label: 'English' }, { code: 'fr', label: 'Français' }], quality: 2160,
+        duration: 3600, hlsPath: `/catalog-media/m3u8/${(requested === 'fr' ? 'b' : 'a').repeat(32)}.m3u8`, urlPath: null, subtitles: [], hasNext: ref.type === 'tv' && ref.episode === 1, sourceId: requested };
+    },
+  };
+  const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library: { list: () => ({ folders: [], items: [] }) }, save() {}, catalog });
+  t.after(() => room.shutdown());
+  const host = { id: 'host01', name: 'Host', role: 'host', admitted: true, perms: Object.fromEntries(PERMS.map(p => [p, true])), ws: { readyState: 0 } };
+  const ref = { type: 'tv', tmdbId: 1396, season: 1, episode: 1 };
+  room.selectCatalog(host, { ref, language: 'en', title: 'Breaking Bad' });
+  let movie = room.publicMovie();
+  assert.equal(movie.kind, 'catalog');
+  assert.equal(movie.quality, 2160);
+  assert.equal(movie.url, null);
+  assert.match(movie.hls, /^\/catalog-media\/m3u8\//);
+  assert.equal(movie.hasNext, true);
+  room.state = { ...room.state, playing: true, position: 42, anchor: Date.now() };
+  room.selectCatalog(host, { ref, language: 'fr', title: 'Breaking Bad' });
+  movie = room.publicMovie();
+  assert.equal(language, 'fr');
+  assert.equal(movie.languageLabel, 'Français');
+  assert.ok(room.state.position >= 42 && room.state.position < 43, 'language switching preserves the shared timestamp');
+  assert.equal(room.publicSettings(false).movieTvConfigured, true);
+});
+
 test('tool, UPnP, tunnel, and TURN helpers retain expected behavior', async t => {
   const tools = require('../server/tools');
   assert.equal(tools.encoderLabel('hevc_nvenc'), 'NVIDIA GPU'); assert.equal(tools.encoderLabel(null), 'none');
