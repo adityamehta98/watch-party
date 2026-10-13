@@ -452,14 +452,20 @@ class Room {
     const id = 'a' + crypto.createHash('sha1').update(sources[0]).digest('hex').slice(0, 11);
     if (this.movie && this.movie.id === id) return;
     const base = String(msg.title || 'Anime').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120) || 'Anime';
-    const title = `${base} · Ep ${episode}${language === 'dub' ? ' (Dub)' : ''}`;
-    const meta = { anilistId, malId, episode, episodes, language, animeTitle: base };
+    let effectiveLanguage = language;
 
     // Resolve the native stream. Guard against a newer pick landing while we were awaiting.
     const seq = (this.animeSeq = (this.animeSeq || 0) + 1);
     let resolved = null;
-    try { resolved = await this.animeResolve(anilistId, malId, episode, language); } catch { resolved = null; }
-    if (seq !== this.animeSeq) return; // superseded by a later selection
+    try { resolved = await this.animeResolve(anilistId, malId, episode, effectiveLanguage); } catch { resolved = null; }
+    if (seq !== this.animeSeq) return;
+    if (!(resolved && resolved.url) && effectiveLanguage === 'dub') {
+      try { resolved = await this.animeResolve(anilistId, malId, episode, 'sub'); } catch { resolved = null; }
+      if (seq !== this.animeSeq) return;
+      if (resolved && resolved.url) effectiveLanguage = 'sub';
+    }
+    const title = `${base} · Ep ${episode}${effectiveLanguage === 'dub' ? ' (Dub)' : ''}`;
+    const meta = { anilistId, malId, episode, episodes, language: effectiveLanguage, animeTitle: base };
     if (this.movie && this.movie.id === id) return;
 
     if (resolved && resolved.url) {

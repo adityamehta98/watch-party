@@ -2712,8 +2712,8 @@ function showAnimeResults(q, list) {
     return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${title}">
     ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
     <div class="meta"><div class="t" data-tip="${title}">${title}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
-    <button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button>
-    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select></div></div>`;
+    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="dub">Dub</option><option value="sub">Sub</option></select></div>
+    <button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button></div>`;
   }).join('');
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
@@ -2748,7 +2748,7 @@ $('#animeResults').addEventListener('click', e => {
   if (!btn) return;
   const card = btn.closest('.anime-card');
   const ep = Math.max(1, parseInt(card.querySelector('.anime-ep').value, 10) || 1);
-  const lang = card.querySelector('.anime-lang').value === 'dub' ? 'dub' : 'sub';
+  const lang = card.querySelector('.anime-lang').value === 'sub' ? 'sub' : 'dub';
   const title = card.dataset.title || 'Anime';
   showTuneIn(`${title} · Ep ${ep}${lang === 'dub' ? ' (Dub)' : ''}`);
   conn.send({ type: 'select-anime', anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title });
