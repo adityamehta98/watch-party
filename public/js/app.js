@@ -2712,7 +2712,8 @@ function showAnimeResults(q, list) {
     return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${title}">
     ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
     <div class="meta"><div class="t" data-tip="${title}">${title}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
-    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button></div></div>`;
+    <button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button>
+    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select></div></div>`;
   }).join('');
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
