@@ -453,7 +453,7 @@ test('playback capabilities select native or MSE HLS and allow a growing HLS-onl
   assert.match(app, /case 'quickprep':[\s\S]{0,80}const opts = \{ hls: true \}/);
   assert.match(app, /case 'prepare':[\s\S]{0,80}const o = \{ hls: true,/);
   assert.match(app, /setTimeout\([\s\S]{0,160}video\.readyState < 2[\s\S]{0,80}20000/);
-  assert.match(app, /Instant start on phones, tablets and computers/);
+  assert.match(app, /Start sooner for everyone/);
   assert.match(app, /Ready to watch · still preparing in background/);
   assert.match(app, /if \(same\)[\s\S]{0,220}refreshFileSources\(movie\)/);
   // iPhone/iPad run anime through hls.js with ManagedMediaSource, which leaves video.src empty and
@@ -871,7 +871,7 @@ test('Sync Observatory keeps bounded in-memory health, corrections, and recommen
   room.onMessage(guest, { type: 'status', status: { error: 4, dev: 'iPad' } });
   room.onMessage(guest, { type: 'status', status: { error: 4, dev: 'iPad' } });
   assert.equal(notices.length, 1);
-  assert.match(notices[0].text, /Instant start/);
+  assert.match(notices[0].text, /Start sooner for everyone/);
   assert.equal(config.syncEvents, undefined); assert.equal(config.metrics, undefined);
 });
 

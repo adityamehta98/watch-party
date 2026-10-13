@@ -670,7 +670,7 @@ function checkCodecSupport(movie) {
   const t = probes[movie.codec];
   if (t && !video.canPlayType(t)) {
     codecWarning = movie.codec === 'hevc'
-      ? 'This browser can\'t play HEVC (4K Blu-ray) video. Try Chrome or Edge on a Windows or Mac computer, or Safari. If it still fails, the host can prepare a "Compress for streaming" copy.'
+      ? 'This browser can\'t play this video format. Try Chrome or Edge on a Windows or Mac computer, or Safari. If it still fails, ask the host to open Options and pick a lower picture quality.'
       : `This browser can't play ${codecLabel(movie.codec)} video.`;
   }
 }
@@ -737,19 +737,19 @@ function renderNotice() {
     } else if (M === remote) {
       html = ''; // the service panel explains what to do
     } else if (S.filePlaybackError) {
-      html = `<span>${esc(S.filePlaybackError)} Ask the host to retry with “Compress for streaming” if this device does not support the movie's video format.</span>`;
+      html = `<span>${esc(S.filePlaybackError)} Ask the host to open Options and pick a lower picture quality if this device can't play the movie's format.</span>`;
     } else if (video.error) {
       const apple = PLATFORM.appleMobile || PLATFORM.safari;
       const message = apple
         ? S.movie.hls
-          ? 'Safari could not decode this movie. Ask the host to prepare it again with “Compress for streaming” and “Instant start” enabled.'
-          : 'This movie was prepared without an instant-start stream. Ask the host to open Options, enable “Instant start”, and prepare it again.'
+          ? 'This device could not play the movie. Ask the host to open Options, pick a lower picture quality, and prepare it again.'
+          : 'This movie was prepared without the "Start sooner for everyone" option. Ask the host to open Options, turn it on, and prepare the movie again.'
         : codecWarning || 'Your browser couldn\'t play this movie. Ask the host to prepare a compressed copy.';
       html = `<span>${esc(message)}</span>`;
     } else if (codecWarning && video.readyState < 1) {
       html = `<span>${esc(codecWarning)}</span>`;
     } else if (player && player.videoFailed && !pictureHintHidden(S.movie.id)) {
-      html = `<span>Only hearing sound with a black picture? Turn on Chrome's "Use graphics acceleration" setting, or ask the host to prepare a "Compress for streaming" copy.</span><button class="btn sm" type="button" data-hide-hint>Hide</button>`;
+      html = `<span>Only hearing sound with a black picture? Turn on Chrome's "Use graphics acceleration" setting, or ask the host to open Options and pick a lower picture quality.</span><button class="btn sm" type="button" data-hide-hint>Hide</button>`;
     } else if (player && player.syncing && !S._buffering) {
       html = `<div class="spinner"></div><span>Catching up with the room…</span>`;
     } else if (S.state && S.state.waiting) {
@@ -1501,9 +1501,9 @@ function renderPeople() {
     if (isHost && p.role !== 'host' && S.movie && kindOf(S.movie) === 'file' && (st.stalls >= 3 || st.noWait)) {
       const need = S.movie.mbps || 0;
       const phone = /iPhone|iPad|phone|tablet/i.test(st.dev || '');
-      if (need && p.mbps > 0.3 && p.mbps < need * 0.85) why = `Their connection can't keep up: this movie needs ${need} Mbps and they're getting ${p.mbps}. A "Compress for streaming" copy (Library → Options) fixes this.`;
-      else if (phone) why = `Their ${esc(st.dev)} keeps running dry even though the speed looks fine. Phones and tablets buffer only a few seconds ahead and struggle with big files; a "Compress for streaming" copy (Library → Options) is much easier on them.`;
-      else why = `They keep running dry even though the speed looks fine. Ask them to close other tabs and downloads, or prepare a "Compress for streaming" copy (Library → Options).`;
+      if (need && p.mbps > 0.3 && p.mbps < need * 0.85) why = `Their internet can't keep up with this movie. Open the movie in your Library, hit Options, and pick a lower picture quality.`;
+      else if (phone) why = `Their ${esc(st.dev)} keeps running out of video. Phones and tablets struggle with large files. Open the movie in your Library, hit Options, and pick a lower picture quality.`;
+      else why = `They keep running out of video even though the speed looks fine. Ask them to close other tabs and downloads, or prepare the movie at a lower picture quality from your Library (Options).`;
       if (st.noWait) why += ' The room no longer pauses for them; they catch up on their own.';
     }
     const drift = isHost && p.role !== 'host' ? `${sub.length ? '<span data-drift-sep hidden>·</span>' : ''}<span data-drift="${esc(p.id)}" hidden></span>` : '';
@@ -1886,16 +1886,16 @@ function nativeHlsViewerHere() { return S.people.some(p => p.admitted && p.statu
 
 // A one-line explanation from the server becomes a short tag; the full text opens on click.
 function reasonTag(text) {
-  const t = (tag, bad = false) => ({ tag, text, bad });
+  const t = (tag, friendly, bad = false) => ({ tag, text: friendly || text, bad });
   let m;
-  if (/profile 5/.test(text)) return t('Dolby Vision 5', true);
-  if (/Dolby Vision/.test(text)) return t('Dolby Vision');
-  if ((m = /^(\w+) files /.exec(text))) return t(m[1]);
-  if ((m = /^(.+?) audio /.exec(text))) return t(`${m[1].split(' ')[0]} audio`);
-  if (/re-encoded/.test(text)) return t('Re-encode');
-  if (/hev1/.test(text)) return t('hev1');
-  if (/No video track/.test(text)) return t('No video', true);
-  return t(text.split(/[\s,.:]+/).slice(0, 2).join(' '));
+  if (/profile 5/.test(text)) return t('Needs fixing', 'This file is in a format most browsers show as a black screen. Prepare it once to fix the picture.', true);
+  if (/Dolby Vision/.test(text)) return t('Needs preparing', 'This file uses a format browsers can\'t play directly. One quick preparation makes it work for everyone.');
+  if ((m = /^(\w+) files /.exec(text))) return t('Needs preparing', 'This video format isn\'t supported by browsers. One quick preparation makes it work for everyone.');
+  if ((m = /^(.+?) audio /.exec(text))) return t('Audio needs fixing', 'The audio format isn\'t supported by browsers. Preparing the file will convert the audio.');
+  if (/re-encoded/.test(text)) return t('Needs re-encoding', 'This file needs to be re-encoded so browsers can play it.');
+  if (/hev1/.test(text)) return t('Needs preparing', 'This video uses a format Apple devices skip. Preparing fixes it.');
+  if (/No video track/.test(text)) return t('No picture', 'This file has no video track inside.', true);
+  return t('Needs preparing', text);
 }
 const whyPop = Object.assign(document.createElement('div'), { className: 'why-pop', hidden: true });
 whyPop.setAttribute('role', 'dialog');
@@ -1920,18 +1920,14 @@ document.addEventListener('scroll', closeWhy, true);
 
 function movieChips(it) {
   const i = it.info;
-  const c = [];
   if (!i) return '';
+  const c = [];
   const v = i.video || {};
   const r = resLabel(v.width, v.height);
   if (r) c.push(`<span class="chip">${r}</span>`);
-  if (v.hdr) c.push(`<span class="chip hdr">${esc(v.hdr)}</span>`);
-  if (v.codec) c.push(`<span class="chip">${esc(codecLabel(v.codec))}${v.bitDepth > 8 ? ' 10-bit' : ''}</span>`);
-  const a = i.audios.find(x => x.index === i.defaultAudioIndex);
-  if (a) c.push(`<span class="chip">${esc(a.label)}</span>`);
+  if (v.hdr) c.push(`<span class="chip hdr">HDR</span>`);
   if (i.duration) c.push(`<span class="chip">${fmtDur(i.duration)}</span>`);
   c.push(`<span class="chip">${esc(it.sizeLabel)}</span>`);
-  if (i.bitrateMbps) c.push(`<span class="chip">${i.bitrateMbps} Mbps</span>`);
   return c.join('');
 }
 
@@ -1947,21 +1943,27 @@ function prepFormHtml(it) {
   const target = o.targetMbps || (i.video.width > 1920 ? 25 : 12);
   const textSubs = i.subs.filter(s => s.text).length;
   const imgSubs = i.subs.filter(s => !s.text).length;
+  const quality = compress ? (target >= 25 ? 'high' : target >= 16 ? 'standard' : 'light') : 'original';
+  const qualityNote = {
+    original: must ? 'Shown exactly as it is on your disk. No re-encoding.' : 'Shown exactly as it is on your disk.',
+    light:    'Smallest file. Best when friends have slow internet.',
+    standard: 'Great balance of quality and speed. Recommended.',
+    high:     'Looks closest to the original. Needs faster internet.',
+  };
   return `<div class="prep-form" data-form="${it.id}">
-    ${i.audios.length > 1 ? `<label class="opt">Audio track<select data-o="audioIndex">${audioOpts}</select></label>` : ''}
+    ${i.audios.length > 1 ? `<label class="opt">Audio language<select data-o="audioIndex">${audioOpts}</select></label>` : ''}
     ${(() => { const a = i.audios.find(x => String(x.index) === String(o.audioIndex ?? i.defaultAudioIndex)) || i.audios[0]; return a && a.channels > 2; })() ? `<div class="opt"><div class="seg">
-      <label><input type="radio" name="am-${it.id}" data-o="audioMode" value="surround" ${o.audioMode !== 'stereo' ? 'checked' : ''}>Surround (5.1)</label>
+      <label><input type="radio" name="am-${it.id}" data-o="audioMode" value="surround" ${o.audioMode !== 'stereo' ? 'checked' : ''}>Surround sound</label>
       <label><input type="radio" name="am-${it.id}" data-o="audioMode" value="stereo" ${o.audioMode === 'stereo' ? 'checked' : ''}>Stereo</label></div></div>` : ''}
-    <div class="opt"><div class="seg">
-      <label><input type="radio" name="vm-${it.id}" data-o="compress" value="0" ${!compress ? 'checked' : ''}>${must ? 'Re-encode (high quality)' : 'Original quality'}</label>
-      <label><input type="radio" name="vm-${it.id}" data-o="compress" value="1" ${compress ? 'checked' : ''}>Compress for streaming</label></div>
-      <div class="hint" style="margin-top:6px">${compress
-        ? `Re-encodes the video with ${esc(enc)} so it needs less upload. At 20–25 Mbps, 4K still looks close to the original.`
-        : must ? `This video format has to be re-encoded with ${esc(enc)}.` : 'Video is copied bit-for-bit. Viewers get exactly what you have.'}</div></div>
-    ${compress ? `<label class="opt">Target bitrate<select data-o="targetMbps">${[8, 12, 16, 20, 25, 30, 40].map(n => `<option value="${n}" ${n === +target ? 'selected' : ''}>${n} Mbps${n <= 12 ? ' (1080p-ish)' : n >= 30 ? ' (near original)' : ''}</option>`).join('')}</select></label>` : ''}
-    <label class="check-row"><input type="checkbox" data-o="hls" ${hls ? 'checked' : ''}><span><b>Instant start on phones, tablets and computers</b>${appleHere ? ' · an Apple viewer is here' : ''}<br>Recommended. Playback becomes available after the first safe segments; the full browser copy finishes in the background.</span></label>
-    <div class="hint">${textSubs ? `${textSubs} text subtitle track${textSubs > 1 ? 's' : ''} will be included.` : 'No text subtitles in this file.'}${imgSubs ? ` ${imgSubs} image subtitle track${imgSubs > 1 ? 's' : ''} (PGS) can't be shown in browsers.` : ''}</div>
-    <div class="hint">The prepared copy is deleted when Watch Party stops, so it doesn't fill up your disk. Prepare it again next time (copying takes a few minutes, compressing longer).</div>
+    <div class="opt"><div class="opt-title">Picture quality</div><div class="seg quality-seg">
+      <label><input type="radio" name="vm-${it.id}" data-o="quality" value="original" ${quality === 'original' ? 'checked' : ''}>Original</label>
+      <label><input type="radio" name="vm-${it.id}" data-o="quality" value="light" ${quality === 'light' ? 'checked' : ''}>Light</label>
+      <label><input type="radio" name="vm-${it.id}" data-o="quality" value="standard" ${quality === 'standard' ? 'checked' : ''}>Standard</label>
+      <label><input type="radio" name="vm-${it.id}" data-o="quality" value="high" ${quality === 'high' ? 'checked' : ''}>High</label></div>
+      <div class="hint" style="margin-top:6px">${qualityNote[quality]}</div></div>
+    <label class="check-row"><input type="checkbox" data-o="hls" ${hls ? 'checked' : ''}><span><b>Start sooner for everyone</b>${appleHere ? ' · a phone or tablet is here' : ''}<br>Everyone can begin watching after the opening is ready, instead of waiting for the whole file.</span></label>
+    <div class="hint">${textSubs ? `${textSubs} subtitle track${textSubs > 1 ? 's' : ''} will be included.` : 'No subtitles found in this file.'}${imgSubs ? ` ${imgSubs} picture-based subtitle track${imgSubs > 1 ? 's' : ''} can't be shown in browsers.` : ''}</div>
+    <div class="hint">The prepared copy is cleaned up when Watch Party closes, so it doesn't fill your disk.</div>
     <div class="row end" style="margin-top:0"><button class="btn sm" data-act="closeprep" data-id="${it.id}">Cancel</button><button class="btn sm primary" data-act="prepare" data-id="${it.id}">Start</button></div>
   </div>`;
 }
@@ -2010,23 +2012,23 @@ function renderLibrary() {
         if (!S.prepOpen.has(it.id)) acts += `<button class="btn sm ghost" data-act="openprep" data-id="${it.id}">Options</button>`;
         if (isHost && it.prepared && it.prepared.mode !== 'subs' && !current) acts += `<button class="btn sm ghost" data-act="unprep" data-id="${it.id}" title="Delete the prepared copy to free up ${esc(it.prepared.sizeLabel)}">Delete copy</button>`;
         if (it.prepared && it.prepared.mode !== 'subs') status = status || (it.prepared.mode === 'hls'
-          ? `<div class="fine">Optimized for Safari, iPhone and iPad · ${esc(it.prepared.sizeLabel)}</div>`
-          : `<div class="fine">Prepared copy · ${esc(it.prepared.sizeLabel)} · ${it.prepared.bitrateMbps} Mbps · ${esc(it.prepared.audioLabel || '')}${it.prepared.compressed ? ' · compressed' : ''}${it.prepared.hls ? ' · instant stream' : ''}</div>`);
+          ? `<div class="fine">Ready for every device · ${esc(it.prepared.sizeLabel)}</div>`
+          : `<div class="fine">Ready to play · ${esc(it.prepared.sizeLabel)}${it.prepared.compressed ? ' · smaller for streaming' : ''}</div>`);
       } else if (plan.mode === 'unsupported') {
         tags.push(...plan.reasons.map(reasonTag));
       } else {
-        if (it.stalePrepared) tags.push({ tag: 'Old copy', bad: true, text: 'The copy made by the older version shows a black screen (Dolby Vision). Prepare it again to fix it; the old copy is replaced.' });
+        if (it.stalePrepared) tags.push({ tag: 'Old copy', bad: true, text: 'The copy made by an older version can show a black screen. Prepare it again to fix it; the old copy will be replaced.' });
         tags.push(...plan.reasons.map(reasonTag));
         const est = plan.mode === 'remux' ? ` (~${Math.max(1, Math.round(it.size / 120e6 / 60))} min)` : '';
         if (!S.prepOpen.has(it.id)) acts = `<button class="btn sm primary" data-act="quickprep" data-id="${it.id}">Prepare${est}</button><button class="btn sm ghost" data-act="openprep" data-id="${it.id}">Options</button>`;
       }
       const mbps = (it.prepared && it.prepared.bitrateMbps) || i.bitrateMbps;
       if (upload && mbps && mbps * viewers > upload * 0.85) {
-        tags.push({ tag: 'Upload too slow', bad: true, text: `This file is ${mbps} Mbps. ${viewers} viewer${viewers > 1 ? 's' : ''} need about ${Math.round(mbps * viewers)} Mbps of upload, and you have ${upload}. Use "Compress for streaming" in Options.` });
+        tags.push({ tag: 'Too big for your internet', bad: true, text: `This movie file is bigger than your internet can send out comfortably to ${viewers} viewer${viewers > 1 ? 's' : ''}. Open Options and pick a lower picture quality for smoother playback.` });
       }
       if (i.plan.mode === 'direct' && !it.prepared) {
         const ts = i.subs.filter(s => s.text).length;
-        if (ts) status = status || `<div class="fine">Has ${ts} subtitle track${ts > 1 ? 's' : ''}. Use Options to extract ${ts > 1 ? 'them' : 'it'}.</div>`;
+        if (ts) status = status || `<div class="fine">Includes ${ts} subtitle track${ts > 1 ? 's' : ''}. Open Options to turn them on.</div>`;
       }
     }
     return `<div class="movie ${current ? 'current' : ''}" data-movie="${it.id}">
@@ -2073,13 +2075,18 @@ $('#foldersSave').addEventListener('click', async () => {
     loadLibrary();
   } catch (e) { toast(e.message, { kind: 'error' }); }
 });
+const QUALITY_MBPS = { original: 0, light: 8, standard: 16, high: 25 };
 $('#libList').addEventListener('change', e => {
   const form = e.target.closest('[data-form]');
   if (!form) return;
   const id = form.dataset.form;
   const o = S.prepOpts.get(id) || {};
   const k = e.target.dataset.o;
-  if (k === 'compress') o.compress = e.target.value === '1';
+  if (k === 'quality') {
+    const q = e.target.value;
+    o.compress = q !== 'original';
+    o.targetMbps = QUALITY_MBPS[q] || 0;
+  }
   else if (k === 'hls') o.hls = e.target.checked;
   else if (k === 'audioIndex' || k === 'targetMbps') o[k] = +e.target.value;
   else if (k) o[k] = e.target.value;
@@ -2682,10 +2689,14 @@ function onAnimeResults(m) {
 }
 function showAnimeResults(q, list) {
   $('#animeStatus').textContent = list.length ? '' : `Nothing found for "${q}".`;
-  $('#animeResults').innerHTML = list.map(a => `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${esc(a.title)}">
+  $('#animeResults').innerHTML = list.map(a => {
+    const count = Math.min(Math.max(1, Number(a.episodes) || 1), 2000);
+    const epOpts = Array.from({ length: count }, (_, i) => `<option value="${i + 1}">Ep ${i + 1}</option>`).join('');
+    return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${esc(a.title)}">
     ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
-    <div><div class="t">${esc(a.title)}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
-    <div class="pick"><input type="number" class="anime-ep" min="1" ${a.episodes ? `max="${a.episodes}"` : ''} value="1" aria-label="Episode number"><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="btn sm primary anime-play">Play</button></div></div>`).join('');
+    <div class="meta"><div class="t">${esc(a.title)}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
+    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="sub">Sub</option><option value="dub">Dub</option></select><button type="button" class="btn sm primary anime-play">Play</button></div></div>`;
+  }).join('');
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
 $('#animeResults').addEventListener('click', e => {

@@ -634,22 +634,62 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   font-size: 11px;
   letter-spacing: .14em;
   color: var(--muted);
-  padding: 10px 0 6px;
-  margin: 10px 0 6px;
-  border-top: 1px solid transparent;
-  background:
-    linear-gradient(90deg, rgba(245,181,68,.35), transparent 60%) top left / 56px 1px no-repeat;
+  padding: 0;
+  margin: 0;
+  justify-content: flex-start;
+  gap: 10px;
+  background: none;
+  border: 0;
 }
 
-.svc-pick > summary { padding: 2px 0; transition: color .15s; }
-.svc-pick > summary:hover { color: var(--text); }
-.svc-pick > summary::before {
-  display: inline-grid; place-items: center;
-  width: 14px; height: 14px; margin-right: 4px;
-  color: var(--accent);
-  transition: transform .18s ease;
+.panel[data-panel="library"] .svc-pick {
+  position: relative;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0)),
+    rgba(15,17,21,.6);
+  transition: border-color .25s, box-shadow .3s, transform .18s;
+  isolation: isolate;
+  overflow: hidden;
 }
-.svc-pick[open] > summary::before { transform: rotate(90deg); content: '▸'; }
+.panel[data-panel="library"] .svc-pick::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: linear-gradient(135deg, rgba(245,181,68,0), rgba(74,184,255,0));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .3s, background .3s;
+  pointer-events: none;
+}
+.panel[data-panel="library"] .svc-pick::after {
+  content: '';
+  position: absolute; left: -40%; top: -60%; width: 50%; height: 220%;
+  background: linear-gradient(115deg, transparent 25%, rgba(245,181,68,.08) 50%, transparent 75%);
+  transform: translateX(-100%) skewX(-18deg);
+  transition: transform .9s ease;
+  pointer-events: none;
+}
+.panel[data-panel="library"] .svc-pick:hover {
+  border-color: rgba(245,181,68,.3);
+  box-shadow: 0 10px 30px -16px rgba(245,181,68,.3), inset 0 0 0 1px rgba(255,255,255,.02);
+  transform: translateY(-1px);
+}
+.panel[data-panel="library"] .svc-pick:hover::before { opacity: 1; background: linear-gradient(135deg, rgba(245,181,68,.55), rgba(74,184,255,.35)); }
+.panel[data-panel="library"] .svc-pick:hover::after { transform: translateX(360%) skewX(-18deg); }
+.panel[data-panel="library"] .svc-pick:focus-within { border-color: rgba(245,181,68,.45); }
+
+.panel[data-panel="library"] .svc-pick > summary { padding: 2px 0; transition: color .15s; justify-content: flex-start; }
+.panel[data-panel="library"] .svc-pick > summary:hover { color: var(--text); }
+.panel[data-panel="library"] .svc-pick > summary::before {
+  display: inline-grid; place-items: center;
+  width: 14px; height: 14px; margin-right: 2px;
+  color: var(--accent);
+  transition: transform .22s ease;
+}
+.panel[data-panel="library"] .svc-pick[open] > summary::before { transform: rotate(90deg); content: '▸'; }
 
 #animePick .yt-search { gap: 10px; margin-top: 8px; }
 #animePick .yt-search input {
@@ -768,49 +808,62 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 
 .anime-card .pick {
-  grid-row: 2; grid-column: 1 / -1;
+  grid-row: 2; grid-column: 2;
   margin: 0;
   padding-top: 10px;
   display: grid;
-  grid-template-columns: 64px 86px minmax(96px, 1fr);
+  grid-template-columns: minmax(78px, 1fr) minmax(72px, 1fr) minmax(78px, 1.2fr);
   gap: 8px;
   align-items: stretch;
+  min-width: 0;
 }
-.anime-card .pick input,
 .anime-card .pick select {
   width: 100%;
+  min-width: 0;
   height: 36px;
-  padding: 0 10px;
+  padding: 0 28px 0 12px;
   border-radius: 10px;
   border: 1px solid var(--border-2);
-  background: rgba(255,255,255,.03);
-  color: var(--text);
-  font: inherit;
-  font-weight: 600;
-  text-align: center;
-  transition: border-color .15s, background .15s, box-shadow .2s;
-}
-.anime-card .pick input:focus,
-.anime-card .pick select:focus {
-  outline: none;
-  border-color: rgba(245,181,68,.55);
-  background: rgba(245,181,68,.08);
-  box-shadow: 0 0 0 3px rgba(245,181,68,.14);
-}
-.anime-card .pick select {
-  appearance: none;
-  -webkit-appearance: none;
-  text-align: left;
-  padding-right: 26px;
   background:
     url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%23f5b544" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>')
     right 10px center / 10px no-repeat,
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0)),
     rgba(255,255,255,.03);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: .01em;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color .18s, background-color .18s, box-shadow .25s, transform .15s, color .18s;
 }
-.anime-card .pick input[type=number] { -moz-appearance: textfield; }
-.anime-card .pick input[type=number]::-webkit-inner-spin-button,
-.anime-card .pick input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.anime-card .pick select:hover {
+  border-color: rgba(245,181,68,.45);
+  background-color: rgba(245,181,68,.06);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px -8px rgba(245,181,68,.5);
+}
+.anime-card .pick select:focus {
+  outline: none;
+  border-color: rgba(245,181,68,.6);
+  background-color: rgba(245,181,68,.08);
+  box-shadow: 0 0 0 3px rgba(245,181,68,.18), 0 6px 14px -8px rgba(245,181,68,.5);
+}
+.anime-card .pick select option {
+  background: #15181e;
+  color: var(--text);
+  font-weight: 600;
+  padding: 6px;
+}
+.anime-card .pick select option:checked,
+.anime-card .pick select option:hover {
+  background: linear-gradient(0deg, rgba(245,181,68,.25), rgba(245,181,68,.25)), #1b2028;
+  color: var(--accent-2);
+}
 
 .anime-card .pick .anime-play {
   height: 36px;

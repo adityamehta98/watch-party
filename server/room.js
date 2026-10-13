@@ -577,7 +577,7 @@ class Room {
           stalls: Math.min(9999, Number(st.stalls) || 0), dev: String(st.dev || '').slice(0, 24),
         };
         if (client.status.error && !previous.error && client.capabilities?.nativeHls && this.movie?.kind === 'file' && !this.movie.hls) {
-          this.broadcastHosts({ type: 'toast', kind: 'error', text: `${client.name}'s Safari could not play this copy. Prepare it again with “Instant start” enabled.` });
+          this.broadcastHosts({ type: 'toast', kind: 'error', text: `${client.name}'s browser could not play this copy. Prepare it again with “Start sooner for everyone” enabled.` });
         }
         if (client.status.buffering) { if (!client.bufferingSince) client.bufferingSince = now; } else client.bufferingSince = null;
         if ((previous.at && previous.buffering !== client.status.buffering) || (!previous.at && client.status.buffering)) {
