@@ -1065,20 +1065,10 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  position: relative;
 }
-.anime-card .t[data-tip]:hover::before,
-.anime-card .t[data-tip]:hover::after {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 10px);
-  pointer-events: none;
-  z-index: 20;
-  animation: tip-rise .18s ease-out;
-}
-.anime-card .t[data-tip]:hover::before {
-  content: attr(data-tip);
-  width: max-content;
+.name-tip {
+  position: fixed;
+  z-index: 1200;
   max-width: 320px;
   padding: 10px 14px;
   border-radius: 10px;
@@ -1090,31 +1080,33 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   line-height: 1.35;
   letter-spacing: 0;
   white-space: normal;
+  pointer-events: none;
   box-shadow:
     0 14px 36px -14px rgba(0,0,0,.9),
     0 0 0 1px rgba(255,255,255,.03) inset,
     0 0 28px -10px rgba(245,181,68,.55);
-}
-.anime-card .t[data-tip]:hover::after {
-  content: '';
-  bottom: calc(100% + 4px);
-  left: 18px;
-  width: 10px; height: 10px;
-  background: #171b22;
-  border-right: 1px solid rgba(245,181,68,.4);
-  border-bottom: 1px solid rgba(245,181,68,.4);
-  transform: rotate(45deg);
+  animation: tip-rise .18s ease-out;
 }
 @keyframes tip-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-.anime-card .pick {
-  grid-template-columns: 1fr 1fr 40px;
-}
 
 .anime-card .pick select {
   color-scheme: dark;
   accent-color: var(--accent);
 }
+
+.anime-results {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  margin-right: -4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
+}
+.anime-results::-webkit-scrollbar { width: 8px; }
+.anime-results::-webkit-scrollbar-track { background: transparent; }
+.anime-results::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; }
+.anime-results::-webkit-scrollbar-thumb:hover { background: var(--border-2); }
 
 .anime-card .anime-play {
   display: inline-grid; place-items: center;

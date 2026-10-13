@@ -2717,6 +2717,32 @@ function showAnimeResults(q, list) {
   }).join('');
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
+
+const nameTip = Object.assign(document.createElement('div'), { className: 'name-tip', hidden: true });
+document.body.appendChild(nameTip);
+function placeNameTip(target) {
+  const text = target.dataset.tip || target.textContent;
+  nameTip.textContent = text;
+  nameTip.hidden = false;
+  const r = target.getBoundingClientRect();
+  const w = Math.min(320, nameTip.offsetWidth);
+  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+  const h = nameTip.offsetHeight;
+  const above = r.top - h - 10;
+  const top = above >= 8 ? above : r.bottom + 10;
+  nameTip.style.left = left + 'px';
+  nameTip.style.top = top + 'px';
+}
+$('#animeResults').addEventListener('pointerover', e => {
+  const t = e.target.closest('.anime-card .t');
+  if (!t || t.scrollWidth <= t.clientWidth + 1) return;
+  placeNameTip(t);
+});
+$('#animeResults').addEventListener('pointerout', e => {
+  if (e.target.closest('.anime-card .t') && !e.relatedTarget?.closest('.anime-card .t')) nameTip.hidden = true;
+});
+$('#animeResults').addEventListener('scroll', () => { nameTip.hidden = true; }, { passive: true });
+
 $('#animeResults').addEventListener('click', e => {
   const btn = e.target.closest('.anime-play');
   if (!btn) return;
