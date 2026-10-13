@@ -22,6 +22,8 @@ const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
 const anime = require('./anime');
+const remoteMedia = require('./remote-media');
+const { Catalog } = require('./catalog');
 const { cleanAppleExtensionUrl, migrateConfig } = require('./settings');
 const pwa = require('./pwa');
 
@@ -78,6 +80,9 @@ const DEFAULT_CONFIG = {
   cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
   safariExtensionUrl: '',   // optional App Store or TestFlight link shown to Apple-device guests
+  tmdbToken: '',            // TMDB API Read Access Token; never sent to guests
+  freeMedia: true,           // public-domain / permissively licensed Internet Archive titles
+  movieTvSources: [],       // host-authorized HLS/MP4 sources keyed by TMDB title and language
   room: {},
   adminKey: '',             // secret in the host page address (generated)
   roomKey: '',              // secret in the invite link (generated; kept, so the link stays the same)
@@ -121,8 +126,10 @@ const library = new Library({ config, tools: toolState, save });
 // YouTube search for guests with control (the host's page asks through /api/youtube/search)
 const ytFetch = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: () => fs.promises.readFile(process.env.WP_TEST_YT_HTML, 'utf8') }) : undefined;
 const ytSearchFn = q => youtube.search(q, ytFetch);
-const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q) });
 anime.init(config.adminKey); // sign the anime proxy links with the admin key
+remoteMedia.init(config.adminKey);
+const catalog = new Catalog({ config, remoteMedia });
+const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q), catalog });
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
 const turnCreds = { username: 'watchparty', password: randKey(18) };
@@ -246,6 +253,7 @@ async function info() {
     blocked: guard.list(),
     extensionDir: fs.existsSync(path.join(ROOT, 'extension', 'manifest.json')) ? path.join(ROOT, 'extension') : null,
     updatePending: updatePending(),
+    movieTv: { configured: catalog.configured(), tmdbConfigured: catalog.tmdbConfigured(), freeEnabled: catalog.freeEnabled(), sources: catalog.sourceCount() },
   };
 }
 function updatePending() { return fs.existsSync(path.join(ROOT, '_update', 'WatchParty.part00')); }
@@ -369,7 +377,7 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
 
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://megaplay.buzz; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://megaplay.buzz; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co https://image.tmdb.org; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -399,6 +407,26 @@ async function api(req, res, p) {
     const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
     try { return sendJson(res, 200, { results: await anime.search(q) }); }
     catch (e) { return sendJson(res, 502, { error: `Couldn't search anime right now (${e.message}).` }); }
+  }
+  if (p === '/api/catalog/search') {
+    const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+    try { return sendJson(res, 200, { results: await catalog.search(q) }); }
+    catch (e) { return sendJson(res, 502, { error: e.message }); }
+  }
+  if (p === '/api/catalog/details') {
+    const u = new URL(req.url, 'http://x');
+    try { return sendJson(res, 200, { result: await catalog.details(u.searchParams.get('type') || '', u.searchParams.get('id')) }); }
+    catch (e) { return sendJson(res, 502, { error: e.message }); }
+  }
+  if (p === '/api/catalog/season') {
+    const u = new URL(req.url, 'http://x');
+    try { return sendJson(res, 200, { result: await catalog.season(u.searchParams.get('id'), u.searchParams.get('season')) }); }
+    catch (e) { return sendJson(res, 502, { error: e.message }); }
+  }
+  if (p === '/api/catalog/providers') {
+    const u = new URL(req.url, 'http://x');
+    try { return sendJson(res, 200, { result: await catalog.providers(u.searchParams.get('type') || '', u.searchParams.get('id')) }); }
+    catch (e) { return sendJson(res, 502, { error: e.message }); }
   }
   if (p === '/api/library') return sendJson(res, 200, library.list());
   if (p === '/api/library/folders' && req.method === 'POST') return sendJson(res, 200, await library.setFolders(body.folders || []));
@@ -438,6 +466,10 @@ async function api(req, res, p) {
       const clean = cleanAppleExtensionUrl(raw);
       if (raw && !clean) return sendJson(res, 400, { error: 'Use an apps.apple.com or testflight.apple.com HTTPS link.' });
       config.safariExtensionUrl = clean;
+      room.broadcastSettings();
+    }
+    if ('tmdbToken' in body) {
+      config.tmdbToken = String(body.tmdbToken || '').trim().replace(/[\r\n\s]/g, '').slice(0, 1024);
       room.broadcastSettings();
     }
     save();
@@ -537,6 +569,47 @@ async function animeProxy(req, res, p, u) {
   } catch { return fail(502); }
 }
 
+async function catalogMediaProxy(req, res, p, u) {
+  const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
+  if (!role) return notFound(req, res, 'catalog media key');
+  const target = remoteMedia.parsePath(p);
+  const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
+  if (!target) return fail(404);
+  if (role !== 'host' && (!room.movie || room.movie.kind !== 'catalog' || !target.scope || target.scope !== room.movie.mediaScope)) return fail(404);
+  try {
+    if (target.kind === 'm3u8') {
+      const upstream = await remoteMedia.fetchUpstream(target);
+      if (!upstream.ok) return fail(upstream.status === 404 ? 404 : 502);
+      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
+      const clientId = u.searchParams.get('c'); if (clientId) auth.set('c', clientId);
+      const body = remoteMedia.rewriteM3u8(await upstream.text(), upstream.url || target.url, target, auth.toString());
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      return req.method === 'HEAD' ? res.end() : res.end(body);
+    }
+    if (target.kind === 'sub') {
+      const upstream = await remoteMedia.fetchUpstream(target);
+      if (!upstream.ok) return fail(upstream.status === 404 ? 404 : 502);
+      const body = remoteMedia.toVtt(await upstream.text());
+      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      return req.method === 'HEAD' ? res.end() : res.end(body);
+    }
+    const extra = req.headers.range ? { Range: req.headers.range } : {};
+    const upstream = await remoteMedia.fetchUpstream(target, extra);
+    if (!(upstream.ok || upstream.status === 206)) return fail(upstream.status === 404 ? 404 : 502);
+    const headers = { 'Cache-Control': 'private, max-age=30', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes' };
+    const contentType = upstream.headers.get('content-type'); if (contentType) headers['Content-Type'] = contentType;
+    const contentLength = upstream.headers.get('content-length'); if (contentLength) headers['Content-Length'] = contentLength;
+    const contentRange = upstream.headers.get('content-range'); if (contentRange) headers['Content-Range'] = contentRange;
+    res.writeHead(upstream.status === 206 ? 206 : 200, headers);
+    if (req.method === 'HEAD' || !upstream.body) return res.end();
+    const stream = remoteMedia.Readable.fromWeb(upstream.body);
+    stream.on('data', chunk => room.addBytes(u.searchParams.get('c'), chunk.length));
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    return stream.pipe(res);
+  } catch { return fail(502); }
+}
+
 async function handler(req, res) {
   let u, p;
   try { u = new URL(req.url, 'http://x'); p = decodeURIComponent(u.pathname); } catch { return notFound(req, res, 'bad url'); }
@@ -574,6 +647,7 @@ async function handler(req, res) {
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/media/')) return media(req, res, p, u);
     if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
+    if (p.startsWith('/catalog-media/')) return catalogMediaProxy(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
 
     if (PUBLIC_ASSETS.has(p)) {

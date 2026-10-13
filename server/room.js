@@ -20,13 +20,14 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch, animeSearch, animeResolve }) {
+  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog }) {
     this.config = config;
     this.library = library;
     this.save = save;
     this.ytSearch = ytSearch || null;
     this.animeSearch = animeSearch || anime.search;
     this.animeResolve = animeResolve || anime.resolveStream;
+    this.catalog = catalog || null;
     this.jobOwner = new Map(); // movie id -> who started preparing it
 
     if (!/^[A-Za-z0-9]{16,64}$/.test(String(config.roomKey || ''))) { config.roomKey = randKey(24); if (save) save(); }
@@ -196,7 +197,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '' };
+    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured() };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }
@@ -215,6 +216,15 @@ class Room {
         subs: (m.subs || []).map(s => ({ key: s.key, label: s.label, lang: s.lang, url: s.url })),
         intro: m.intro || null, outro: m.outro || null,
         anilistId: m.anilistId || null, malId: m.malId || null, episode: m.episode || null, episodes: m.episodes || null, language: m.language || null, animeTitle: m.animeTitle || null,
+        browsing: false, by: m.by || null, strict: false };
+    }
+    if (m.kind === 'catalog') {
+      return { id: m.id, kind: 'catalog', service: 'catalog', serviceName: 'Movies & TV', title: m.title, duration: m.duration || null,
+        url: m.urlPath || null, hls: m.hlsPath || null, progressive: false,
+        subs: (m.subtitles || []).map(s => ({ key: s.key, label: s.label, lang: s.lang, url: s.url })),
+        language: m.language, languageLabel: m.languageLabel, languages: m.languages || [], quality: m.quality || null,
+        catalogRef: m.catalogRef, catalogTitle: m.catalogTitle, hasNext: !!m.hasNext,
+        attribution: m.attribution || null,
         browsing: false, by: m.by || null, strict: false };
     }
     if (m.kind !== 'file') {
@@ -487,6 +497,30 @@ class Room {
     this.system(`Now showing "${title}" (Anime)`);
   }
 
+  selectCatalog(client, msg) {
+    if (!this.canChoose(client) || !this.catalog) return;
+    let resolved;
+    try { resolved = this.catalog.resolve(msg.ref || {}, msg.language); }
+    catch (error) { this.toast(client, error.message, 'error'); return; }
+    const base = String(msg.title || 'Movies & TV').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120) || 'Movies & TV';
+    const ref = resolved.ref;
+    const title = ref.type === 'tv' ? `${base} · S${ref.season} E${ref.episode}` : base;
+    const refKey = ref.type === 'free' ? `free:${ref.freeId}` : `${ref.type}:${ref.tmdbId}:${ref.season || 0}:${ref.episode || 0}`;
+    const previousRef = this.movie?.kind === 'catalog' ? this.movie.catalogRef : null;
+    const previousKey = previousRef ? (previousRef.type === 'free' ? `free:${previousRef.freeId}` : `${previousRef.type}:${previousRef.tmdbId}:${previousRef.season || 0}:${previousRef.episode || 0}`) : '';
+    const sameTitle = previousKey === refKey;
+    const position = sameTitle ? this.currentPosition() : 0;
+    const id = 'c' + crypto.createHash('sha1').update(`${refKey}:${resolved.sourceId}`).digest('hex').slice(0, 11);
+    if (this.movie && this.movie.id === id) return;
+    this.movie = { id, kind: 'catalog', service: 'catalog', serviceName: 'Movies & TV', title,
+      duration: resolved.duration, hlsPath: resolved.hlsPath, urlPath: resolved.urlPath, subtitles: resolved.subtitles,
+      language: resolved.language, languageLabel: resolved.languageLabel, languages: resolved.languages, quality: resolved.quality,
+      catalogRef: ref, catalogTitle: base, mediaScope: resolved.sourceId, hasNext: resolved.hasNext, attribution: resolved.attribution || null, browsing: false, by: client.name, strict: false };
+    this.broadcast({ type: 'movie', movie: this.publicMovie() });
+    this.setState({ movieId: id, playing: false, position, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
+    this.system(sameTitle ? `${client.name} switched "${title}" to ${resolved.languageLabel}` : `Now showing "${title}" (${resolved.languageLabel})`);
+  }
+
   // The host's player learned the real title / length of a streaming title.
   movieMeta(client, msg) {
     const m = this.movie;
@@ -680,6 +714,7 @@ class Room {
         case 'select-movie': return this.selectMovie(client, msg.id);
         case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
         case 'select-anime': return this.selectAnime(client, msg);
+        case 'select-catalog': return this.selectCatalog(client, msg);
         case 'movie-meta': return this.movieMeta(client, msg);
         case 'lib-list': if (!isHost) this.send(client.ws, { type: 'library', library: this.guestLibrary() }); return;
         case 'lib-prepare': {
@@ -726,6 +761,24 @@ class Room {
           clearTimeout(client.animeTimer);
           const wait = client.lastAnime ? 1000 - (Date.now() - client.lastAnime) : 0;
           if (wait > 0) client.animeTimer = setTimeout(run, wait); else run();
+          return;
+        }
+        case 'catalog-query': {
+          if (isHost || !this.catalog) return;
+          const requestId = String(msg.requestId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+          if (!requestId) return;
+          const run = async () => {
+            try {
+              let result;
+              if (msg.op === 'search') result = await this.catalog.search(String(msg.q || '').slice(0, 150));
+              else if (msg.op === 'details') result = await this.catalog.details(String(msg.mediaType || ''), Number(msg.tmdbId));
+              else if (msg.op === 'season') result = await this.catalog.season(Number(msg.tmdbId), Number(msg.season));
+              else if (msg.op === 'providers') result = await this.catalog.providers(String(msg.mediaType || ''), Number(msg.tmdbId));
+              else throw new Error('Unknown catalog request.');
+              this.send(client.ws, { type: 'catalog-response', requestId, result });
+            } catch (error) { this.send(client.ws, { type: 'catalog-response', requestId, error: error.message }); }
+          };
+          run();
           return;
         }
         default:
