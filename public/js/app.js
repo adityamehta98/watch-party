@@ -2694,8 +2694,44 @@ $('#animeResults').addEventListener('click', e => {
   const card = btn.closest('.anime-card');
   const ep = Math.max(1, parseInt(card.querySelector('.anime-ep').value, 10) || 1);
   const lang = card.querySelector('.anime-lang').value === 'dub' ? 'dub' : 'sub';
-  conn.send({ type: 'select-anime', anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title: card.dataset.title });
+  const title = card.dataset.title || 'Anime';
+  showTuneIn(`${title} · Ep ${ep}${lang === 'dub' ? ' (Dub)' : ''}`);
+  conn.send({ type: 'select-anime', anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title });
 });
+
+const tuneIn = { el: null, title: null, steps: null, until: 0, timer: 0, step: 0 };
+function showTuneIn(label) {
+  tuneIn.el ||= $('#tuneIn');
+  tuneIn.title ||= $('#tuneInTitle');
+  tuneIn.steps ||= [...$('#tuneInSteps').querySelectorAll('.s')];
+  if (!tuneIn.el) return;
+  tuneIn.el.hidden = false;
+  tuneIn.el.classList.remove('leaving');
+  tuneIn.title.textContent = label;
+  tuneIn.until = performance.now() + 2200;
+  tuneIn.step = 0;
+  tuneIn.steps.forEach(s => s.classList.remove('on', 'done'));
+  tuneIn.steps[0].classList.add('on');
+  clearInterval(tuneIn.timer);
+  tuneIn.timer = setInterval(() => {
+    if (tuneIn.step >= tuneIn.steps.length - 1) return clearInterval(tuneIn.timer);
+    tuneIn.steps[tuneIn.step].classList.remove('on');
+    tuneIn.steps[tuneIn.step].classList.add('done');
+    tuneIn.step++;
+    tuneIn.steps[tuneIn.step].classList.add('on');
+  }, 650);
+}
+function hideTuneIn(force = false) {
+  if (!tuneIn.el || tuneIn.el.hidden) return;
+  const now = performance.now();
+  if (!force && now < tuneIn.until) return setTimeout(() => hideTuneIn(), tuneIn.until - now);
+  clearInterval(tuneIn.timer);
+  if (tuneIn.steps) tuneIn.steps.forEach((s, i) => { s.classList.remove('on'); if (i < tuneIn.steps.length) s.classList.add('done'); });
+  tuneIn.el.classList.add('leaving');
+  setTimeout(() => { tuneIn.el.hidden = true; tuneIn.el.classList.remove('leaving'); }, 350);
+}
+video.addEventListener('playing', () => hideTuneIn());
+video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTuneIn(); });
 
 function renderAnimeOverlay() {
   const button = $('#animeNext');

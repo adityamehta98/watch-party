@@ -144,6 +144,28 @@
         <div class="stage-notice" id="stageNotice" hidden></div>
         <div class="osd" id="osd" hidden aria-live="polite"></div>
         <button class="unmute-pill" id="unmutePill" type="button" hidden><svg><use href="#i-mute"/></svg>Tap to turn sound on</button>
+        <div class="tune-in" id="tuneIn" hidden aria-live="polite">
+          <div class="tune-in-core">
+            <div class="tune-in-ring"></div>
+            <div class="tune-in-ring r2"></div>
+            <div class="tune-in-ring r3"></div>
+            <div class="tune-in-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M8 5l12 7-12 7z" fill="currentColor"/></svg>
+            </div>
+            <div class="tune-in-orbit"><span></span><span></span><span></span></div>
+          </div>
+          <div class="tune-in-grid" aria-hidden="true"></div>
+          <div class="tune-in-text">
+            <div class="tune-in-eyebrow">ESTABLISHING STREAM</div>
+            <div class="tune-in-title" id="tuneInTitle">Tuning in</div>
+            <div class="tune-in-steps" id="tuneInSteps">
+              <span class="s" data-s="1">resolve</span>
+              <span class="s" data-s="2">manifest</span>
+              <span class="s" data-s="3">segments</span>
+              <span class="s" data-s="4">play</span>
+            </div>
+          </div>
+        </div>
 
         <div class="reactions-layer" id="reactionsLayer" aria-hidden="true"></div>
         <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -265,8 +287,7 @@
             </details>
           </details>
           <details class="svc-pick" id="animePick">
-            <summary class="section-label">Anime — no extension (works on iPhone &amp; iPad)</summary>
-            <p class="fine">Search, pick an episode, and it plays right here in sync for everyone. No extension and no sign-in; subtitles or dub where available.</p>
+            <summary class="section-label">Anime</summary>
             <form class="yt-search" id="animeForm" autocomplete="off"><input id="animeQuery" placeholder="Search anime, e.g. Spy x Family" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
             <div class="yt-status fine" id="animeStatus"></div>
             <div class="anime-results" id="animeResults"></div>
