@@ -5,7 +5,7 @@ import { playbackCapabilities, deliverySources, reconcileDeliverySources } from 
 import { FilePlayback } from './file-playback.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
-import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
+import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -233,6 +233,7 @@ function wire() {
   conn.on('library', m => { if (isHost || !m.library) return; S.library = m.library; renderLibrary(); });
   conn.on('yt-results', m => onYtResults(m));
   conn.on('anime-results', m => onAnimeResults(m));
+  conn.on('catalog-response', m => onCatalogResponse(m));
   conn.on('job', m => updateJob(m.id, m.job));
   conn.on('network', () => refreshInfoSoon());
   conn.on('link-changed', () => { refreshInfo().then(() => openInvite()); toast('New invite link created. Share it with your guests again.'); });
@@ -279,8 +280,8 @@ function teardownMedia() {
 const trackEls = new Map();
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
-// Plays in the shared <video> as a direct file or native HLS (library movie or anime).
-const isNativeMovie = movie => { const k = kindOf(movie); return k === 'file' || k === 'anime'; };
+// Plays in the shared <video> as a direct file or native HLS.
+const isNativeMovie = movie => { const k = kindOf(movie); return k === 'file' || k === 'anime' || k === 'catalog'; };
 
 // Visual effects are local-only: policy inputs, sampled colors and preferences never leave this browser.
 const visualPrefs = { ambient: store.get('wp.ambient', true), saver: store.get('wp.saver', false) };
@@ -680,6 +681,13 @@ function renderNowPlaying() {
   const m = S.movie;
   if (!m) { el.innerHTML = `<span class="muted">${isHost ? 'Pick a movie from the library' : 'Waiting for the host'}</span>`; return; }
   const chips = [];
+  if (kindOf(m) === 'catalog') {
+    if (m.languageLabel) chips.push(`<span class="chip">${esc(m.languageLabel)}</span>`);
+    if (m.quality) chips.push(`<span class="chip">${m.quality >= 2160 ? '4K' : `${Number(m.quality)}p`}</span>`);
+    if (m.attribution?.provider) chips.push(`<span class="chip hide-sm">${esc(m.attribution.licenseLabel || m.attribution.provider)}</span>`);
+    el.innerHTML = `<span class="title">${esc(m.title || 'Movies & TV')}</span>${chips.join('')}`;
+    return;
+  }
   if (kindOf(m) !== 'file') {
     el.innerHTML = `<span class="title">${esc(m.title || serviceName(m))}</span><span class="chip">${esc(serviceName(m))}</span>`;
     return;
@@ -1778,6 +1786,8 @@ function renderSettings() {
   if (document.activeElement !== mg) mg.value = s.maxGuests || 8;
   const safariUrl = $('#safariExtensionUrl');
   if (document.activeElement !== safariUrl) safariUrl.value = s.safariExtensionUrl || S.info?.settings?.safariExtensionUrl || '';
+  const tmdbState = $('#tmdbTokenState');
+  if (tmdbState) tmdbState.textContent = S.info?.movieTv?.tmdbConfigured ? `TMDB connected · ${S.info?.movieTv?.sources || 0} authorized source${S.info?.movieTv?.sources === 1 ? '' : 's'}` : 'Optional · free catalog is active';
   const i = S.info;
   const box = $('#netBox');
   if (!i || !box) return;
@@ -1866,6 +1876,20 @@ $('#safariExtensionSave').addEventListener('click', async () => {
     toast(S.settings.safariExtensionUrl ? 'Apple install link saved.' : 'Apple install link removed.', { timeout: 2500 });
     renderSettings(); renderServicePanel();
   } catch (e) { toast(e.message, { kind: 'error', timeout: 5000 }); button.disabled = false; }
+});
+$('#tmdbTokenSave').addEventListener('click', async () => {
+  const button = $('#tmdbTokenSave'), input = $('#tmdbToken');
+  const token = input.value.trim();
+  if (!token && S.info?.movieTv?.tmdbConfigured && !confirm('Remove the saved TMDB token?')) return;
+  button.disabled = true;
+  try {
+    S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ tmdbToken: token }) });
+    S.settings = S.info.settings || S.settings;
+    input.value = '';
+    toast(token ? 'TMDB catalog connected.' : 'TMDB token removed.', { timeout: 2500 });
+    renderSettings();
+  } catch (e) { toast(e.message, { kind: 'error', timeout: 5000 }); }
+  finally { button.disabled = false; }
 });
 $('#rotateBtn').addEventListener('click', () => { if (confirm('Make a new invite link? Everyone currently watching will be disconnected and will need the new link.')) conn.send({ type: 'rotate-link' }); });
 
@@ -2683,6 +2707,173 @@ $('#ytClose').addEventListener('click', closeYouTube);
 $('#ytOpen').addEventListener('click', openYouTube);
 $('#ytBrowser').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeYouTube(); } });
 
+let catalogSeq = 0, catalogRequestSeq = 0;
+const catalogRequests = new Map();
+const catalogItems = new Map();
+
+function onCatalogResponse(message) {
+  const pending = catalogRequests.get(message.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  catalogRequests.delete(message.requestId);
+  if (message.error) pending.reject(new Error(message.error)); else pending.resolve(message.result);
+}
+
+function catalogRequest(op, params = {}) {
+  if (isHost) {
+    if (op === 'search') return api(`/api/catalog/search?q=${encodeURIComponent(params.q || '')}`).then(data => data.results || []);
+    if (op === 'details') return api(`/api/catalog/details?type=${encodeURIComponent(params.mediaType || '')}&id=${encodeURIComponent(params.tmdbId || '')}`).then(data => data.result);
+    if (op === 'season') return api(`/api/catalog/season?id=${encodeURIComponent(params.tmdbId || '')}&season=${encodeURIComponent(params.season || '')}`).then(data => data.result);
+    if (op === 'providers') return api(`/api/catalog/providers?type=${encodeURIComponent(params.mediaType || '')}&id=${encodeURIComponent(params.tmdbId || '')}`).then(data => data.result);
+  }
+  const requestId = `ct${Date.now().toString(36)}${(++catalogRequestSeq).toString(36)}`;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { catalogRequests.delete(requestId); reject(new Error('Movies & TV request timed out.')); }, 15000);
+    catalogRequests.set(requestId, { resolve, reject, timer });
+    conn.send({ type: 'catalog-query', op, requestId, ...params });
+  });
+}
+
+const languageOptions = languages => (languages || []).map(language => `<option value="${esc(language.code)}">${esc(language.label)}${language.bestQuality ? ` · ${language.bestQuality >= 2160 ? '4K' : language.bestQuality + 'p'}` : ''}</option>`).join('');
+
+function showCatalogResults(query, list) {
+  const results = $('#catalogResults');
+  catalogItems.clear();
+  $('#catalogStatus').textContent = list.length ? '' : `Nothing found for "${query}".`;
+  results.innerHTML = list.map(item => {
+    const key = item.type === 'free' ? `free:${item.freeId}` : `${item.type}:${item.tmdbId}`;
+    catalogItems.set(key, item);
+    const ready = !!item.hasSources;
+    const meta = [item.type === 'tv' ? 'Series' : item.type === 'free' ? 'Free & legal' : 'Movie', item.year, item.rating ? `★ ${Number(item.rating).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+    const attribution = item.attribution ? `<div class="catalog-attribution">${item.attribution.creator ? `${esc(item.attribution.creator)} · ` : ''}<a href="${esc(item.attribution.licenseUrl)}" target="_blank" rel="noopener noreferrer">${esc(item.attribution.licenseLabel)}</a> · <a href="${esc(item.attribution.sourcePage)}" target="_blank" rel="noopener noreferrer">Internet Archive</a></div>` : '';
+    return `<article class="anime-card catalog-card${item.poster ? '' : ' no-poster'}" data-catalog-key="${esc(key)}">
+      ${item.poster ? `<img src="${esc(item.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+      <div class="meta"><div class="t" data-tip="${esc(item.title)}">${esc(item.title)}</div><div class="m">${esc(meta)}</div>${attribution}</div>
+      ${ready
+        ? `<div class="catalog-actions"><button type="button" class="btn sm primary catalog-open">${item.type === 'tv' ? 'Choose episode' : 'Choose language'}</button><span class="source-note ready">Ready to play</span></div>`
+        : item.type === 'free'
+          ? `<div class="catalog-actions"><button type="button" class="btn sm catalog-open" disabled>${item.type === 'tv' ? 'Choose episode' : 'Choose language'}</button><span class="source-note">No authorized source configured</span></div>`
+          : `<div class="catalog-actions catalog-watch" data-type="${item.type}" data-tmdb="${item.tmdbId}"><span class="watch-label">Where to watch…</span></div>`}
+      <div class="catalog-picker" hidden></div>
+    </article>`;
+  }).join('');
+  results.scrollTop = 0;
+  results.querySelectorAll('.catalog-watch').forEach(fillWatchProviders);
+}
+
+const WATCH_FALLBACK = ['netflix', 'prime', 'max', 'disney', 'hulu'];
+function watchSvcButton(id, name) {
+  return `<button type="button" class="btn sm watch-svc" data-svc="${esc(id)}" style="--svc:${SERVICE_COLORS[id] || 'var(--accent)'}">${esc(name || SERVICE_NAMES[id] || id)}</button>`;
+}
+async function fillWatchProviders(el) {
+  try {
+    const list = await catalogRequest('providers', { mediaType: el.dataset.type, tmdbId: el.dataset.tmdb });
+    const services = (Array.isArray(list) ? list : []).filter(s => SERVICE_SEARCH[s.id]);
+    if (services.length) el.innerHTML = `<span class="watch-label">Watch together on</span>` + services.map(s => watchSvcButton(s.id, s.name)).join('');
+    else el.innerHTML = `<span class="watch-label">Not on a supported service here — open one to look:</span>` + WATCH_FALLBACK.map(id => watchSvcButton(id)).join('');
+  } catch {
+    el.innerHTML = `<span class="watch-label">Couldn\u2019t load services — open one to look:</span>` + WATCH_FALLBACK.map(id => watchSvcButton(id)).join('');
+  }
+}
+
+async function catalogSearch(query) {
+  const q = String(query || '').trim();
+  if (!q) return;
+  const seq = ++catalogSeq;
+  $('#catalogStatus').textContent = `Searching for "${q}"…`;
+  $('#catalogResults').innerHTML = '';
+  try {
+    const list = await catalogRequest('search', { q });
+    if (seq === catalogSeq) showCatalogResults(q, list || []);
+  } catch (error) { if (seq === catalogSeq) $('#catalogStatus').textContent = error.message; }
+}
+
+function moviePicker(card, item) {
+  const picker = card.querySelector('.catalog-picker');
+  picker.hidden = false;
+  picker.innerHTML = `<select class="catalog-language" aria-label="Audio language">${languageOptions(item.languages)}</select><button type="button" class="btn primary catalog-play">Play in room</button>`;
+  card._catalogRef = item.type === 'free' ? { type: 'free', freeId: item.freeId } : { type: 'movie', tmdbId: item.tmdbId };
+}
+
+async function loadCatalogSeason(card, item, seasonNumber) {
+  const picker = card.querySelector('.catalog-picker');
+  const status = picker.querySelector('.catalog-picker-status');
+  status.textContent = 'Loading episodes…';
+  try {
+    const season = await catalogRequest('season', { tmdbId: item.tmdbId, season: seasonNumber });
+    const episodeSelect = picker.querySelector('.catalog-episode');
+    episodeSelect.innerHTML = season.episodes.map(episode => `<option value="${episode.number}" data-languages="${esc(JSON.stringify(episode.languages || []))}">E${episode.number} · ${esc(episode.name)}</option>`).join('');
+    const firstReady = [...episodeSelect.options].find(option => JSON.parse(option.dataset.languages || '[]').length) || episodeSelect.options[0];
+    if (firstReady) episodeSelect.value = firstReady.value;
+    updateCatalogEpisode(card, item);
+    status.textContent = '';
+  } catch (error) { status.textContent = error.message; }
+}
+
+function updateCatalogEpisode(card, item) {
+  const picker = card.querySelector('.catalog-picker');
+  const season = Number(picker.querySelector('.catalog-season').value);
+  const episodeSelect = picker.querySelector('.catalog-episode');
+  const option = episodeSelect.selectedOptions[0];
+  const episode = Number(episodeSelect.value);
+  const languages = option ? JSON.parse(option.dataset.languages || '[]') : [];
+  const language = picker.querySelector('.catalog-language');
+  language.innerHTML = languageOptions(languages);
+  language.disabled = !languages.length;
+  picker.querySelector('.catalog-play').disabled = !languages.length;
+  picker.querySelector('.catalog-picker-status').textContent = languages.length ? '' : 'No authorized source is configured for this episode.';
+  card._catalogRef = { type: 'tv', tmdbId: item.tmdbId, season, episode };
+}
+
+async function tvPicker(card, item) {
+  const picker = card.querySelector('.catalog-picker');
+  picker.hidden = false;
+  picker.innerHTML = '<p class="catalog-picker-status fine">Loading seasons…</p>';
+  try {
+    const details = await catalogRequest('details', { mediaType: 'tv', tmdbId: item.tmdbId });
+    const seasons = details.seasons || [];
+    if (!seasons.length) throw new Error('No regular seasons were found.');
+    picker.innerHTML = `<select class="catalog-season" aria-label="Season">${seasons.map(season => `<option value="${season.number}">${esc(season.name)}${season.available ? ' · ready' : ''}</option>`).join('')}</select>
+      <select class="catalog-episode" aria-label="Episode"></select><select class="catalog-language" aria-label="Audio language"></select><button type="button" class="btn primary catalog-play" disabled>Play in room</button><p class="catalog-picker-status fine"></p>`;
+    const firstReady = seasons.find(season => season.available) || seasons[0];
+    picker.querySelector('.catalog-season').value = String(firstReady.number);
+    await loadCatalogSeason(card, item, firstReady.number);
+  } catch (error) { picker.innerHTML = `<p class="catalog-picker-status fine">${esc(error.message)}</p>`; }
+}
+
+$('#catalogForm').addEventListener('submit', event => { event.preventDefault(); catalogSearch($('#catalogQuery').value); });
+$('#catalogResults').addEventListener('change', event => {
+  const card = event.target.closest('.catalog-card');
+  const item = card && catalogItems.get(card.dataset.catalogKey);
+  if (!item) return;
+  if (event.target.matches('.catalog-season')) loadCatalogSeason(card, item, Number(event.target.value));
+  if (event.target.matches('.catalog-episode')) updateCatalogEpisode(card, item);
+});
+$('#catalogResults').addEventListener('click', event => {
+  const card = event.target.closest('.catalog-card');
+  const item = card && catalogItems.get(card.dataset.catalogKey);
+  if (!item) return;
+  if (event.target.closest('.catalog-open')) {
+    if (item.type === 'tv') tvPicker(card, item); else moviePicker(card, item);
+    return;
+  }
+  const svcBtn = event.target.closest('.watch-svc');
+  if (svcBtn) {
+    const id = svcBtn.dataset.svc;
+    const url = SERVICE_SEARCH[id] ? SERVICE_SEARCH[id](encodeURIComponent(item.title)) : SERVICE_HOMES[id];
+    if (!url) return;
+    showTuneIn(`${item.title} · ${SERVICE_NAMES[id] || 'Service'}`);
+    conn.send({ type: 'select-url', url, browsing: true, title: item.title });
+    return;
+  }
+  if (!event.target.closest('.catalog-play') || !card._catalogRef) return;
+  const language = card.querySelector('.catalog-language').value;
+  if (!language) return;
+  const label = card.querySelector('.catalog-language').selectedOptions[0]?.textContent || language;
+  showTuneIn(`${item.title} · ${label}`);
+  conn.send({ type: 'select-catalog', ref: card._catalogRef, language, title: item.title });
+});
+
 let animeSeq = 0, animePendingQ = null;
 async function animeSearch(q) {
   q = String(q || '').trim();
@@ -2791,7 +2982,22 @@ video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTune
 function renderAnimeOverlay() {
   const button = $('#animeNext');
   const toggle = $('#animeLangToggle');
+  const catalogToggle = $('#catalogLangToggle');
   const m = S.movie;
+  if (m && kindOf(m) === 'catalog') {
+    toggle.hidden = true;
+    const languages = Array.isArray(m.languages) ? m.languages : [];
+    catalogToggle.hidden = languages.length < 2;
+    catalogToggle.innerHTML = languages.map(language => `<button type="button" data-lang="${esc(language.code)}" aria-pressed="${language.code === m.language}">${esc(language.label)}</button>`).join('');
+    const isSeries = m.catalogRef?.type === 'tv';
+    button.hidden = !isSeries;
+    button.disabled = !m.hasNext;
+    button.textContent = m.hasNext ? `Next episode · ${Number(m.catalogRef.episode) + 1}` : `Episode ${Number(m.catalogRef?.episode) || 1} · last available`;
+    return;
+  }
+  catalogToggle.hidden = true;
+  catalogToggle.innerHTML = '';
+  button.hidden = false;
   const isAnime = m && (kindOf(m) === 'anime' || kindOf(m) === 'megaplay');
   if (!isAnime) { button.disabled = true; button.textContent = 'Next episode'; toggle.hidden = true; return; }
   const episode = Math.max(1, Number(m.episode) || 1);
@@ -2805,10 +3011,24 @@ function renderAnimeOverlay() {
 }
 $('#animeNext').addEventListener('click', () => {
   const m = S.movie;
+  if (m && kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv' && m.hasNext) {
+    conn.send({ type: 'select-catalog', ref: { ...m.catalogRef, episode: Number(m.catalogRef.episode) + 1 }, language: m.language, title: m.catalogTitle || 'TV series' });
+    return;
+  }
   if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
   conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+});
+$('#catalogLangToggle').addEventListener('click', e => {
+  const button = e.target.closest('[data-lang]');
+  const m = S.movie;
+  if (!button || !m || kindOf(m) !== 'catalog' || !m.catalogRef) return;
+  if (!canControl()) return noPerm('playback');
+  const language = button.dataset.lang;
+  if (!language || language === m.language) return;
+  showTuneIn(`${m.catalogTitle || m.title} · ${button.textContent}`);
+  conn.send({ type: 'select-catalog', ref: m.catalogRef, language, title: m.catalogTitle || m.title });
 });
 $('#animeLangToggle').addEventListener('click', e => {
   const b = e.target.closest('.l-opt');

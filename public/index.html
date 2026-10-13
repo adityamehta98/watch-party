@@ -187,6 +187,7 @@
           <button class="ctrl" id="animeChatBtn" type="button" title="Chat" aria-label="Chat"><svg><use href="#i-chat"/></svg></button>
         </div>
         <div class="anime-actions">
+          <div class="catalog-lang-toggle" id="catalogLangToggle" role="tablist" aria-label="Audio language" hidden></div>
           <div class="anime-lang-toggle" id="animeLangToggle" role="tablist" aria-label="Audio language" hidden>
             <button class="l-opt" type="button" data-lang="sub" aria-pressed="false">Sub</button>
             <button class="l-opt" type="button" data-lang="dub" aria-pressed="false">Dub</button>
@@ -294,6 +295,14 @@
               <div class="row end"><button class="btn sm primary" id="streamGo" type="button">Show in room</button></div>
             </details>
           </details>
+          <details class="svc-pick" id="catalogPick">
+            <summary class="section-label">Movies &amp; TV</summary>
+            <p class="fine catalog-intro">Search movies and TV, including free Public Domain and Creative Commons titles from the Internet Archive. Choose a language and play in Watch Party's own synchronized player. No extension needed.</p>
+            <form class="yt-search" id="catalogForm" autocomplete="off"><input id="catalogQuery" placeholder="Search movies and TV series" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
+            <div class="yt-status fine" id="catalogStatus"></div>
+            <div class="catalog-results" id="catalogResults"></div>
+            <p class="tmdb-credit">Free results are limited to explicitly licensed items in curated Internet Archive collections. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+          </details>
           <details class="svc-pick" id="animePick">
             <summary class="section-label">Anime</summary>
             <form class="yt-search" id="animeForm" autocomplete="off"><input id="animeQuery" placeholder="Search anime, e.g. Spy x Family" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
@@ -320,6 +329,11 @@
 
           <h3>Playback</h3>
           <label class="switch-row"><span><b>Pause for everyone when someone buffers</b><small>Keeps the room together if one connection falls behind.</small></span><input type="checkbox" class="switch" data-setting="autoWait"></label>
+
+          <h3>Movies &amp; TV catalog</h3>
+          <label class="field"><span>TMDB API Read Access Token</span><input id="tmdbToken" type="password" autocomplete="off" placeholder="Paste the token from your TMDB API settings" spellcheck="false"></label>
+          <div class="row"><button class="btn sm primary" id="tmdbTokenSave" type="button">Save TMDB token</button><span class="fine" id="tmdbTokenState"></span></div>
+          <p class="fine">Optional: free Public Domain and Creative Commons search works without this token. TMDB adds mainstream metadata; authorized playback sources are read from <code>movieTvSources</code> in <code>config.json</code>. The token stays on this PC.</p>
 
           <h3>New guests can…</h3>
           <label class="switch-row"><span><b>Play, pause and seek</b></span><input type="checkbox" class="switch" data-default="playback"></label>

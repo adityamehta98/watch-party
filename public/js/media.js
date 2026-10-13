@@ -527,6 +527,18 @@ export const SERVICE_HOMES = {
   peacock: 'https://www.peacocktv.com/watch/home', crunchyroll: 'https://www.crunchyroll.com/', paramount: 'https://www.paramountplus.com/home/',
   max: 'https://play.max.com/', disney: 'https://www.disneyplus.com/home', appletv: 'https://tv.apple.com/',
 };
+// Search deep-links per service: opens the service at a search for the title; the host then picks it and the room follows.
+export const SERVICE_SEARCH = {
+  netflix: q => `https://www.netflix.com/search?q=${q}`,
+  prime: q => `https://www.primevideo.com/search?phrase=${q}`,
+  hulu: q => `https://www.hulu.com/search?q=${q}`,
+  peacock: q => `https://www.peacocktv.com/watch/search?q=${q}`,
+  crunchyroll: q => `https://www.crunchyroll.com/search?q=${q}`,
+  paramount: q => `https://www.paramountplus.com/search/?query=${q}`,
+  max: q => `https://play.max.com/search?q=${q}`,
+  disney: q => `https://www.disneyplus.com/search?q=${q}`,
+  appletv: q => `https://tv.apple.com/search?term=${q}`,
+};
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
 export const REQUIRED_EXT_VERSION = '1.14.1';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };

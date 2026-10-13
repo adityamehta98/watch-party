@@ -21,7 +21,7 @@ export function deliverySources(movie, capabilities, key, clientId) {
     // Only Safari's native HLS is trusted (Chrome's fails on growing playlists).
     const appleNative = capabilities?.hls && capabilities.nativeHlsPreferred;
 
-    const remoteHls = movie.kind === 'anime';
+    const remoteHls = movie.kind === 'anime' || movie.kind === 'catalog';
     let types;
     if (appleNative && !(capabilities?.mse && remoteHls)) types = ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])];
     else if (capabilities?.mse) types = ['hls-js', ...(appleNative ? ['native-hls'] : [])];
