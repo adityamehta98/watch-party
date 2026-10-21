@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'watch-party-shell-v3';
+const CACHE = 'watch-party-shell-v4';
 const SHELL = new Set([
   '/favicon.svg', '/icon-192.png', '/icon-512.png', '/css/app.css',
   '/js/app.js', '/js/capabilities.js', '/js/file-playback.js', '/js/media.js', '/js/net.js',

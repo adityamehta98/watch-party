@@ -30,17 +30,17 @@ const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0,
 
 async function loadTuning() {
   const source = fs.readFileSync(path.join(ROOT, 'public', 'js', 'sync.js'), 'utf8');
-  return (await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)).syncTuning;
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 }
 
 async function run() {
-  const syncTuning = await loadTuning(), rng = random(), errors = [], byProfile = {};
+  const { syncTuning, APPLE_PROFILE } = await loadTuning(), rng = random(), errors = [], byProfile = {};
   const dt = 0.2, duration = 360, warmup = 10, trials = 12;
   for (let trial = 0; trial < trials; trial++) {
     const clients = PROFILES.flatMap(profile => Array.from({ length: profile.viewers }, () => ({
       profile, drift: rng.normal() * 0.28, ema: 0, clockError: 0, rate: 1,
       oscillator: rng.normal() * 0.00012, buffer: profile.buffer, stalledFor: 0,
-      sinceSeek: 99, sinceNudge: 99,
+      sinceSeek: 99, sinceNudge: 99, outsideFor: 0,
     })));
     for (let elapsed = 0; elapsed < duration; elapsed += dt) {
       for (const client of clients) {
@@ -57,14 +57,16 @@ async function run() {
           client.drift += (client.rate - 1 + client.oscillator) * dt;
           const measured = client.drift - client.clockError;
           client.ema = Math.abs(measured - client.ema) > 0.5 ? measured : client.ema * 0.65 + measured * 0.35;
-          const browserProfile = p.apple ? { hardSeek: 0.35, rate: false, nudge: 0.08 } : {};
+          const browserProfile = p.apple ? APPLE_PROFILE : {};
           const tuning = syncTuning({ drift: client.ema, ahead: client.buffer, rtt: p.rtt, profile: browserProfile });
-          if (Math.abs(measured) > tuning.hardSeek && client.sinceSeek > 3) {
+          client.outsideFor = Math.abs(measured) > tuning.hardSeek ? client.outsideFor + dt : 0;
+          if (client.outsideFor > (browserProfile.driftHold || 0) / 1000 && client.sinceSeek > Math.max(3, (browserProfile.seekCooldown || 0) / 1000)) {
             client.drift = rng.normal() * (0.008 + p.jitter / 4000);
             client.ema = 0;
             client.rate = 1;
             client.sinceSeek = 0;
-          } else if (p.apple) {
+            client.outsideFor = 0;
+          } else if (browserProfile.rate === false) {
             client.rate = 1;
             if (Math.abs(measured) > browserProfile.nudge && client.buffer >= 2 && client.sinceNudge > 4) {
               client.drift = rng.normal() * (0.012 + p.jitter / 3000);

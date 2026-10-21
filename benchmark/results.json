@@ -6,34 +6,34 @@
   "simulatedMinutes": 72,
   "viewersPerTrial": 8,
   "samples": 168000,
-  "p50Ms": 14,
-  "p95Ms": 36,
-  "p99Ms": 53,
-  "maxMs": 2596,
+  "p50Ms": 19,
+  "p95Ms": 976,
+  "p99Ms": 1447,
+  "maxMs": 3798,
   "profiles": {
     "wired desktop": {
-      "p50Ms": 18,
-      "p95Ms": 29,
-      "p99Ms": 31,
-      "maxMs": 2376
+      "p50Ms": 15,
+      "p95Ms": 28,
+      "p99Ms": 30,
+      "maxMs": 2388
     },
     "Wi-Fi laptop": {
       "p50Ms": 11,
-      "p95Ms": 22,
-      "p99Ms": 26,
-      "maxMs": 2589
+      "p95Ms": 21,
+      "p99Ms": 24,
+      "maxMs": 2617
     },
     "Wi-Fi iPad": {
-      "p50Ms": 18,
-      "p95Ms": 44,
-      "p99Ms": 58,
-      "maxMs": 2594
+      "p50Ms": 84,
+      "p95Ms": 1407,
+      "p99Ms": 1462,
+      "maxMs": 3798
     },
     "mobile iPhone": {
-      "p50Ms": 12,
-      "p95Ms": 39,
-      "p99Ms": 79,
-      "maxMs": 2596
+      "p50Ms": 49,
+      "p95Ms": 1384,
+      "p99Ms": 1837,
+      "maxMs": 3793
     }
   }
 }

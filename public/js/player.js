@@ -1,11 +1,10 @@
 
 
 import { PLATFORM } from './platform.js';
-import { syncTuning } from './sync.js';
+import { syncTuning, APPLE_PROFILE } from './sync.js';
 
 export const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
 export const DEVICE = PLATFORM.device;
-const APPLE_PROFILE = { hardSeek: 0.35, rate: false, nudge: 0.08, pausedEps: 0.2 };
 
 export class SyncPlayer {
   constructor({ video, clock, onStatus, onBlocked, onChange }) {
@@ -33,6 +32,10 @@ export class SyncPlayer {
     this.lastDriftAt = 0;
     this.lastRateCorrection = 0;
     this.lastRateDirection = 0;
+    this.recoverUntil = 0;
+    this.playAttempt = null;
+    this.needsAlignment = true;
+    this.driftOutsideAt = null;
 
     this.aligned = false;
     this.videoFailed = false;
@@ -63,6 +66,7 @@ export class SyncPlayer {
         this.seekLatency = Math.max(0.05, Math.min(1.5, this.seekLatency * 0.6 + took * 0.4));
       }
       this.seekStartedAt = 0;
+      this.recoverUntil = performance.now() + 1000;
       this.report(true);
     });
     for (const ev of ['waiting', 'playing', 'canplay', 'canplaythrough', 'pause', 'stalled', 'loadedmetadata', 'error']) {
@@ -97,12 +101,22 @@ export class SyncPlayer {
       this.attach(media);
     }
     this.movie = movie;
+    this.playAttempt = null;
+    this.playPending = false;
 
     this.seekLatency = this.v.isAdapter ? 0.6 : (movie && movie.hls) ? 1.2 : 0.25;
     this.clearStart();
     this.drift = 0;
     this.aligned = false;
     this.lastHardSeek = 0;
+    this.recoverUntil = 0;
+    this.needsAlignment = true;
+    this.driftOutsideAt = null;
+    this.seekStartedAt = 0;
+    this.nudgePending = false;
+    this.nudgeComp = null;
+    this.lastNudge = 0;
+    this.playStartedAt = 0;
     this.stalls = 0;
     this.corrections = [];
     this.driftEma = 0;
@@ -127,7 +141,17 @@ export class SyncPlayer {
   setState(state) {
     const prev = this.state;
 
-    if (!prev || state.position !== prev.position || state.anchor !== prev.anchor || state.playing !== prev.playing) this.lastHardSeek = 0;
+    const changed = !prev || state.movieId !== prev.movieId || state.position !== prev.position || state.anchor !== prev.anchor || state.playing !== prev.playing;
+    if (changed) {
+      this.lastHardSeek = 0;
+      this.recoverUntil = 0;
+      this.driftEma = 0;
+      this.lastDriftAt = 0;
+      this.nudgePending = false;
+      this.needsAlignment = true;
+      this.driftOutsideAt = null;
+      this.clearStart();
+    }
     this.state = state;
     this.correct();
     this.report(true);
@@ -172,6 +196,8 @@ export class SyncPlayer {
     const v = this.v;
     if (!isFinite(t)) return;
     this.lastHardSeek = performance.now();
+    // Let the decoder finish and begin advancing before correcting a moving room clock again.
+    this.recoverUntil = this.lastHardSeek + Math.max(1500, Math.min(4000, this.seekLatency * 2000 + 500));
     this.driftEma = 0;
     this.recordCorrection(type, this.drift, t);
     try { v.currentTime = Math.max(0, t); } catch { /* not ready */ }
@@ -179,24 +205,29 @@ export class SyncPlayer {
 
   tryPlay() {
     if (this.playPending) return;
+    const media = this.v, attempt = {};
+    this.playAttempt = attempt;
+    const current = () => this.playAttempt === attempt && this.v === media;
     this.playPending = true;
-    const p = this.v.play();
+    let p;
+    try { p = media.play(); } catch { this.playPending = false; return; }
     if (!p) { this.playPending = false; return; }
-    p.then(() => { this.blocked = false; })
+    p.then(() => { if (current()) this.blocked = false; })
       .catch(err => {
+        if (!current()) return;
         if (err && err.name === 'NotAllowedError') {
           // Browser blocked sound before a click; play muted so the picture stays in sync.
-          if (!this.v.muted) {
-            this.v.muted = true;
+          if (!media.muted) {
+            media.muted = true;
             this.autoMuted = true;
             this.onBlocked && this.onBlocked('muted');
-            return this.v.play().catch(() => { this.blocked = true; this.onBlocked && this.onBlocked('blocked'); });
+            return media.play().catch(() => { if (current()) { this.blocked = true; this.onBlocked && this.onBlocked('blocked'); } });
           }
           this.blocked = true;
           this.onBlocked && this.onBlocked('blocked');
         }
       })
-      .finally(() => { this.playPending = false; });
+      .finally(() => { if (current()) this.playPending = false; });
   }
 
   unblock() {
@@ -210,6 +241,8 @@ export class SyncPlayer {
     const v = this.v, s = this.state;
 
     if (!this.movie || !s || !v.currentSrc || v.readyState < 1) return;
+    // Movie and state arrive separately; never seek a new episode to the old episode's position.
+    if (s.movieId && this.movie.id && s.movieId !== this.movie.id) return;
     if (this.movie.browsing) return; // the host is still picking something on the service: leave the tabs alone
     if (!this.clock.synced) return; // wait until we know the room's clock, or a late joiner lands in the wrong place
     if (v.isAdapter && v.externalChangeAt && performance.now() - v.externalChangeAt < 1200) return;
@@ -222,6 +255,7 @@ export class SyncPlayer {
       if (!v.paused) v.pause();
       this.setRate(1);
       this.drift = v.currentTime - s.position;
+      this.needsAlignment = false;
       if (!v.seeking && Math.abs(this.drift) > pausedEps) this.seekTo(s.position, 'frame');
       else if (!v.seeking && !this.aligned) { this.aligned = true; this.onChange(); }
       return;
@@ -231,6 +265,7 @@ export class SyncPlayer {
       // Scheduled start: park on the frame, then start at the same instant as everyone else.
       if (!v.paused) v.pause();
       this.setRate(1);
+      this.needsAlignment = false;
       if (!v.seeking && Math.abs(v.currentTime - s.position) > pausedEps) this.seekTo(s.position, 'schedule');
       if (this.startTimerSeq !== s.seq) {
         clearTimeout(this.startTimer);
@@ -255,16 +290,41 @@ export class SyncPlayer {
     const sinceSeek = (performance.now() - this.lastHardSeek) / 1000;
 
     const prof = this.profile;
+    if (prof.rate === false) this.setRate(1);
     const ahead = v.isAdapter ? null : this.bufferedAhead();
     const tuning = syncTuning({ drift: this.driftEma, ahead, rtt: this.clock.rtt || 0, profile: prof });
     const hardSeek = tuning.hardSeek;
-    if (Math.abs(diff) > hardSeek) {
+    // User commands align immediately. Ordinary clock drift must not turn into a
+    // periodic decoder restart while an Apple video is otherwise playing smoothly.
+    const commandSeek = !v.isAdapter && this.needsAlignment && Math.abs(diff) > pausedEps;
+    this.needsAlignment = false;
+    if (!commandSeek && Math.abs(diff) > hardSeek) {
+      if (this.driftOutsideAt == null) this.driftOutsideAt = driftNow;
+    } else this.driftOutsideAt = null;
+    if (!v.isAdapter && this.lastHardSeek &&
+        (driftNow < this.recoverUntil || (v.readyState < 3 && sinceSeek < 8))) {
+      if (v.paused && !this.blocked) this.tryPlay();
+      this.setRate(1);
+      return;
+    }
+    if (commandSeek || Math.abs(diff) > hardSeek) {
 
-      if (!this.lastHardSeek || sinceSeek > 3 || (sinceSeek > 1.2 && v.readyState >= 3)) {
-        if (!v.paused && !this.aligned) v.pause();
-        this.seekTo(target + Math.min(this.seekLatency, 1), 'seek');
+      const held = this.driftOutsideAt != null && driftNow - this.driftOutsideAt >= (prof.driftHold || 0);
+      const cooled = !this.lastHardSeek || sinceSeek * 1000 >= (prof.seekCooldown || 0);
+      if (!commandSeek && (!held || !cooled)) {
+        if (v.paused && !this.blocked) this.tryPlay();
+        return;
+      }
+
+      if (commandSeek || !this.lastHardSeek || sinceSeek > 3 || (sinceSeek > 1.2 && v.readyState >= 3)) {
+        if (v.isAdapter && !v.paused && !this.aligned) v.pause();
+        // A large latency allowance can land a paused Apple player beyond its seek threshold
+        // forever. Keep compensation inside that threshold and let play() run during the seek.
+        const compensation = v.isAdapter ? Math.min(this.seekLatency, 1) : Math.min(this.seekLatency, hardSeek / 2, 0.25);
+        this.seekTo(target + compensation, 'seek');
         this.setRate(1);
       }
+      if (!v.isAdapter && v.paused && !this.blocked) this.tryPlay();
       return;
     }
     if (v.paused && !this.blocked) this.tryPlay();
@@ -283,7 +343,8 @@ export class SyncPlayer {
       if (prof.nudge && Math.abs(diff) > prof.nudge && v.readyState >= 3 && t - (this.lastNudge || 0) > 4000 && sinceSeek > 2 && !this.nudgePending) {
         this.lastNudge = t;
         this.nudgePending = true;
-        this.seekTo(this.expected(this.clock.now()) + (this.nudgeComp == null ? Math.min(this.seekLatency, 0.5) : this.nudgeComp), 'nudge');
+        const compensation = Math.min(this.nudgeComp == null ? this.seekLatency : this.nudgeComp, hardSeek / 2, 0.25);
+        this.seekTo(this.expected(this.clock.now()) + compensation, 'nudge');
       }
       return;
     }
