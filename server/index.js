@@ -11,6 +11,8 @@ const QRCode = require('qrcode');
 const tools = require('./tools');
 const assets = require('./assets');
 const { Library } = require('./library');
+const { CaptionLibrary } = require('./captions');
+const { SubtitleSearch } = require('./subtitle-search');
 const { Room, randKey } = require('./room');
 const { serveFile, authorizeHlsPlaylist } = require('./media');
 const { Tunnel } = require('./tunnel');
@@ -81,6 +83,7 @@ const DEFAULT_CONFIG = {
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
   safariExtensionUrl: '',   // optional App Store or TestFlight link shown to Apple-device guests
   tmdbToken: '',            // TMDB API Read Access Token; never sent to guests
+  wyzieKey: '',             // Subtitle provider key; host only
   freeMedia: true,           // public-domain / permissively licensed Internet Archive titles
   movieTvSources: [],       // host-authorized HLS/MP4 sources keyed by TMDB title and language
   room: {},
@@ -129,7 +132,9 @@ const ytSearchFn = q => youtube.search(q, ytFetch);
 anime.init(config.adminKey); // sign the anime proxy links with the admin key
 remoteMedia.init(config.adminKey);
 const catalog = new Catalog({ config, remoteMedia });
-const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q), catalog });
+const captions = new CaptionLibrary(path.join(ROOT, config.cacheDir || 'cache', 'subtitles'));
+const subtitleSearch = new SubtitleSearch({ library: captions, config });
+const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q), catalog, captions, subtitleSearch });
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
 const turnCreds = { username: 'watchparty', password: randKey(18) };
@@ -472,6 +477,10 @@ async function api(req, res, p) {
       config.tmdbToken = String(body.tmdbToken || '').trim().replace(/[\r\n\s]/g, '').slice(0, 1024);
       room.broadcastSettings();
     }
+    if ('wyzieKey' in body) {
+      config.wyzieKey = String(body.wyzieKey || '').replace(/\s/g, '').slice(0, 1024);
+      room.broadcastSettings();
+    }
     save();
     if ('publicHost' in body) checkReachable();
     return sendJson(res, 200, await info());
@@ -646,6 +655,9 @@ async function handler(req, res) {
     }
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/media/')) return media(req, res, p, u);
+    if (p.startsWith('/captions/')) {
+      return captions.serve(req, res, p, u.searchParams.get('k'), { room, local, missing: () => notFound(req, res, 'caption unavailable') });
+    }
     if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
     if (p.startsWith('/catalog-media/')) return catalogMediaProxy(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');

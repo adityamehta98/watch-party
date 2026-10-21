@@ -44,8 +44,11 @@ function parseSource(j, host) {
   if (!/^https?:\/\//i.test(url)) return null;
   const rawTracks = s.tracks || s.subtitles || j.tracks || j.subtitles || [];
   const subtitles = (Array.isArray(rawTracks) ? rawTracks : [])
-    .map(t => ({ url: absolutize(t && (t.file || t.url), host), label: (t && (t.label || t.language || t.lang)) || 'Subtitles', lang: String((t && (t.lang || t.language || t.srclang)) || '').toLowerCase().slice(0, 8), kind: String((t && t.kind) || '').toLowerCase() }))
-    .filter(t => /^https?:\/\//i.test(t.url) && t.kind !== 'thumbnails');
+    .filter(t => t && (t.file || t.url))
+    .map(t => ({ url: absolutize(t.file || t.url, host), label: t.label || t.language || t.lang || 'Subtitles', lang: String(t.lang || t.language || t.srclang || '').toLowerCase().slice(0, 8), kind: String(t.kind || t.type || '').toLowerCase() }))
+    // The provider also labels thumbnails.vtt as "captions", so kind alone is insufficient.
+    .filter(t => /^https?:\/\//i.test(t.url) && !/thumbnail|storyboard/i.test(t.kind + ' ' + t.label)
+      && !/(?:^|\/)(?:thumbnails?|storyboards?|sprites?)(?:[._/-]|$)/i.test(new URL(t.url).pathname));
   const skip = s.skipTimes || s.skip || {};
   return { url, subtitles, intro: numRange(j.intro || s.intro || skip.intro), outro: numRange(j.outro || s.outro || skip.outro) };
 }
@@ -130,4 +133,4 @@ function toVtt(text) {
   return `WEBVTT\n\n${body.replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-module.exports = { search, embedSources, resolveStream, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt, Readable };
+module.exports = { search, embedSources, resolveStream, parseSource, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt, Readable };

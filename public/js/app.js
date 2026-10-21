@@ -4,6 +4,7 @@ import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
 import { FilePlayback } from './file-playback.js';
 import { StageFullscreen } from './fullscreen.js';
+import { SubtitleTracks } from './subtitles.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
@@ -203,7 +204,7 @@ function wire() {
     const names = { playback: 'playback control', chat: 'chat', react: 'reactions', camera: 'camera and mic' };
     toast(`The host ${m.value ? 'gave you' : 'turned off'} ${names[m.changed] || m.changed}`, { timeout: 3500 });
   });
-  conn.on('settings', m => { S.settings = m.settings; renderSettings(); renderPeople(); renderServicePanel(); });
+  conn.on('settings', m => { S.settings = m.settings; renderSettings(); renderPeople(); renderServicePanel(); maybeFindSubtitles(); });
   conn.on('toast', m => {
     if (m.kind === 'knock') { animateHandoff(m.name); toast(m.text, { kind: 'knock', timeout: 30000, actions: [
       { label: 'Let in', primary: true, run: () => conn.send({ type: 'admit', clientId: m.clientId }) },
@@ -278,7 +279,46 @@ function teardownMedia() {
   try { video.pause(); } catch {}
 }
 
-const trackEls = new Map();
+const subtitles = new SubtitleTracks(video, {
+  preference: () => {
+    const lang = store.get('wp.subLang', null), label = store.get('wp.subLabel', null);
+    return lang || label ? { lang, label } : null;
+  },
+  onChange: () => buildCcMenu(),
+  onError: sub => {
+    if (S.movie?.kind === 'anime' && !sub.local) requestSubtitles(subtitleLanguage(sub));
+    else toast(`${sub.label} subtitles could not be downloaded.`, {
+      timeout: 10000, actions: [{ label: 'Retry subtitles', run: () => subtitles.retry() }],
+    });
+  },
+});
+
+function subtitleLanguage(sub) {
+  const value = String(sub?.lang || sub?.label || store.get('wp.subLang', '') || store.get('wp.subLabel', '') || 'en').toLowerCase().split(/[-_]/)[0];
+  return ({ english: 'en', eng: 'en', spanish: 'es', spa: 'es', japanese: 'ja', jpn: 'ja' })[value] || (/^[a-z]{2}$/.test(value) ? value : 'en');
+}
+
+function requestSubtitles(lang = subtitleLanguage(), explicit = false) {
+  if (S.movie?.kind !== 'anime') return;
+  if (explicit) {
+    store.set('wp.subLang', lang);
+    store.set('wp.subLabel', null);
+    subtitles.off = false;
+    subtitles.preferLocal = lang;
+    const saved = S.movie.subs?.find(s => s.local && s.lang === lang);
+    if (saved) { selectSub(saved.key); return; }
+  }
+  const status = S.movie.subtitleSearch?.[lang];
+  if (status?.state === 'searching' || (status?.state === 'setup' && !S.settings?.subtitlesConfigured)) return;
+  conn?.send({ type: 'find-subtitles', movieId: S.movie.id, lang });
+}
+
+function maybeFindSubtitles() {
+  if (S.movie?.kind !== 'anime' || subtitles.off) return;
+  const active = subtitles.sources.get(subtitles.selected);
+  if (active && subtitles.status(subtitles.selected) === 'error' && !active.local) requestSubtitles(subtitleLanguage(active));
+  else if (!S.movie.subs?.length && (store.get('wp.subLang', null) || store.get('wp.subLabel', null))) requestSubtitles();
+}
 
 const kindOf = movie => (movie ? movie.kind || 'file' : '');
 // Plays in the shared <video> as a direct file or native HLS.
@@ -400,23 +440,8 @@ function watchFileStart() {
 }
 
 function addSubtitleTracks(movie) {
-  let added = false;
-  for (const s of movie?.subs || []) {
-    if (trackEls.has(s.key)) continue;
-    const t = document.createElement('track');
-    t.kind = 'subtitles';
-    t.label = s.label;
-    if (s.lang) t.srclang = s.lang.slice(0, 3);
-    t.src = `${s.url}?k=${encodeURIComponent(key)}`;
-    video.appendChild(t);
-    trackEls.set(s.key, t);
-    added = true;
-  }
-  if (!added) return;
-  buildCcMenu();
-  const pref = store.get('wp.subLang', null);
-  const match = pref && (movie.subs || []).find(s => s.lang === pref && !/forced/i.test(s.label));
-  setTimeout(() => selectSub(match ? match.key : null, false), 0);
+  if (movie) subtitles.add(movie, key);
+  maybeFindSubtitles();
 }
 
 function refreshFileSources(movie) {
@@ -460,7 +485,8 @@ function loadMovie(movie) {
     }
     return;
   }
-  trackEls.clear();
+  subtitles.reset(movie?.id);
+  subtitles.setOffset(store.get(subtitleTimingKey(movie), 0));
   const media = mediaFor(movie);
   if (media !== M) {
     // carry the viewer's volume over to the new player
@@ -1073,27 +1099,56 @@ function closePops(except) {
 function togglePop(id) { const el = $(id); const open = el.hidden; closePops(id); el.hidden = !open; poke(); }
 document.addEventListener('click', e => { if (!e.target.closest('.pop-wrap')) closePops(); });
 
+function subtitleTimingKey(movie = S.movie) {
+  const id = kindOf(movie) === 'anime' ? `anime-${movie.anilistId}-${movie.language}` : movie?.id || 'none';
+  return `wp.subtitleTiming.${id}`;
+}
+
 function buildCcMenu() {
   const pop = $('#ccPop');
   const subs = S.movie?.subs || [];
-  const active = [...trackEls.entries()].find(([, t]) => t.track && t.track.mode === 'showing');
+  const active = subtitles.selected;
   let html = '<div class="menu-label">Subtitles</div>';
   html += `<button type="button" data-sub="" class="${!active ? 'sel' : ''}">Off</button>`;
-  for (const s of subs) html += `<button type="button" data-sub="${esc(s.key)}" class="${active && active[0] === s.key ? 'sel' : ''}">${esc(s.label)}</button>`;
-  if (!subs.length) html += '<div class="menu-note">No text subtitles for this movie. Blu-ray image subtitles (PGS) can\'t be shown in browsers. Put a .srt file next to the movie with the same name to add one.</div>';
+  for (const s of subs) html += `<button type="button" data-sub="${esc(s.key)}" class="${active === s.key ? 'sel' : ''}">${esc(s.label)}${s.automatic ? ' (alternative)' : s.local ? ' (saved)' : ''}${subtitles.status(s.key) === 'error' ? ' — unavailable' : ''}</button>`;
+  if (S.movie?.kind === 'anime') {
+    const lang = subtitleLanguage(subtitles.sources.get(active));
+    const search = S.movie.subtitleSearch?.[lang];
+    html += `<button type="button" data-find-sub="${esc(lang)}" ${search?.state === 'searching' ? 'disabled' : ''}>${search?.state === 'searching' ? 'Finding subtitles…' : 'Find alternative subtitles'}</button>`;
+    if (search?.message) html += `<div class="menu-note">${esc(search.message)}</div>`;
+  }
+  if (active && subtitles.status(active) === 'loading') html += '<div class="menu-note">Loading subtitles…</div>';
+  if (active && subtitles.status(active) === 'error') html += '<div class="menu-note">The subtitle file could not be downloaded. Select the language again to retry.</div>';
+  if (active) html += `<div class="menu-label">Timing: ${subtitles.offset >= 0 ? '+' : ''}${subtitles.offset.toFixed(1)} s</div><div class="caption-timing"><button type="button" data-sub-shift="-0.5">Earlier</button><button type="button" data-sub-shift="reset">Reset</button><button type="button" data-sub-shift="0.5">Later</button></div>`;
+  if (!subs.length) html += S.movie?.kind === 'anime' ? '<div class="menu-note">No captions came with this stream. Find alternative subtitles above.</div>' : '<div class="menu-note">No text subtitles for this movie. Blu-ray image subtitles (PGS) can\'t be shown in browsers. Put a .srt file next to the movie with the same name to add one.</div>';
   pop.innerHTML = html;
   $('#ccBtn').classList.toggle('on', !!active);
 }
 function selectSub(k, remember = true) {
-  for (const [key2, t] of trackEls) if (t.track) t.track.mode = key2 === k ? 'showing' : 'disabled';
+  subtitles.select(k);
   if (remember) {
     const s = (S.movie?.subs || []).find(x => x.key === k);
     store.set('wp.subLang', s ? s.lang : null);
+    store.set('wp.subLabel', s ? s.label : null);
   }
   buildCcMenu();
 }
 $('#ccBtn').addEventListener('click', e => { e.stopPropagation(); buildCcMenu(); togglePop('#ccPop'); });
-$('#ccPop').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (!b) return; selectSub(b.dataset.sub || null); closePops(); });
+$('#ccPop').addEventListener('click', e => {
+  const find = e.target.closest('[data-find-sub]');
+  if (find) { requestSubtitles(find.dataset.findSub, true); return; }
+  const timing = e.target.closest('[data-sub-shift]');
+  if (timing) {
+    const value = timing.dataset.subShift;
+    subtitles.setOffset(value === 'reset' ? 0 : subtitles.offset + Number(value));
+    store.set(subtitleTimingKey(), subtitles.offset);
+    return;
+  }
+  const b = e.target.closest('[data-sub]');
+  if (!b) return;
+  selectSub(b.dataset.sub || null);
+  closePops();
+});
 
 const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
 function buildReactions() {
@@ -1792,6 +1847,7 @@ function renderSettings() {
   const safariUrl = $('#safariExtensionUrl');
   if (document.activeElement !== safariUrl) safariUrl.value = s.safariExtensionUrl || S.info?.settings?.safariExtensionUrl || '';
   const tmdbState = $('#tmdbTokenState');
+  $('#wyzieKeyState').textContent = s.subtitlesConfigured ? 'Automatic lookup connected' : 'Not connected';
   if (tmdbState) tmdbState.textContent = S.info?.movieTv?.tmdbConfigured ? `TMDB connected · ${S.info?.movieTv?.sources || 0} authorized source${S.info?.movieTv?.sources === 1 ? '' : 's'}` : 'Optional · free catalog is active';
   const i = S.info;
   const box = $('#netBox');
@@ -1894,6 +1950,19 @@ $('#tmdbTokenSave').addEventListener('click', async () => {
     toast(token ? 'TMDB catalog connected.' : 'TMDB token removed.', { timeout: 2500 });
     renderSettings();
   } catch (e) { toast(e.message, { kind: 'error', timeout: 5000 }); }
+  finally { button.disabled = false; }
+});
+$('#wyzieKeySave').addEventListener('click', async () => {
+  const button = $('#wyzieKeySave'), input = $('#wyzieKey');
+  button.disabled = true;
+  try {
+    S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ wyzieKey: input.value.trim() }) });
+    S.settings = S.info.settings || S.settings;
+    input.value = '';
+    renderSettings();
+    maybeFindSubtitles();
+    toast(S.settings.subtitlesConfigured ? 'Automatic subtitle lookup enabled.' : 'Subtitle key removed.');
+  } catch (error) { toast(error.message, { kind: 'error' }); }
   finally { button.disabled = false; }
 });
 $('#rotateBtn').addEventListener('click', () => { if (confirm('Make a new invite link? Everyone currently watching will be disconnected and will need the new link.')) conn.send({ type: 'rotate-link' }); });

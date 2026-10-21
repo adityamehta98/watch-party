@@ -330,6 +330,11 @@
           <h3>Playback</h3>
           <label class="switch-row"><span><b>Pause for everyone when someone buffers</b><small>Keeps the room together if one connection falls behind.</small></span><input type="checkbox" class="switch" data-setting="autoWait"></label>
 
+          <h3>Anime subtitles</h3>
+          <label class="field"><span>Wyzie API key</span><input id="wyzieKey" type="password" autocomplete="off" placeholder="Paste your Wyzie key once" spellcheck="false"></label>
+          <div class="row"><button class="btn sm primary" id="wyzieKeySave" type="button">Save subtitle key</button><span class="fine" id="wyzieKeyState"></span></div>
+          <p class="fine">Automatically finds alternative subtitles when an anime caption source fails, including after Next Episode. Fetches only the episode you watch and shares it with the room. Caption storage is capped at 20 MB; older automatic downloads are removed. The episode index uses about 9 MB. Coverage, wording and timing depend on available releases. <a href="https://store.wyzie.io/redeem" target="_blank" rel="noopener noreferrer">Get a free key</a>. Your key stays on this PC.</p>
+
           <h3>Movies &amp; TV catalog</h3>
           <label class="field"><span>TMDB API Read Access Token</span><input id="tmdbToken" type="password" autocomplete="off" placeholder="Paste the token from your TMDB API settings" spellcheck="false"></label>
           <div class="row"><button class="btn sm primary" id="tmdbTokenSave" type="button">Save TMDB token</button><span class="fine" id="tmdbTokenState"></span></div>

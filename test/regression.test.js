@@ -181,6 +181,20 @@ test('anime HLS proxy signs links, rewrites playlists through itself, and conver
   assert.match(anime.toVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHi\n'), /^WEBVTT/);
 });
 
+test('anime caption discovery rejects thumbnails even when the provider calls them captions', () => {
+  const { parseSource } = require('../server/anime');
+  const source = parseSource({ source: 'https://megavid.buzz/stream/master.m3u8', tracks: [
+    { file: '/sub/token/eng-0.vtt', label: 'English', kind: 'captions' },
+    { file: '/sub/token/thumbnails.vtt', kind: 'captions' },
+    { file: '/sub/token/storyboard.vtt', label: 'Subtitles', type: 'captions' },
+    { label: 'English' },
+    null,
+  ] }, 'megavid.buzz');
+  assert.equal(source.subtitles.length, 1);
+  assert.equal(source.subtitles[0].label, 'English');
+  assert.equal(source.subtitles[0].url, 'https://megavid.buzz/sub/token/eng-0.vtt');
+});
+
 test('MegaPlay uses one native transport layer and shares native actions with the room', () => {
   const anime = require('../server/anime');
   assert.deepEqual(anime.embedSources(151801, 52211, 1, 'dub'), [

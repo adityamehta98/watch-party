@@ -20,7 +20,7 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog }) {
+  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog, captions, subtitleSearch }) {
     this.config = config;
     this.library = library;
     this.save = save;
@@ -28,6 +28,8 @@ class Room {
     this.animeSearch = animeSearch || anime.search;
     this.animeResolve = animeResolve || anime.resolveStream;
     this.catalog = catalog || null;
+    this.captions = captions || null;
+    this.subtitleSearch = subtitleSearch || null;
     this.jobOwner = new Map(); // movie id -> who started preparing it
 
     if (!/^[A-Za-z0-9]{16,64}$/.test(String(config.roomKey || ''))) { config.roomKey = randKey(24); if (save) save(); }
@@ -197,7 +199,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured() };
+    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }
@@ -207,6 +209,33 @@ class Room {
   }
 
   publicMovie() {
+    const movie = this.movieData();
+    if (!movie || !this.captions) return movie;
+    const saved = this.captions.tracks(movie);
+    return { ...movie, subtitleSearch: this.movie.subtitleSearch || {}, subs: [...saved, ...(movie.subs || [])] };
+  }
+
+  async findSubtitles(client, msg) {
+    if (!this.canChoose(client) || !this.subtitleSearch || this.movie?.kind !== 'anime' || msg.movieId !== this.movie.id) return;
+    const lang = String(msg.lang || 'en').toLowerCase();
+    if (!/^[a-z]{2}$/.test(lang)) return;
+    const movie = this.movie;
+    movie.subtitleSearch ||= {};
+    if (movie.subtitleSearch[lang]?.state === 'searching') return;
+    // Avoid repeating searches from multiple guests or failed track events.
+    const previous = movie.subtitleSearch[lang];
+    if (previous && previous.state !== 'setup' && Date.now() - previous.at < 300000) return;
+    movie.subtitleSearch[lang] = { state: 'searching', at: Date.now() };
+    this.broadcast({ type: 'movie', movie: this.publicMovie() });
+    let result;
+    try { result = await this.subtitleSearch.find(movie, lang); }
+    catch { result = { state: 'error', message: 'Subtitle lookup failed. Try again later.' }; }
+    if (this.movie !== movie) return;
+    movie.subtitleSearch[lang] = { ...result, at: Date.now() };
+    this.broadcast({ type: 'movie', movie: this.publicMovie() });
+  }
+
+  movieData() {
     if (!this.movie) return null;
     const m = this.movie;
     if (m.kind === 'anime') {
@@ -714,6 +743,7 @@ class Room {
         case 'select-movie': return this.selectMovie(client, msg.id);
         case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
         case 'select-anime': return this.selectAnime(client, msg);
+        case 'find-subtitles': return this.findSubtitles(client, msg);
         case 'select-catalog': return this.selectCatalog(client, msg);
         case 'movie-meta': return this.movieMeta(client, msg);
         case 'lib-list': if (!isHost) this.send(client.ws, { type: 'library', library: this.guestLibrary() }); return;

@@ -561,6 +561,14 @@ Each guest downloads the movie from you while watching, so your **upload** speed
 ### Subtitles
 Text subtitles inside MKVs are extracted during **Prepare**. A same-named `.srt` next to the movie also works. Blu-ray image subtitles (PGS) can't be shown in browsers. Each viewer toggles subtitles with **CC**.
 
+For automatic anime captions, paste your Wyzie key once in **Settings → Anime subtitles → Save subtitle key**. When the selected stream's captions fail, Watch Party looks up an alternative for the exact anime, episode and selected language. **CC → Find alternative subtitles** also works when a stream has no captions. Your language choice carries into Next Episode. The key stays on the host PC; everyone in the party shares one download. Matching uses [AniBridge's episode mappings](https://github.com/anibridge/anibridge-mappings), including season and split-cour offsets. Missing or ambiguous mappings are reported instead of guessing another episode. Available captions can differ from a dub's dialogue or the stream's timing; use **CC → Earlier / Later** as needed. Provider coverage and request limits still apply.
+
+Automatic captions are fetched only for episodes you watch, and their cache is capped at **20 MB**, evicting the oldest automatic files. The shared episode index uses about **9 MB**, refreshes weekly and is reused across all anime. No full-series caption packs or videos are downloaded by this feature.
+
+Optional manually saved captions can also be served from `cache/subtitles/anime-ANILIST_ID/dub/EPISODE.en.vtt` (use `sub` for Japanese audio). These appear as **English (saved)**, switch with the episode, and are available only to the current party for that episode. They survive restarts and cache eviction and are not included in app builds. Match the subtitle edition to the audio/video edition.
+
+To import a ZIP containing episode-named SRT files, run `python build/import-anime-captions.py captions.zip --anilist-id 21175 --audio dub`. The importer converts them to browser-compatible WebVTT. If timing differs from your stream, use **CC → Earlier / Later** to adjust subtitles in half-second steps. The adjustment stays on your device and is remembered for that series and audio language; video playback is unchanged.
+
 ---
 
 ## Configuration (`config.json`)

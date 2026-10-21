@@ -166,6 +166,148 @@ test('new state cancels a scheduled play before its timer can restart paused vid
   assert.equal(f.video.plays, 0);
 });
 
+function subtitleVideo() {
+  const video = new Events();
+  video.children = [];
+  video.ownerDocument = {
+    createElement() {
+      const track = new Events();
+      track.track = { mode: 'disabled' };
+      track.remove = () => { video.children = video.children.filter(t => t !== track); };
+      return track;
+    },
+  };
+  video.appendChild = track => video.children.push(track);
+  return video;
+}
+
+test('alternative captions take over failed tracks without restarting video and respect Off', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  video.load = () => assert.fail('caption fallback must not restart playback');
+  const captions = new SubtitleTracks(video, { preference: () => ({ lang: 'en' }) });
+  const original = { id: 'ep1', subs: [{ key: 's0', lang: 'en', label: 'English', url: '/broken.vtt' }] };
+  captions.add(original, 'key');
+  captions.tracks.get('s0').emit('error');
+  const alternative = { key: 'auto-en', lang: 'en', label: 'English', url: '/alternative.vtt', local: true };
+  captions.add({ ...original, subs: [alternative, ...original.subs] }, 'key');
+  assert.equal(captions.selected, 'auto-en');
+  assert.equal(captions.tracks.get('auto-en').track.mode, 'showing');
+  captions.reset('ep2');
+  captions.add({ ...original, id: 'ep2' }, 'key');
+  captions.tracks.get('s0').emit('error');
+  captions.select(null);
+  captions.add({ id: 'ep2', subs: [alternative, ...original.subs] }, 'key');
+  assert.equal(captions.selected, null);
+  assert.equal(captions.tracks.get('auto-en').track.mode, 'disabled');
+});
+
+test('captions survive multiple episode changes, asynchronous source loads and reused track keys', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  const captions = new SubtitleTracks(video, { preference: () => ({ lang: 'en' }) });
+  let old;
+  for (let episode = 1; episode <= 4; episode++) {
+    captions.add({ id: `ep${episode}`, subs: [
+      { key: 's0', lang: 'en', label: 'English', url: `/ep${episode}.vtt?version=1` },
+      { key: 's1', lang: 'es', label: 'Spanish', url: `/ep${episode}-es.vtt` },
+    ] }, 'room key');
+    const track = captions.tracks.get('s0');
+    assert.equal(video.children.length, 2);
+    assert.ok(track.src.includes(`/ep${episode}.vtt?version=1&k=room%20key`));
+    assert.equal(track.default, true, 'Safari custom captions need the selected track to be default');
+    track.track.mode = 'disabled';
+    video.emit('loadedmetadata');
+    assert.equal(track.track.mode, 'showing');
+    track.track.mode = 'disabled'; track.emit('load');
+    assert.equal(track.track.mode, 'showing');
+    if (old) {
+      assert.equal(old.track.mode, 'disabled');
+      old.emit('load');
+      assert.equal(track.track.mode, 'showing', 'late old track loads cannot replace the new selection');
+    }
+    old = track;
+  }
+});
+
+test('caption labels restore providers without language codes and Off survives metadata updates', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  let pref = { lang: '', label: 'English' };
+  const captions = new SubtitleTracks(video, { preference: () => pref });
+  const movie = { id: 'ep1', subs: [{ key: 's0', lang: '', label: 'English', url: '/ep1.vtt' }] };
+  captions.add(movie, 'key');
+  assert.equal(captions.selected, 's0');
+  captions.select(null); pref = null;
+  video.emit('loadeddata'); captions.add(movie, 'key');
+  assert.equal(captions.tracks.get('s0').track.mode, 'disabled');
+  assert.equal(captions.tracks.get('s0').default, false);
+  captions.add({ ...movie, id: 'ep2' }, 'key');
+  assert.equal(captions.selected, null);
+});
+
+test('English preferences survive providers omitting or changing language identifiers', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  const captions = new SubtitleTracks(video, { preference: () => ({ lang: 'eng', label: 'English' }) });
+  for (const [episode, lang] of ['', 'en', 'eng', 'english'].entries()) {
+    captions.add({ id: `ep${episode}`, subs: [{ key: 's0', lang, label: 'English', url: `/ep${episode}.vtt` }] }, 'key');
+    assert.equal(captions.selected, 's0');
+    assert.equal(captions.tracks.get('s0').srclang, 'en');
+  }
+});
+
+test('failed caption downloads are visible and retry replaces only the subtitle track', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  video.load = () => assert.fail('retrying subtitles must not reload the video');
+  let errors = 0;
+  const captions = new SubtitleTracks(video, { preference: () => ({ lang: 'en' }), onError: () => errors++ });
+  captions.add({ id: 'ep1', subs: [{ key: 's0', lang: '', label: 'English', url: '/ep1.vtt' }] }, 'key');
+  const first = captions.tracks.get('s0');
+  assert.equal(captions.status('s0'), 'loading');
+  first.emit('error');
+  assert.equal(errors, 1);
+  assert.equal(captions.selected, 's0');
+  assert.equal(captions.status('s0'), 'error');
+  assert.equal(first.track.mode, 'disabled');
+  video.emit('loadedmetadata');
+  assert.equal(captions.status('s0'), 'error', 'metadata must not pretend a failed download succeeded');
+  captions.select('s0');
+  const retry = captions.tracks.get('s0');
+  assert.notEqual(retry, first);
+  assert.equal(video.children.length, 1);
+  assert.match(retry.src, /_captionRetry=/);
+  assert.equal(retry.default, true);
+  assert.equal(captions.status('s0'), 'loading');
+  first.emit('load'); first.emit('error');
+  assert.equal(errors, 1, 'stale events cannot affect the retry');
+  assert.equal(captions.status('s0'), 'loading');
+  retry.emit('load');
+  assert.equal(captions.status('s0'), 'ready');
+  assert.equal(retry.track.mode, 'showing');
+});
+
+test('subtitle timing changes cue times without accumulating shifts or restarting the video', async () => {
+  const { SubtitleTracks } = await moduleOf('subtitles.js');
+  const video = subtitleVideo();
+  video.load = () => assert.fail('caption timing must not reload video');
+  const captions = new SubtitleTracks(video, { preference: () => ({ lang: 'en' }) });
+  captions.add({ id: 'ep1', subs: [{ key: 'saved-en', label: 'English', lang: 'en', url: '/captions/1.vtt' }] }, 'key');
+  const track = captions.tracks.get('saved-en');
+  const cue = { startTime: 5, endTime: 8 };
+  track.track.cues = [cue];
+  captions.setOffset(1.5);
+  track.emit('load');
+  assert.deepEqual(cue, { startTime: 6.5, endTime: 9.5 });
+  video.emit('loadedmetadata'); captions.setOffset(1.5);
+  assert.deepEqual(cue, { startTime: 6.5, endTime: 9.5 });
+  captions.setOffset(-2);
+  assert.deepEqual(cue, { startTime: 3, endTime: 6 });
+  captions.setOffset(0);
+  assert.deepEqual(cue, { startTime: 5, endTime: 8 });
+});
+
 function stageFixture() {
   const doc = new Events(), classes = new Set();
   const stage = { ownerDocument: doc, classList: {
