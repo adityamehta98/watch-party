@@ -165,3 +165,91 @@ test('new state cancels a scheduled play before its timer can restart paused vid
   assert.equal(f.timers.size, 0);
   assert.equal(f.video.plays, 0);
 });
+
+function stageFixture() {
+  const doc = new Events(), classes = new Set();
+  const stage = { ownerDocument: doc, classList: {
+    contains: c => classes.has(c), add: c => classes.add(c), remove: c => classes.delete(c),
+    toggle(c, on) { if (on) classes.add(c); else classes.delete(c); },
+  } };
+  return { doc, stage };
+}
+
+test('unsupported fullscreen reports the limit and only expands the page when explicitly chosen', async () => {
+  const { StageFullscreen } = await moduleOf('fullscreen.js');
+  for (const rejected of [false, true]) {
+    const { doc, stage } = stageFixture();
+    if (rejected) stage.requestFullscreen = () => Promise.reject(new Error('denied'));
+    let unavailable = 0;
+    const fullscreen = new StageFullscreen(stage, () => {}, { onUnavailable: () => unavailable++ });
+    await fullscreen.toggle();
+    assert.equal(unavailable, 1);
+    assert.equal(fullscreen.active, false, 'page expansion must not be passed off as fullscreen');
+    fullscreen.expandPage();
+    assert.equal(fullscreen.active, true);
+    assert.equal(stage.classList.contains('page-fullscreen'), true);
+    assert.equal(stage.classList.contains('is-fs'), true);
+    await fullscreen.toggle(); assert.equal(fullscreen.active, false);
+    fullscreen.expandPage(); doc.emit('keydown', { key: 'Escape' });
+    assert.equal(fullscreen.active, false);
+  }
+  assert.doesNotMatch(read('app.js'), /video\.webkitEnterFullscreen/);
+});
+
+test('Brave video-only fullscreen shim cannot hijack the Watch Party stage', async () => {
+  const { StageFullscreen } = await moduleOf('fullscreen.js');
+  const { doc, stage } = stageFixture();
+  let nativePlayerCalls = 0, unavailable = 0;
+  class BrowserDocument {}
+  Object.defineProperty(BrowserDocument.prototype, 'fullscreenEnabled', { get: () => false });
+  doc.defaultView = { Document: BrowserDocument };
+  doc.fullscreenEnabled = true;
+  stage.requestFullscreen = () => { nativePlayerCalls++; return true; };
+  const fullscreen = new StageFullscreen(stage, () => {}, { onUnavailable: () => unavailable++ });
+  await fullscreen.toggle();
+  assert.equal(nativePlayerCalls, 0);
+  assert.equal(fullscreen.active, false);
+  assert.equal(unavailable, 1);
+});
+
+test('a fullscreen shim returning success without fullscreen state is not accepted', async () => {
+  const { StageFullscreen } = await moduleOf('fullscreen.js');
+  const { stage } = stageFixture();
+  let unavailable = 0;
+  stage.requestFullscreen = () => true;
+  const fullscreen = new StageFullscreen(stage, () => {}, { onUnavailable: () => unavailable++ });
+  await fullscreen.toggle();
+  assert.equal(fullscreen.active, false);
+  assert.equal(unavailable, 1);
+});
+
+test('standard and WebKit fullscreen target the whole stage and track browser exits', async () => {
+  const { StageFullscreen } = await moduleOf('fullscreen.js');
+  for (const webkit of [false, true]) {
+    const { doc, stage } = stageFixture();
+    const prop = webkit ? 'webkitFullscreenElement' : 'fullscreenElement';
+    const event = webkit ? 'webkitfullscreenchange' : 'fullscreenchange';
+    stage[webkit ? 'webkitRequestFullscreen' : 'requestFullscreen'] = () => { doc[prop] = stage; doc.emit(event); };
+    doc[webkit ? 'webkitExitFullscreen' : 'exitFullscreen'] = () => { doc[prop] = null; doc.emit(event); };
+    const fullscreen = new StageFullscreen(stage);
+    await fullscreen.toggle();
+    assert.equal(fullscreen.active, true);
+    assert.equal(fullscreen.pageMode, false);
+    await fullscreen.toggle(); assert.equal(fullscreen.active, false);
+    await fullscreen.toggle(); doc[prop] = null; doc.emit(event);
+    assert.equal(stage.classList.contains('is-fs'), false);
+  }
+});
+
+test('asynchronous WebKit fullscreen waits for the browser transition', async () => {
+  const { StageFullscreen } = await moduleOf('fullscreen.js');
+  const { doc, stage } = stageFixture();
+  let unavailable = 0;
+  stage.webkitRequestFullscreen = () => {
+    setTimeout(() => { doc.webkitFullscreenElement = stage; doc.emit('webkitfullscreenchange'); }, 20);
+  };
+  const fullscreen = new StageFullscreen(stage, () => {}, { onUnavailable: () => unavailable++ });
+  await fullscreen.toggle();
+  assert.equal(fullscreen.active, true);
+  assert.equal(unavailable, 0);
+});

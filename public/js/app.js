@@ -3,6 +3,7 @@ import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
 import { FilePlayback } from './file-playback.js';
+import { StageFullscreen } from './fullscreen.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
@@ -1002,24 +1003,28 @@ $('#muteBtn').addEventListener('click', () => { if (player.autoMuted) { unblock(
   seek.addEventListener('pointercancel', () => { dragFrac = null; seek.classList.remove('dragging'); });
 })();
 
-function isFs() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
-function toggleFullscreen() {
-  if (isFs()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
-  if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
-  else if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
-  else if (kindOf(S.movie) === 'megaplay') toast('This browser cannot keep Watch Party controls visible in fullscreen.', { timeout: 4000 });
-  else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
-}
-$('#fsBtn').addEventListener('click', toggleFullscreen);
-
-const onFs = () => {
-  const fs = isFs();
-  stage.classList.toggle('is-fs', fs);
+const fullscreen = new StageFullscreen(stage, fs => {
   $('#fsBtn').innerHTML = icon(fs ? 'fs-exit' : 'fs');
-  if (kindOf(S.movie) === 'megaplay' && mpMedia) mpMedia.fsState(fs); // keep the embed's icon in sync
-};
-document.addEventListener('fullscreenchange', onFs);
-document.addEventListener('webkitfullscreenchange', onFs);
+  const label = fullscreen.pageMode ? 'Exit expanded player' : fs ? 'Exit fullscreen' : 'Fullscreen';
+  $('#fsBtn').setAttribute('aria-label', label);
+  $('#fsBtn').title = label;
+  if (kindOf(S.movie) === 'megaplay' && mpMedia) mpMedia.fsState(fs);
+  poke();
+}, { onUnavailable: () => toast(
+  PLATFORM.ipad
+    ? 'This browser cannot show Watch Party controls in true fullscreen. Open this party link in Safari on your iPad for fullscreen with controls.'
+    : 'This browser cannot show Watch Party controls in true fullscreen. You can expand the player within this page.',
+  { timeout: 12000, actions: [
+    { label: 'Expand within browser', run: () => fullscreen.expandPage() },
+    { label: 'Copy party link', run: async () => {
+      try { await navigator.clipboard.writeText(location.href); toast('Party link copied. Open it in Safari.'); }
+      catch { prompt('Copy this party link:', location.href); }
+    } },
+  ] },
+) });
+function isFs() { return fullscreen.active; }
+function toggleFullscreen() { fullscreen.toggle().catch(() => {}); }
+$('#fsBtn').addEventListener('click', toggleFullscreen);
 
 let idleTimer = null, goneTimer = null;
 const controlsEl = $('#controls');
