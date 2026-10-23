@@ -135,6 +135,7 @@
             <svg class="empty-icon"><use href="#i-film"/></svg>
             <h2 id="emptyTitle">Nothing is playing yet</h2>
             <p class="muted" id="emptyText">The host will pick a movie.</p>
+            <div id="animeContinue" class="anime-continue host-only" hidden></div>
             <div class="empty-actions">
               <button class="btn primary" type="button" data-open-tab="library"><svg><use href="#i-film"/></svg>Open library</button>
               <button class="btn host-only" type="button" id="emptyInvite"><svg><use href="#i-link"/></svg>Invite people</button>
@@ -300,14 +301,20 @@
             <p class="fine catalog-intro">Search movies and TV, including free Public Domain and Creative Commons titles from the Internet Archive. Choose a language and play in Watch Party's own synchronized player. No extension needed.</p>
             <form class="yt-search" id="catalogForm" autocomplete="off"><input id="catalogQuery" placeholder="Search movies and TV series" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
             <div class="yt-status fine" id="catalogStatus"></div>
-            <div class="catalog-results" id="catalogResults"></div>
+            <div class="shelf-frame">
+            <div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous movie and TV results" aria-controls="catalogResults">&#8592;</button><button type="button" data-shelf-page="1" aria-label="Next movie and TV results" aria-controls="catalogResults">&#8594;</button></div>
+            <div class="catalog-results" id="catalogResults" tabindex="0" role="region" aria-label="Movie and TV search results"></div>
+            </div>
             <p class="tmdb-credit">Free results are limited to explicitly licensed items in curated Internet Archive collections. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
           </details>
           <details class="svc-pick" id="animePick">
             <summary class="section-label">Anime</summary>
             <form class="yt-search" id="animeForm" autocomplete="off"><input id="animeQuery" placeholder="Search anime, e.g. Spy x Family" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
             <div class="yt-status fine" id="animeStatus"></div>
-            <div class="anime-results" id="animeResults"></div>
+            <div class="shelf-frame">
+            <div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous anime results" aria-controls="animeResults">&#8592;</button><button type="button" data-shelf-page="1" aria-label="Next anime results" aria-controls="animeResults">&#8594;</button></div>
+            <div class="anime-results" id="animeResults" tabindex="0" role="region" aria-label="Anime search results"></div>
+            </div>
           </details>
           <details class="folders host-only" id="foldersBox">
             <summary><svg><use href="#i-folder"/></svg><span id="foldersSummary">Movie folders</span></summary>

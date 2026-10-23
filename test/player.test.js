@@ -63,6 +63,26 @@ async function playerFixture() {
   };
 }
 
+test('progress reports carry the actual media position and episode identity across resume seeks', async () => {
+  const f = await playerFixture();
+  f.video.duration = 1440;
+  f.state({ playing: false, position: 360 });
+  let status = f.player.status();
+  assert.equal(status.movieId, 'ep1');
+  assert.equal(status.seeking, true, 'initial metadata is not a settled playback report');
+  f.finishSeek();
+  f.time(360);
+  status = f.player.status();
+  assert.equal(status.position, 360);
+  assert.equal(status.duration, 1440);
+  assert.equal(status.ready, true);
+  f.advance(8 * 3600 * 1000, false);
+  assert.equal(f.player.status().position, 360, 'the saved timestamp comes from media, not the advancing room clock');
+  f.video.ended = true;
+  f.time(1440);
+  assert.equal(f.player.status().ended, true);
+});
+
 test('iPad HLS seeks resume without repeated pause/seek cycles', async () => {
   const f = await playerFixture();
   f.state();

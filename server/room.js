@@ -20,7 +20,7 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog, captions, subtitleSearch }) {
+  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog, captions, subtitleSearch, animeHistory, animePoster }) {
     this.config = config;
     this.library = library;
     this.save = save;
@@ -30,6 +30,9 @@ class Room {
     this.catalog = catalog || null;
     this.captions = captions || null;
     this.subtitleSearch = subtitleSearch || null;
+    this.animeHistory = animeHistory || null;
+    this.animePoster = animePoster || anime.poster;
+    this.posterLookups = new Set();
     this.jobOwner = new Map(); // movie id -> who started preparing it
 
     if (!/^[A-Za-z0-9]{16,64}$/.test(String(config.roomKey || ''))) { config.roomKey = randKey(24); if (save) save(); }
@@ -136,8 +139,10 @@ class Room {
       state: this.state, movie: this.publicMovie(), chat: this.chat.slice(-60), bookmarks: this.bookmarks,
       peers: this.admitted().filter(c => c !== client).map(c => ({ id: c.id, name: c.name, media: c.media })),
       settings: this.publicSettings(client.role === 'host'),
+      ...(client.role === 'host' && this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden() } : {}),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
     });
+    if (client.role === 'host') this.fillAnimePosters();
     this.broadcast({ type: 'peer-join', peer: { id: client.id, name: client.name, media: client.media } }, client);
     if (this.recentLeft.has(client.id)) { clearTimeout(this.recentLeft.get(client.id)); this.recentLeft.delete(client.id); isReconnect = true; }
     if (!isReconnect) this.system(`${client.name} joined`);
@@ -489,7 +494,18 @@ class Room {
     const sources = anime.embedSources(anilistId, malId, episode, language);
     if (!sources.length) { this.toast(client, "That anime episode can't be played.", 'error'); return; }
     const id = 'a' + crypto.createHash('sha1').update(sources[0]).digest('hex').slice(0, 11);
-    if (this.movie && this.movie.id === id) return;
+    if (this.movie && this.movie.id === id) {
+      if (client.role === 'host' && this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
+      if (client.role === 'host' && msg.restart) {
+        this.setState({ playing: true, position: 0, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
+        if (this.animeHistory?.record(this.movie, 0, this.animeHistory.get(anilistId, episode)?.duration || 0)) this.sendAnimeHistory();
+      } else if (client.role === 'host' && msg.resume) {
+        const saved = this.animeHistory?.get(anilistId, episode);
+        const position = saved?.completed ? 0 : this.state.playing ? this.currentPosition() : saved?.position || this.state.position;
+        this.setState({ playing: true, position, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
+      }
+      return;
+    }
     const base = String(msg.title || 'Anime').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120) || 'Anime';
     let effectiveLanguage = language;
 
@@ -504,7 +520,7 @@ class Room {
       if (resolved && resolved.url) effectiveLanguage = 'sub';
     }
     const title = `${base} · Ep ${episode}${effectiveLanguage === 'dub' ? ' (Dub)' : ''}`;
-    const meta = { anilistId, malId, episode, episodes, language: effectiveLanguage, animeTitle: base };
+    const meta = { anilistId, malId, episode, episodes, language: effectiveLanguage, animeTitle: base, poster: msg.poster || '' };
     if (this.movie && this.movie.id === id) return;
 
     if (resolved && resolved.url) {
@@ -522,7 +538,12 @@ class Room {
     }
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
 
-    this.setState({ movieId: id, playing: false, position: 0, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
+    const saved = client.role === 'host' ? this.animeHistory?.get(anilistId, episode) : null;
+    if (client.role === 'host' && this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
+    const position = !msg.restart && saved && !saved.completed ? saved.position : 0;
+    this.setState({ movieId: id, playing: false, position, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
+    if (client.role === 'host' && this.animeHistory?.record(meta, position, saved?.duration || 0)) this.sendAnimeHistory();
+    if (client.role === 'host') this.fillAnimePosters();
     this.system(`Now showing "${title}" (Anime)`);
   }
 
@@ -633,6 +654,29 @@ class Room {
     const isHost = client.role === 'host';
     if (!client.admitted) return;
     switch (msg.type) {
+      case 'anime-continue-dismiss': {
+        if (isHost && this.animeHistory?.dismiss(msg.anilistId)) this.sendAnimeHistory();
+        return;
+      }
+      case 'anime-history-mark': {
+        if (isHost && this.animeHistory?.mark(msg.anilistId, msg.episode, msg.completed)) {
+          if (!msg.completed && this.movie?.anilistId === msg.anilistId && this.movie?.episode === msg.episode) {
+            this.setState({ playing: false, position: 0, anchor: Date.now(), waiting: false, waitingFor: [] }, { by: client.name, action: 'seek' });
+          }
+          this.sendAnimeHistory();
+        }
+        return;
+      }
+      case 'anime-progress': {
+        if (!isHost || !this.animeHistory || !['anime', 'megaplay'].includes(this.movie?.kind)) return;
+        const st = msg.status || {};
+        // Reject old-episode / pre-seek reports, including a new stream's initial 0:00 metadata.
+        if (st.movieId !== this.movie.id || st.seq !== this.state.seq || !st.loaded || st.seeking || st.error
+          || (!st.ready && !st.ended) || !Number.isFinite(st.position) || !Number.isFinite(st.duration) || st.duration <= 0) return;
+        if (this.animeHistory.record(this.movie, st.position, st.duration, st.ended)) this.sendAnimeHistory();
+        if (msg.flush) this.animeHistory.flush();
+        return;
+      }
       case 'cmd': return this.command(client, msg);
       case 'status': {
         const st = msg.status || {};
@@ -887,7 +931,29 @@ class Room {
     }
   }
 
-  shutdown() { clearInterval(this.timer); }
+  sendAnimeHistory() {
+    this.broadcastHosts({ type: 'anime-history', episodes: this.animeHistory.list(), hidden: this.animeHistory.hidden() });
+  }
+
+  async fillAnimePosters() {
+    if (!this.animeHistory) return;
+    const missing = [...new Set(this.animeHistory.list().filter(entry => !entry.poster).map(entry => entry.anilistId))];
+    for (const id of missing) {
+      const known = this.animeHistory.list().find(entry => entry.anilistId === id && entry.poster)?.poster;
+      if (known) {
+        if (this.animeHistory.setPoster(id, known)) this.sendAnimeHistory();
+        continue;
+      }
+      if (this.posterLookups.has(id)) continue;
+      this.posterLookups.add(id);
+      try {
+        const poster = await this.animePoster(id);
+        if (this.animeHistory.setPoster(id, poster)) { this.animeHistory.flush(); this.sendAnimeHistory(); }
+      } catch { /* The saved episode remains playable if artwork is temporarily unavailable. */ }
+    }
+  }
+
+  shutdown() { clearInterval(this.timer); this.animeHistory?.flush(); }
 }
 
 module.exports = { Room, randKey, PERMS, REACTIONS };

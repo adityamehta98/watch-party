@@ -1,11 +1,12 @@
 'use strict';
 
-const CACHE = 'watch-party-shell-v8';
+const CACHE = 'watch-party-shell-v16';
 const SHELL = new Set([
   '/favicon.svg', '/icon-192.png', '/icon-512.png', '/css/app.css',
   '/js/app.js', '/js/capabilities.js', '/js/file-playback.js', '/js/media.js', '/js/net.js',
   '/js/platform.js', '/js/player.js', '/js/rtc.js', '/js/sync.js', '/js/visuals.js',
   '/js/fullscreen.js', '/js/subtitles.js',
+  '/js/anime-resume.js',
   '/vendor/hls.min.js',
 ]);
 

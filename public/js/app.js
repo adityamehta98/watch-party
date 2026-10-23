@@ -1,4 +1,5 @@
 import { Connection } from './net.js';
+import { animeResumeCard } from './anime-resume.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
@@ -49,7 +50,7 @@ if (!clientId) { clientId = randId(); store.set(isHost ? 'wp.hostId' : 'wp.clien
 const S = {
   chatLog: [],
   me: null, perms: {}, people: [], totalMbps: 0, movie: null, state: null, settings: {}, reactions: [],
-  observatory: null, bookmarks: [],
+  observatory: null, bookmarks: [], animeHistory: [], animeContinueHidden: [],
   peers: new Map(), remoteStreams: new Map(), cam: false, mic: false, tab: 'chat', unread: 0,
   library: null, info: null, prepOpen: new Set(), prepOpts: new Map(), lastSender: null, lastSenderTs: 0,
   name: '',
@@ -145,7 +146,7 @@ function start(name) {
   remote.onDock = onDockMessage;
   player = new SyncPlayer({
     video, clock: conn.clock,
-    onStatus: st => conn.send({ type: 'status', status: st }),
+    onStatus: st => { conn.send({ type: 'status', status: st }); saveAnimeProgress(st, M.paused || st.ended); },
     onBlocked: kind => { $('#unmutePill').hidden = false; if (kind === 'blocked') renderNotice(); },
     onChange: () => scheduleUi(),
   });
@@ -235,6 +236,7 @@ function wire() {
   conn.on('library', m => { if (isHost || !m.library) return; S.library = m.library; renderLibrary(); });
   conn.on('yt-results', m => onYtResults(m));
   conn.on('anime-results', m => onAnimeResults(m));
+  conn.on('anime-history', m => { S.animeHistory = m.episodes || []; S.animeContinueHidden = m.hidden || []; renderAnimeHistory(); });
   conn.on('catalog-response', m => onCatalogResponse(m));
   conn.on('job', m => updateJob(m.id, m.job));
   conn.on('network', () => refreshInfoSoon());
@@ -247,6 +249,9 @@ function onWelcome(m) {
   S.settings = m.settings || {};
   S.reactions = m.reactions || [];
   S.bookmarks = m.bookmarks || [];
+  S.animeHistory = m.animeHistory || [];
+  S.animeContinueHidden = m.animeContinueHidden || [];
+  renderAnimeHistory();
   mesh.setIceServers(m.iceServers, m.relayOnly);
   screen('room');
   $('#chatList').innerHTML = '';
@@ -2785,6 +2790,35 @@ let catalogSeq = 0, catalogRequestSeq = 0;
 const catalogRequests = new Map();
 const catalogItems = new Map();
 
+function refreshShelf(root, selector) {
+  const list = root.querySelector(selector), nav = root.querySelector('.shelf-nav');
+  if (!list || !nav) return;
+  const max = Math.max(0, list.scrollWidth - list.clientWidth);
+  nav.hidden = max < 2;
+  nav.querySelector('[data-shelf-page="-1"]').disabled = list.scrollLeft < 2;
+  nav.querySelector('[data-shelf-page="1"]').disabled = list.scrollLeft >= max - 2;
+}
+function wireShelf(root, selector) {
+  const refresh = () => refreshShelf(root, selector);
+  const move = direction => {
+    const list = root.querySelector(selector);
+    if (list) list.scrollBy({ left: direction * list.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  };
+  root.addEventListener('click', event => {
+    const button = event.target.closest('[data-shelf-page]');
+    if (button) move(Number(button.dataset.shelfPage));
+  });
+  root.addEventListener('scroll', refresh, true);
+  root.addEventListener('keydown', event => {
+    if (!event.target.matches(selector) || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation(); move(event.key === 'ArrowRight' ? 1 : -1);
+  });
+  if (window.ResizeObserver) new ResizeObserver(refresh).observe(root);
+}
+wireShelf($('#catalogPick'), '#catalogResults');
+wireShelf($('#animePick'), '#animeResults');
+wireShelf($('#animeContinue'), '.anime-resume-grid');
+
 function onCatalogResponse(message) {
   const pending = catalogRequests.get(message.requestId);
   if (!pending) return;
@@ -2832,6 +2866,8 @@ function showCatalogResults(query, list) {
     </article>`;
   }).join('');
   results.scrollTop = 0;
+  results.scrollLeft = 0;
+  requestAnimationFrame(() => refreshShelf($('#catalogPick'), '#catalogResults'));
   results.querySelectorAll('.catalog-watch').forEach(fillWatchProviders);
 }
 
@@ -2972,16 +3008,84 @@ function showAnimeResults(q, list) {
   $('#animeStatus').textContent = list.length ? '' : `Nothing found for "${q}".`;
   $('#animeResults').innerHTML = list.map(a => {
     const count = Math.min(Math.max(1, Number(a.episodes) || 1), 2000);
-    const epOpts = Array.from({ length: count }, (_, i) => `<option value="${i + 1}">Ep ${i + 1}</option>`).join('');
+    const latest = S.animeHistory.find(e => e.anilistId === Number(a.id));
+    const selected = latest ? Math.min(count, latest.episode + (latest.completed && latest.episode < count ? 1 : 0)) : 1;
+    const epOpts = Array.from({ length: count }, (_, i) => `<option value="${i + 1}"${i + 1 === selected ? ' selected' : ''}>${esc(animeEpisodeLabel(Number(a.id), i + 1))}</option>`).join('');
     const title = esc(a.title);
-    return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${title}">
+    return `<div class="anime-card" data-aid="${a.id}" data-mal="${a.mal || 0}" data-episodes="${a.episodes || 0}" data-title="${title}" data-poster="${esc(a.poster || '')}">
     ${a.poster ? `<img src="${esc(a.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
     <div class="meta"><div class="t" data-tip="${title}">${title}</div><div class="m">${esc([a.format, a.year, a.episodes ? a.episodes + ' ep' : ''].filter(Boolean).join(' · '))}</div></div>
-    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="dub">Dub</option><option value="sub">Sub</option></select></div>
+    <div class="pick"><select class="anime-ep" aria-label="Episode">${epOpts}</select><select class="anime-lang" aria-label="Sub or dub"><option value="dub"${latest?.language !== 'sub' ? ' selected' : ''}>Dub</option><option value="sub"${latest?.language === 'sub' ? ' selected' : ''}>Sub</option></select></div>
     <button type="button" class="anime-play" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor"/></svg></button></div>`;
   }).join('');
+  $('#animeResults').scrollLeft = 0;
+  requestAnimationFrame(() => refreshShelf($('#animePick'), '#animeResults'));
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
+
+function saveAnimeProgress(status = player?.status(), flush = false) {
+  if (!isHost || !conn || !status || !['anime', 'megaplay'].includes(S.movie?.kind)) return;
+  conn.send({ type: 'anime-progress', status, flush });
+}
+function selectAnime(message) {
+  saveAnimeProgress(undefined, true);
+  conn.send({ type: 'select-anime', ...message });
+}
+// Save promptly on pause/exit as well as the player's regular reports.
+video.addEventListener('pause', () => saveAnimeProgress(undefined, true));
+video.addEventListener('ended', () => saveAnimeProgress(undefined, true));
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveAnimeProgress(undefined, true); });
+window.addEventListener('pagehide', () => saveAnimeProgress(undefined, true));
+
+function animeEpisodeLabel(id, episode) {
+  const saved = S.animeHistory.find(e => e.anilistId === id && e.episode === episode);
+  return `Ep ${episode}${saved?.completed ? ' · Watched' : saved?.position > 0 ? ` · ${fmtTime(saved.position)}` : ''}`;
+}
+
+function renderAnimeHistory() {
+  if (!isHost) return;
+  const groups = new Map();
+  for (const entry of S.animeHistory) {
+    if (!groups.has(entry.anilistId)) groups.set(entry.anilistId, []);
+    groups.get(entry.anilistId).push(entry);
+  }
+  const visible = [...groups.values()].filter(entries => !S.animeContinueHidden.includes(entries[0].anilistId));
+  const continueBox = $('#animeContinue');
+  const scrollLeft = continueBox.querySelector('.anime-resume-grid')?.scrollLeft || 0;
+  const homeFocus = document.activeElement?.closest('#animeContinue button');
+  const focusedKey = homeFocus ? { ...homeFocus.dataset } : null;
+  continueBox.hidden = !visible.length;
+  $('#stageEmpty').classList.toggle('has-history', !!visible.length);
+  stage.classList.toggle('has-history', !!visible.length);
+  continueBox.innerHTML = visible.length ? `<div class="anime-resume-heading"><div><p>Your anime</p><h2>Continue watching</h2></div></div><div class="shelf-frame"><div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous continue watching titles" aria-controls="animeResumeShelf">&#8592;</button><button type="button" data-shelf-page="1" aria-label="Next continue watching titles" aria-controls="animeResumeShelf">&#8594;</button></div><div class="anime-resume-grid" id="animeResumeShelf" tabindex="0" role="region" aria-label="Continue watching titles">${visible.map(entries => animeResumeCard({ ...entries[0], poster: entries.find(entry => entry.poster)?.poster || '' })).join('')}</div></div>` : '';
+  if (visible.length) continueBox.querySelector('.anime-resume-grid').scrollLeft = scrollLeft;
+  if (focusedKey) {
+    const replacement = $$('#animeContinue button').find(button => Object.entries(focusedKey).every(([key, value]) => button.dataset[key] === value));
+    (replacement || $('#animeContinue [data-history-play]') || $('#stageEmpty .empty-actions button'))?.focus({ preventScroll: true });
+  }
+  for (const card of $$('#animeResults .anime-card')) {
+    for (const option of card.querySelectorAll('.anime-ep option')) option.textContent = animeEpisodeLabel(Number(card.dataset.aid), Number(option.value));
+  }
+  requestAnimationFrame(() => refreshShelf(continueBox, '.anime-resume-grid'));
+}
+
+function onAnimeHistoryClick(event) {
+  const button = event.target.closest('[data-history-play], [data-history-dismiss]');
+  if (!button || !isHost) return;
+  const id = Number(button.dataset.historyPlay || button.dataset.historyDismiss);
+  if (button.dataset.historyDismiss) {
+    conn.send({ type: 'anime-continue-dismiss', anilistId: id });
+    return;
+  }
+  const ep = Number(button.dataset.episode);
+  const saved = S.animeHistory.find(e => e.anilistId === id && e.episode === ep) || S.animeHistory.find(e => e.anilistId === id);
+  if (!saved) return;
+  showTuneIn(`${saved.animeTitle} · Ep ${ep}`);
+  selectAnime({ anilistId: id, malId: saved.malId, ep, episodes: saved.episodes,
+    lang: saved.language, title: saved.animeTitle, poster: saved.poster, restart: button.dataset.restart === 'true', resume: true });
+}
+$('#animeContinue').addEventListener('click', onAnimeHistoryClick);
+$('#animeContinue').addEventListener('error', event => { if (event.target.matches('img')) event.target.hidden = true; }, true);
 
 const nameTip = Object.assign(document.createElement('div'), { className: 'name-tip', hidden: true });
 document.body.appendChild(nameTip);
@@ -3016,7 +3120,7 @@ $('#animeResults').addEventListener('click', e => {
   const lang = card.querySelector('.anime-lang').value === 'sub' ? 'sub' : 'dub';
   const title = card.dataset.title || 'Anime';
   showTuneIn(`${title} · Ep ${ep}${lang === 'dub' ? ' (Dub)' : ''}`);
-  conn.send({ type: 'select-anime', anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title });
+  selectAnime({ anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title, poster: card.dataset.poster || '' });
 });
 
 const tuneIn = { el: null, title: null, steps: null, until: 0, timer: 0, step: 0 };
@@ -3092,7 +3196,7 @@ $('#animeNext').addEventListener('click', () => {
   if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
-  conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+  selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
 });
 $('#catalogLangToggle').addEventListener('click', e => {
   const button = e.target.closest('[data-lang]');
@@ -3115,7 +3219,7 @@ $('#animeLangToggle').addEventListener('click', e => {
   const episode = Math.max(1, Number(m.episode) || 1);
   const title = m.animeTitle || 'Anime';
   showTuneIn(`${title} · Ep ${episode}${next === 'dub' ? ' (Dub)' : ''}`);
-  conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: episode, episodes: m.episodes || 0, lang: next, title });
+  selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode, episodes: m.episodes || 0, lang: next, title });
 });
 
 let keepOffSince = 0, keepLastGo = 0, reachedTitle = false;
@@ -3176,7 +3280,7 @@ function doAnimeSkip(t) {
   if (!canControl()) { noPerm('playback'); return; }
   if (t.next) {
     const m = S.movie, ep = Math.max(1, Number(m.episode) || 1);
-    conn.send({ type: 'select-anime', anilistId: m.anilistId, malId: m.malId || 0, ep: ep + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+    selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: ep + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
   } else if (Number.isFinite(t.to)) {
     sendCmd('seek', t.to);                                 // host-authoritative seek -> syncs to the whole room
   }

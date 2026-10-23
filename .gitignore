@@ -4,6 +4,8 @@ build/cache/
 
 # Personal settings and secrets (admin key, local folders, TLS keys)
 config.json
+watch-history.json
+watch-history.json.tmp
 cache/
 .env
 .env.*

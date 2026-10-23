@@ -25,11 +25,24 @@ function embedSources(anilistId, malId, ep, lang) {
 async function search(q) {
   const query = String(q || '').trim();
   if (!query) return [];
-  const body = { query: `query($s:String){Page(perPage:12){media(search:$s,type:ANIME,sort:SEARCH_MATCH){id idMal episodes format seasonYear title{romaji english} coverImage{medium}}}}`, variables: { s: query } };
+  const body = { query: `query($s:String){Page(perPage:12){media(search:$s,type:ANIME,sort:SEARCH_MATCH){id idMal episodes format seasonYear title{romaji english} coverImage{large medium}}}}`, variables: { s: query } };
   const r = await fetch('https://graphql.anilist.co', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error(`AniList said ${r.status}`);
   const list = (((await r.json()) || {}).data?.Page?.media) || [];
-  return list.map(m => ({ id: m.id, mal: m.idMal || 0, title: (m.title && (m.title.english || m.title.romaji)) || `#${m.id}`, episodes: Number(m.episodes) || 0, year: m.seasonYear || null, format: m.format || '', poster: (m.coverImage && m.coverImage.medium) || '' })).filter(m => m.id > 0);
+  return list.map(m => ({ id: m.id, mal: m.idMal || 0, title: (m.title && (m.title.english || m.title.romaji)) || `#${m.id}`, episodes: Number(m.episodes) || 0, year: m.seasonYear || null, format: m.format || '', poster: (m.coverImage && (m.coverImage.large || m.coverImage.medium)) || '' })).filter(m => m.id > 0);
+}
+
+// Older watch-history files predate saved artwork. Fetch the exact title's search cover once.
+async function poster(anilistId) {
+  const id = Math.trunc(Number(anilistId));
+  if (!(id > 0)) return '';
+  const r = await fetch('https://graphql.anilist.co', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ query: 'query($id:Int!){Media(id:$id,type:ANIME){coverImage{large medium}}}', variables: { id } }),
+    signal: AbortSignal.timeout(10000) });
+  if (!r.ok) return '';
+  const cover = (await r.json())?.data?.Media?.coverImage;
+  return cover?.large || cover?.medium || '';
 }
 
 const absolutize = (u, host) => { try { return new URL(String(u || ''), `https://${host}/`).href; } catch { return ''; } };
@@ -133,4 +146,4 @@ function toVtt(text) {
   return `WEBVTT\n\n${body.replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-module.exports = { search, embedSources, resolveStream, parseSource, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt, Readable };
+module.exports = { search, poster, embedSources, resolveStream, parseSource, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt, Readable };

@@ -69,7 +69,7 @@ export class SyncPlayer {
       this.recoverUntil = performance.now() + 1000;
       this.report(true);
     });
-    for (const ev of ['waiting', 'playing', 'canplay', 'canplaythrough', 'pause', 'stalled', 'loadedmetadata', 'error']) {
+    for (const ev of ['waiting', 'playing', 'canplay', 'canplaythrough', 'pause', 'ended', 'stalled', 'loadedmetadata', 'error']) {
       on(ev, () => { this.report(true); this.onChange(); });
     }
 
@@ -405,6 +405,8 @@ export class SyncPlayer {
     const ahead = v.isAdapter ? null : Math.round(this.bufferedAhead() * 10) / 10;
     const health = !intendPlaying ? (loaded ? 100 : 0) : buffering ? 0 : ahead == null ? (v.readyState >= 3 ? 90 : 35) : Math.round(Math.max(0, Math.min(100, ahead / 12 * 100)));
     return {
+      movieId: this.movie?.id || null,
+      position: v.currentTime, duration: v.duration, ended: !!v.ended, seeking: !!v.seeking,
       loaded,
       buffering,
       ready: loaded && this.clock.synced && v.readyState >= 3 && !v.seeking && nearTarget,
@@ -421,7 +423,7 @@ export class SyncPlayer {
   report(force) {
     if (!this.movie || !this.state) return;
     const st = this.status();
-    const key = JSON.stringify([st.loaded, st.buffering, st.ready, st.blocked, st.seq, st.error, st.correction && st.correction.id]);
+    const key = JSON.stringify([st.loaded, st.buffering, st.ready, st.blocked, st.seq, st.error, st.ended, this.v.paused, st.correction && st.correction.id]);
     const now = performance.now();
     if (!force && key === this.lastStatusJson && now - this.lastStatusAt < 2000) return;
     if (force && key === this.lastStatusJson && now - this.lastStatusAt < 150) return;
