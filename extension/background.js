@@ -225,7 +225,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       const site = customSite(m.custom, theaterParty.get(tab), m.blockPopups);
       if (site) customHosts.set(tab, site); else customHosts.delete(tab);
     }
-    updateFrameRules().then(() => { injectTabFrames(tab); reply({ ok: true }); });
+    updateFrameRules().then(() => { injectTabFrames(tab); reply({ ok: true }); }, e => reply({ ok: false, error: String(e.message || e) }));
     return true;
   }
   if (m.wp === 'theater-open' && sender.tab) {
@@ -266,7 +266,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     const party = theaterParty.get(sender.tab.id);
     const site = customSite(m.url, party, m.blockPopups);
     if (site && party) customHosts.set(sender.tab.id, site); else customHosts.delete(sender.tab.id);
-    updateFrameRules().then(() => reply({ ok: !!site }));
+    updateFrameRules().then(() => reply({ ok: !!site }), e => reply({ ok: false, error: String(e.message || e) }));
     return true;
   }
   if (m.wp === 'open-panel') {
@@ -328,7 +328,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
 chrome.tabs.onRemoved.addListener(tabId => {
   theaterParty.delete(tabId);
   customHosts.delete(tabId);
-  if (theaterTabs.delete(tabId)) updateFrameRules();
+  if (theaterTabs.delete(tabId)) updateFrameRules().catch(e => console.warn('frame rules', e));
   for (const party of parties) {
     if (party.link && party.link.tabId === tabId) unlink(party);
     if (party.pendingTab === tabId) party.pendingTab = null;
@@ -372,12 +372,29 @@ function injectTabFrames(tabId) {
 if (chrome.webNavigation && chrome.webNavigation.onDOMContentLoaded) {
   chrome.webNavigation.onDOMContentLoaded.addListener(d => { if (partyControlsTab(d.tabId)) injectFrame(d.tabId, d.frameId, d.url); });
 }
+if (chrome.webNavigation && chrome.webNavigation.onErrorOccurred) {
+  chrome.webNavigation.onErrorOccurred.addListener(d => {
+    // Only the service page directly inside this theater, never its ads or the party frame.
+    if (!theaterTabs.has(d.tabId) || d.parentFrameId !== 0 || d.error === 'net::ERR_ABORTED') return;
+    if (!allowedUrl(d.url) && !customHosts.has(d.tabId)) return;
+    if (originOf(d.url) === theaterParty.get(d.tabId)) return;
+    chrome.runtime.sendMessage({ wp: 'theater-frame-error', tabId: d.tabId, url: d.url, error: d.error }).catch(() => {});
+  });
+}
 
 // Streaming sites normally refuse to be shown inside another page. Only in the "watch here" window
 // (and only for the streaming sites listed in the manifest, plus the custom site the host opened
 // there) the extension lets them load inside it. Every other tab and website is left exactly as it is.
 const FRAME_RULE_ID = 1, CUSTOM_RULE_ID = 2, ADS_RULE_ID = 3;
-async function updateFrameRules() {
+let frameRulesQueue = Promise.resolve();
+function updateFrameRules() {
+  // Opening a theater, loading its service and worker recovery can arrive together. Each caller
+  // must wait for its rules to be installed before navigating the embedded service.
+  const update = frameRulesQueue.then(installFrameRules);
+  frameRulesQueue = update.catch(() => {});
+  return update;
+}
+async function installFrameRules() {
   const tabIds = [...theaterTabs];
   const strip = { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }, { header: 'content-security-policy', operation: 'remove' }] };
   const addRules = [];
@@ -393,9 +410,7 @@ async function updateFrameRules() {
     addRules.push({ id: ADS_RULE_ID, priority: 2, action: { type: 'block' }, condition: { tabIds: customTabs, requestDomains: WP_AD_DOMAINS,
       resourceTypes: ['sub_frame', 'script', 'image', 'xmlhttprequest', 'media', 'ping', 'stylesheet', 'font', 'websocket', 'object', 'other'] } });
   }
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [FRAME_RULE_ID, CUSTOM_RULE_ID, ADS_RULE_ID], addRules });
-  } catch (e) { console.warn('frame rules', e); }
+  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [FRAME_RULE_ID, CUSTOM_RULE_ID, ADS_RULE_ID], addRules });
 }
 // This background part is put to sleep by the browser after a little while and starts fresh when it's
 // needed again. The rules that let the services load in the window outlive it, so pick up from them
@@ -417,7 +432,7 @@ async function updateFrameRules() {
   for (const t of [...theaterTabs]) {
     try { await chrome.tabs.get(t); } catch { theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t); }
   }
-  updateFrameRules();
+  updateFrameRules().catch(e => console.warn('frame rules', e));
 })();
 
 // Pop-ups and pop-unders from a custom site in the Watch Party window: closed the moment they open.

@@ -101,10 +101,19 @@ function load(url, custom, strict) {
   currentStrict = !!(custom && strict);
   svc.removeAttribute('sandbox');
   // the extension first lets the site load inside this window, then it loads
-  const go = () => { if (seq === loadSeq) svc.src = url; };
+  frameFailure = '';
+  helpClosed = false;
+  help.hidden = true;
+  const go = result => {
+    if (seq !== loadSeq) return;
+    if (!result || !result.ok) { showFrameFailure(result?.error || 'The extension could not prepare the player.'); return; }
+    svc.src = url;
+  };
   chrome.runtime.sendMessage(custom
     ? { wp: 'frame-allow', url, party: partyUrl, blockPopups: currentStrict }
-    : { wp: 'theater-hello', party: partyUrl, custom: null, blockPopups: false }).then(go, go);
+    : { wp: 'theater-hello', party: partyUrl, custom: null, blockPopups: false }).then(go, error => {
+      if (seq === loadSeq) showFrameFailure(String(error?.message || error));
+    });
 }
 // Remind the extension now and then that this window is here (and what it shows): the browser puts the
 // extension's background part to sleep after a while, and it starts again knowing nothing.
@@ -130,20 +139,35 @@ if (!allowedPartyUrl(partyUrl)) {
 }
 chrome.runtime.sendMessage({ wp: 'theater-hello', party: partyUrl }).catch(() => {});
 
-let currentSvcUrl = '', waitingSince = 0, helpClosed = false, lastStage = null;
-// not playing here after a while (a site might refuse to run inside another window): offer the old way
+let currentSvcUrl = '', waitingSince = 0, helpClosed = false, lastStage = null, frameFailure = '';
+// Keep failures and retry inside the Watch Party window, including while browsing or signing in.
+function showFrameFailure(error) {
+  frameFailure = String(error || 'The service page did not load.').slice(0, 240);
+  checkStuck();
+}
 function checkStuck() {
   const m = lastStage;
-  // only after a good while (signing in takes time), and never while the host is still picking something
-  const stuck = !!(m && m.show && !m.linked && !m.browsing && waitingSince && Date.now() - waitingSince > 90000 && !helpClosed);
+  const stuck = !!(m && m.show && !helpClosed && (frameFailure || (!m.linked && !m.browsing && waitingSince && Date.now() - waitingSince > 90000)));
   help.hidden = !stuck;
+  document.getElementById('helpText').textContent = frameFailure
+    ? `Could not load the service here: ${frameFailure}` : 'Video has not connected yet. Retry inside Watch Party.';
   if (stuck && m.rect) Object.assign(help.style, { left: `${m.rect.x + 16}px`, top: `${m.rect.y + 16}px` });
 }
 setInterval(checkStuck, 2000);
 const help = document.getElementById('help');
-document.getElementById('helpText').textContent = 'Video not starting here?';
 document.getElementById('helpX').addEventListener('click', () => { helpClosed = true; help.hidden = true; });
-document.getElementById('helpTab').addEventListener('click', () => { if (allowedPartyUrl(partyUrl)) location.href = partyUrl.split('#')[0]; });
+document.getElementById('helpRetry').addEventListener('click', () => {
+  if (!currentSvcUrl || !allowedServiceUrl(currentSvcUrl, !!customUrl)) return;
+  waitingSince = Date.now();
+  load(currentSvcUrl, !!customUrl, currentStrict);
+});
+let theaterTabId = null;
+chrome.tabs.getCurrent().then(tab => { theaterTabId = tab?.id ?? null; });
+chrome.runtime.onMessage.addListener((m, sender) => {
+  if (sender.id !== chrome.runtime.id || m?.wp !== 'theater-frame-error' || m.tabId !== theaterTabId || !lastStage?.show) return;
+  if (svcOf(m.url) !== svcOf(currentSvcUrl)) return;
+  showFrameFailure(m.error);
+});
 window.addEventListener('message', e => {
   if (e.source !== partyFrame.contentWindow || !e.data || typeof e.data.wpTheater !== 'string') return;
   const m = e.data;
@@ -171,7 +195,7 @@ window.addEventListener('message', e => {
       const r = m.rect;
       Object.assign(box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     }
-    if (!show && currentSvcUrl && !m.keep) { currentSvcUrl = ''; customUrl = ''; currentStrict = false; loadSeq++; svc.src = 'about:blank'; }
+    if (!show && currentSvcUrl && !m.keep) { currentSvcUrl = ''; customUrl = ''; currentStrict = false; frameFailure = ''; loadSeq++; svc.src = 'about:blank'; }
     lastStage = { ...m, show };
     if (show && !m.linked) { if (!waitingSince) waitingSince = Date.now(); } else waitingSince = 0;
     checkStuck();
