@@ -12,6 +12,7 @@ const SERVICES = [
   { id: 'disney', name: 'Disney+', hosts: ['disneyplus.com'] },
   { id: 'appletv', name: 'Apple TV+', hosts: ['tv.apple.com'] },
 ];
+const SEARCH_PARAM = { netflix: 'q', prime: 'phrase', hulu: 'q', peacock: 'q', crunchyroll: 'q', paramount: 'query', max: 'q', disney: 'q', appletv: 'term' };
 
 function youtubeId(u) {
   const ok = id => (/^[A-Za-z0-9_-]{11}$/.test(id || '') ? id : null);
@@ -48,8 +49,13 @@ function identify(raw, opts = {}) {
   }
   u.protocol = 'https:';
   u.hash = '';
-  // trim tracking bits (keep in step with wpCanonicalUrl in the extension and canonicalUrl in the page)
-  if (svc.id !== 'youtube') u.search = '';
+  // Search terms select the requested title; playback links still discard tracking parameters.
+  if (svc.id !== 'youtube') {
+    const key = SEARCH_PARAM[svc.id];
+    const query = key && /\/search(?:\/|$)/i.test(u.pathname) ? u.searchParams.get(key) : null;
+    u.search = '';
+    if (query !== null) u.searchParams.set(key, query);
+  }
   u.pathname = u.pathname.replace(/\/ref=[^/]*$/, '').replace(/\/+$/, '') || '/';
   if (svc.id === 'netflix') { const m = /\/watch\/(\d+)/.exec(u.pathname); if (m) u.pathname = `/watch/${m[1]}`; }
   const out = { service: svc.id, name: svc.name, url: u.toString() };

@@ -393,6 +393,7 @@ export class RemoteMedia extends AdapterBase {
     if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
     if (m.type === 'hello') { this.present = true; this.version = m.version; this.platform = m.platform || 'chromium'; this.onInfo(); }
+    else if (m.type === 'catalog-launch-result') { if (this.movie?.launchId === m.id) this.onLaunchResult?.(m); }
     else if (m.type === 'ext-problem') { this.onProblem && this.onProblem(m); }
     else if (m.type === 'linked') {
       this.linked = true; this.linkInfo = m; this.onInfo();
@@ -457,7 +458,7 @@ export class RemoteMedia extends AdapterBase {
     this.src = `ext:${movie.service}`;
     this.st = null;
     this.seekingTarget = null;
-    this.post({ type: 'watch', service: movie.service, url: movie.url, blockPopups: movie.strict !== false });
+    this.post({ type: 'watch', service: movie.service, url: movie.url, launchTitle: movie.launchTitle || '', launchId: movie.launchId || movie.id, playbackRef: movie.playbackRef || null, blockPopups: movie.strict !== false });
   }
   close() { this.movie = null; this.src = ''; this.st = null; this.post({ type: 'unwatch' }); }
   openTab() { if (this.movie) this.post({ type: 'open', service: this.movie.service, url: this.movie.url }); }
@@ -540,7 +541,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.14.1';
+export const REQUIRED_EXT_VERSION = '1.15.0';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 export const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],

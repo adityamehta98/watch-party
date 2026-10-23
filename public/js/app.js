@@ -66,6 +66,7 @@ let pipWin = null; // pop-out camera window
 let theaterPipOpen = false;
 const room = $('#room');
 let conn = null, player = null, mesh = null;
+let pendingCatalogService = null;
 const filePlayback = new FilePlayback(video, {
   onReady: () => { clearTimeout(fileStartTimer); S.filePlaybackError = null; renderNotice(); },
   onFatal: error => {
@@ -131,6 +132,7 @@ function start(name) {
   mpMedia = new MegaplayMedia($('#mpHost'), { onUser: onMegaplayUserAction, onFullscreen: cmd => { if (cmd === 'toggle') toggleFullscreen(); else mpMedia.fsState(isFs()); } });
   remote = new RemoteMedia({ onInfo: () => {
     renderServicePanel(); maybeSendMeta();
+    finishCatalogServiceLaunch();
     if (remote.present && extOutdated(remote.version) && !S.extWarned) {
       S.extWarned = true;
       const fix = remote.platform === 'safari'
@@ -140,6 +142,7 @@ function start(name) {
     }
   } });
   remote.onProblem = p => { if (p.kind === 'theater') clearTimeout(enterTheater.timer); extProblem(p); };
+  remote.onLaunchResult = result => { if (result.error) toast(result.error, { kind: 'error', timeout: 12000 }); };
   remote.onUser = onRemoteUserAction;
   // the level set in Netflix & co's own player shows on the party's slider too (and is remembered)
   remote.onUserVolume = (v, muted) => { if (M !== remote) return; $('#volume').value = muted ? 0 : v; store.set('wp.volume', v); scheduleUi(); dockPushSoon(); };
@@ -466,6 +469,7 @@ function loadMovie(movie) {
   const same = S.movie && movie && S.movie.id === movie.id;
   if (!same) S.observatory = null;
   S.movie = movie;
+  if (!movie || kindOf(movie) === 'service') hideTuneIn(true);
   syncAmbient();
   stage.classList.toggle('has-movie', !!movie);
   stage.dataset.kind = kindOf(movie);
@@ -481,6 +485,7 @@ function loadMovie(movie) {
   renderBookmarks();
   if (!isHost && S.perms) applyPerms(); // a custom site takes control away from guests while it's on
   if (same) {
+    if (kindOf(movie) === 'service' && movie.launchId && movie.launchId !== remote.movie?.launchId) remote.open(movie);
     if (isNativeMovie(movie)) {
       player.movie = movie;
       refreshFileSources(movie);
@@ -488,6 +493,7 @@ function loadMovie(movie) {
       if (kindOf(movie) === 'file') checkCodecSupport(movie);
       renderNotice();
     }
+    finishCatalogServiceLaunch();
     return;
   }
   subtitles.reset(movie?.id);
@@ -517,6 +523,7 @@ function loadMovie(movie) {
   if (movie && !isNativeMovie(movie)) codecWarning = null;
   buildCcMenu();
   renderNotice();
+  finishCatalogServiceLaunch();
 }
 
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
@@ -2819,6 +2826,32 @@ wireShelf($('#catalogPick'), '#catalogResults');
 wireShelf($('#animePick'), '#animeResults');
 wireShelf($('#animeContinue'), '.anime-resume-grid');
 
+function launchCatalogService(id, item) {
+  const url = SERVICE_SEARCH[id] ? SERVICE_SEARCH[id](encodeURIComponent(item.title)) : SERVICE_HOMES[id];
+  if (!url) return;
+  hideTuneIn(true);
+  const newTab = $('#svcNewTab').checked;
+  pendingCatalogService = { id, url, title: item.title, newTab, at: Date.now() };
+  // Commit to the room first so the extension is watching the selected service when it opens.
+  conn.send({ type: 'select-url', url, browsing: true, title: item.title, launchTitle: item.title, playbackRef: { title: item.title, tmdbId: item.tmdbId, type: item.type, year: item.year } });
+  if (newTab && !isTheater && remote?.present && !extOutdated(remote.version)) {
+    togglePip({ keep: true, quiet: true }); remote.openPanel();
+  }
+  finishCatalogServiceLaunch(); // A repeated pick may already be the room's accepted service URL.
+}
+function finishCatalogServiceLaunch() {
+  const pending = pendingCatalogService, movie = S.movie;
+  if (!pending) return;
+  if (Date.now() - pending.at > 10000) { pendingCatalogService = null; return; }
+  const key = value => { const url = new URL(value); url.pathname = url.pathname.replace(/\/+$/, '') || '/'; url.searchParams.sort(); return url.href; };
+  if (kindOf(movie) !== 'service' || movie.service !== pending.id || key(movie.url) !== key(pending.url)) return;
+  if (!remote?.present || extOutdated(remote.version)) return; // The service panel provides setup or update steps.
+  pendingCatalogService = null;
+  if (isTheater) theaterPost({ wpTheater: 'goto', url: movie.url });
+  else if (pending.newTab || remote.platform === 'safari') remote.post({ type: 'open', service: movie.service, url: movie.url });
+  else enterTheater();
+}
+
 function onCatalogResponse(message) {
   const pending = catalogRequests.get(message.requestId);
   if (!pending) return;
@@ -2969,11 +3002,7 @@ $('#catalogResults').addEventListener('click', event => {
   }
   const svcBtn = event.target.closest('.watch-svc');
   if (svcBtn) {
-    const id = svcBtn.dataset.svc;
-    const url = SERVICE_SEARCH[id] ? SERVICE_SEARCH[id](encodeURIComponent(item.title)) : SERVICE_HOMES[id];
-    if (!url) return;
-    showTuneIn(`${item.title} · ${SERVICE_NAMES[id] || 'Service'}`);
-    conn.send({ type: 'select-url', url, browsing: true, title: item.title });
+    launchCatalogService(svcBtn.dataset.svc, item);
     return;
   }
   if (!event.target.closest('.catalog-play') || !card._catalogRef) return;
@@ -3123,12 +3152,13 @@ $('#animeResults').addEventListener('click', e => {
   selectAnime({ anilistId: Number(card.dataset.aid), malId: Number(card.dataset.mal) || 0, ep, episodes: Number(card.dataset.episodes) || 0, lang, title, poster: card.dataset.poster || '' });
 });
 
-const tuneIn = { el: null, title: null, steps: null, until: 0, timer: 0, step: 0 };
+const tuneIn = { el: null, title: null, steps: null, until: 0, timer: 0, step: 0, waitTimer: 0, hideTimer: 0 };
 function showTuneIn(label) {
   tuneIn.el ||= $('#tuneIn');
   tuneIn.title ||= $('#tuneInTitle');
   tuneIn.steps ||= [...$('#tuneInSteps').querySelectorAll('.s')];
   if (!tuneIn.el) return;
+  clearTimeout(tuneIn.waitTimer); clearTimeout(tuneIn.hideTimer);
   tuneIn.el.hidden = false;
   tuneIn.el.classList.remove('leaving');
   tuneIn.title.textContent = label;
@@ -3147,12 +3177,16 @@ function showTuneIn(label) {
 }
 function hideTuneIn(force = false) {
   if (!tuneIn.el || tuneIn.el.hidden) return;
+  clearTimeout(tuneIn.waitTimer); clearTimeout(tuneIn.hideTimer);
+  if (force) {
+    clearInterval(tuneIn.timer); tuneIn.el.hidden = true; tuneIn.el.classList.remove('leaving'); return;
+  }
   const now = performance.now();
-  if (!force && now < tuneIn.until) return setTimeout(() => hideTuneIn(), tuneIn.until - now);
+  if (now < tuneIn.until) { tuneIn.waitTimer = setTimeout(() => hideTuneIn(), tuneIn.until - now); return; }
   clearInterval(tuneIn.timer);
   if (tuneIn.steps) tuneIn.steps.forEach((s, i) => { s.classList.remove('on'); if (i < tuneIn.steps.length) s.classList.add('done'); });
   tuneIn.el.classList.add('leaving');
-  setTimeout(() => { tuneIn.el.hidden = true; tuneIn.el.classList.remove('leaving'); }, 350);
+  tuneIn.hideTimer = setTimeout(() => { tuneIn.el.hidden = true; tuneIn.el.classList.remove('leaving'); }, 350);
 }
 video.addEventListener('playing', () => hideTuneIn());
 video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTuneIn(); });

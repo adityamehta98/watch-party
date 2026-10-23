@@ -262,7 +262,7 @@ class Room {
         browsing: false, by: m.by || null, strict: false };
     }
     if (m.kind !== 'file') {
-      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, sources: m.sources || null, videoId: m.videoId, title: m.title, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict, advanceFrom: m.advanceFrom || null,
+      return { id: m.id, kind: m.kind, service: m.service, serviceName: m.serviceName, url: m.url, sources: m.sources || null, videoId: m.videoId, title: m.title, launchTitle: m.launchTitle || '', launchId: m.launchId || '', playbackRef: m.playbackRef || null, duration: m.duration, browsing: !!m.browsing, by: m.by || null, strict: !!m.strict, advanceFrom: m.advanceFrom || null,
         anilistId: m.anilistId || null, malId: m.malId || null, episode: m.episode || null, episodes: m.episodes || null, language: m.language || null, animeTitle: m.animeTitle || null };
     }
     return {
@@ -456,6 +456,14 @@ class Room {
     this.system(`Now showing: ${p.title}`);
   }
 
+  cleanPlaybackRef(ref, title) {
+    if (!title) return null;
+    return { title: String(title).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140),
+      type: ['movie', 'tv'].includes(ref?.type) ? ref.type : '',
+      tmdbId: Number.isSafeInteger(ref?.tmdbId) && ref.tmdbId > 0 ? ref.tmdbId : null,
+      year: /^(19|20)\d{2}$/.test(String(ref?.year || '')) ? String(ref.year) : '' };
+  }
+
   selectUrl(client, url, inTabs, opts = {}) {
     if (!this.canChoose(client)) return;
     const previous = this.movie;
@@ -470,13 +478,23 @@ class Room {
     // a custom site is locked down in everyone's window (no pop-ups, no new tabs) unless the host turned that off
     const strict = info.service === 'custom' ? (opts.custom ? opts.strict !== false : !(this.movie && this.movie.strict === false)) : false;
     const id = 'u' + crypto.createHash('sha1').update(info.url + (info.service === 'custom' && !strict ? '#loose' : '')).digest('hex').slice(0, 11);
-    if (this.movie && this.movie.id === id) return;
+    if (this.movie && this.movie.id === id) {
+      if (opts.launchTitle && this.movie.browsing && this.movie.launchTitle) {
+        this.movie.playbackRef = this.cleanPlaybackRef(opts.playbackRef, opts.launchTitle);
+        this.movie.launchId = randKey(16);
+        this.broadcast({ type: 'movie', movie: this.publicMovie() });
+      }
+      return;
+    }
     const browsing = !!opts.browsing; // the service's front page: the host is picking something
     const title = String(opts.title || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140);
     const requestedFrom = opts.follow && opts.advanceFrom ? services.identify(opts.advanceFrom) : null;
     const advanceFrom = requestedFrom && previous && previous.kind === 'service' && previous.service === 'netflix' && info.service === 'netflix'
       && requestedFrom.url === previous.url && info.url !== previous.url ? previous.url : null;
-    this.movie = { id, kind, service: info.service, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name, strict, advanceFrom };
+    const launchTitle = browsing && kind === 'service' ? String(opts.launchTitle || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140) : '';
+    const playbackRef = launchTitle ? this.cleanPlaybackRef(opts.playbackRef, launchTitle)
+      : opts.follow && previous?.service === info.service ? previous.playbackRef || null : null;
+    this.movie = { id, kind, service: info.service, playbackRef, serviceName: info.name, url: info.url, videoId: info.videoId || null, title: title || info.name, launchTitle, launchId: launchTitle ? randKey(16) : '', duration: Number(opts.duration) > 0 ? Number(opts.duration) : null, subs: [], browsing, by: client.name, strict, advanceFrom };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
     const pos = Math.max(0, Number(opts.position) || 0);
     this.setState({ movieId: id, playing: !!opts.playing && pos >= 0, position: pos, anchor: Date.now() + (opts.playing ? 300 : 0) }, { by: client.name, action: 'load' });
@@ -785,7 +803,7 @@ class Room {
           return;
         }
         case 'select-movie': return this.selectMovie(client, msg.id);
-        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, duration: msg.duration, position: msg.position, playing: !!msg.playing });
+        case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, launchTitle: msg.launchTitle, playbackRef: msg.playbackRef, duration: msg.duration, position: msg.position, playing: !!msg.playing });
         case 'select-anime': return this.selectAnime(client, msg);
         case 'find-subtitles': return this.findSubtitles(client, msg);
         case 'select-catalog': return this.selectCatalog(client, msg);

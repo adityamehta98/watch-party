@@ -1,5 +1,7 @@
 // Which streaming service a page belongs to (shared by the extension's scripts).
-const WP_SERVICES = [
+// This file is injected again when the background worker reconnects. Keep its shared bindings
+// redeclarable so a second injection cannot abort the player-sync script that follows it.
+var WP_SERVICES = [
   ['youtube', ['youtube.com', 'youtu.be']], ['netflix', ['netflix.com']], ['prime', ['primevideo.com', 'amazon.com']],
   ['hulu', ['hulu.com']], ['peacock', ['peacocktv.com']], ['crunchyroll', ['crunchyroll.com']],
   ['paramount', ['paramountplus.com']], ['max', ['max.com', 'hbomax.com']], ['disney', ['disneyplus.com']],
@@ -12,7 +14,7 @@ function wpServiceOf(hostname) {
 }
 if (typeof self !== 'undefined') self.wpServiceOf = wpServiceOf;
 // the sites (and their sign-in pages) the "watch here" window may show inside itself
-const WP_SERVICE_DOMAINS = ['netflix.com', 'primevideo.com', 'amazon.com', 'hulu.com', 'peacocktv.com', 'crunchyroll.com',
+var WP_SERVICE_DOMAINS = ['netflix.com', 'primevideo.com', 'amazon.com', 'hulu.com', 'peacocktv.com', 'crunchyroll.com',
   'paramountplus.com', 'max.com', 'hbomax.com', 'disneyplus.com', 'apple.com'];
 if (typeof self !== 'undefined') self.WP_SERVICE_DOMAINS = WP_SERVICE_DOMAINS;
 

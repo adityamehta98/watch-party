@@ -29,6 +29,9 @@
   let maxDur = 0;            // longest real video seen here (to tell ads apart)
   const expect = { play: 0, pause: 0, seek: 0 }; // until when an event of this kind was caused by us, not the viewer
   let blocked = false;
+  if (NETFLIX) window.addEventListener('message', e => {
+    if (e.source === window && e.data?.source === 'wp-netflix' && e.data.op === 'play') blocked = e.data.ok === false;
+  });
   let lastContent = { t: 0, rate: 1 }; // where the show was before an ad took over
   let contentVideo = null;              // the element playing the show itself (the longest video)
 
@@ -106,6 +109,8 @@
     const v = pick();
     if (!v) return null;
     const ad = isAd(v);
+    window.__wpPlaybackAd = ad;
+    if (window.__wpCatalogRestoring) return null;
     const d = isFinite(v.duration) ? v.duration : 0;
     if (!ad && d > 0 && d >= maxDur) { maxDur = d; contentVideo = v; }
     // only the show's own video may update the show's position (a new ad element starts at 0)
@@ -166,7 +171,7 @@
   }, 150);
   const settling = now => (seekBusy && now - seekStartAt < 8000) || now - seekDoneAt < 700;
   function onUserEvent(e) {
-    if (!video || e.target !== video) return;
+    if (!video || e.target !== video || window.__wpCatalogRestoring) return;
     const now = performance.now();
     if (e.type === 'seeking') {
       seekBusy = true; seekStartAt = now;
@@ -261,6 +266,7 @@
     try { el.click(); return true; } catch { return false; }
   }
   function apply(c) {
+    if (window.__wpCatalogRestoring && !['volume', 'mute'].includes(c.op)) return;
     if (c.op === 'next' && NETFLIX) { nextEpisode(); return; }
     const v = pick();
     if (!v) return;

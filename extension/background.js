@@ -111,7 +111,7 @@ function onPartyPort(port) {
   port.onMessage.addListener(async m => {
     switch (m.type) {
       case 'watch':
-        party.watch = { service: m.service, url: m.url, blockPopups: m.blockPopups !== false };
+        party.watch = { service: m.service, url: m.url, launchTitle: String(m.launchTitle || '').slice(0, 140), launchId: String(m.launchId || '').slice(0, 80), playbackRef: m.playbackRef || null, blockPopups: m.blockPopups !== false };
         if (party.link) post(port, { type: 'linked', tabId: party.link.tabId, service: m.service });
         rebindDocks();
         break;
@@ -214,6 +214,12 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     // since this background part is put to sleep by the browser now and then and forgets)
     const tab = sender.tab.id;
     theaterTabs.add(tab);
+    // A cached party iframe can reconnect before the theater's hello after a worker restart.
+    // Refresh ownership here as well, so title launch never waits for a video to link first.
+    for (const party of parties) if (party.tabId === tab) {
+      party.inTheater = true;
+      if (party.pendingTab == null) party.pendingTab = tab;
+    }
     if (m.party) theaterParty.set(tab, originOf(m.party));
     if ('custom' in m) {
       const site = customSite(m.custom, theaterParty.get(tab), m.blockPopups);
@@ -270,6 +276,20 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
   }
   if (!sender.tab) return;
   const tabId = sender.tab.id, frameId = sender.frameId || 0;
+  if (m.wp === 'catalog-launch' || m.wp === 'catalog-launch-unmatched') {
+    const service = (() => { try { return wpServiceOf(new URL(sender.url).hostname); } catch { return null; } })();
+    const party = [...parties].find(p => p.watch?.service === service && (p.watch.launchTitle || p.watch.playbackRef?.title) &&
+      ((p.tabId === tabId && theaterTabs.has(tabId)) || p.pendingTab === tabId || p.link?.tabId === tabId));
+    if (m.wp === 'catalog-launch-unmatched') {
+      if (party && m.id === party.watch.launchId) post(party.port, { type: 'catalog-launch-result', id: m.id,
+        error: String(m.error || '').slice(0, 300) || `Could not uniquely open "${party.watch.launchTitle}". Choose the title and Play or Resume inside the service to continue.` });
+      reply({ ok: true });
+    } else {
+      const owned = [...parties].some(p => p.tabId === tabId || p.pendingTab === tabId || p.link?.tabId === tabId);
+      reply(party ? { id: party.watch.launchId, title: party.watch.launchTitle || party.watch.playbackRef.title, url: party.watch.url, service, meta: party.watch.playbackRef || {}, launch: !!party.watch.launchTitle } : owned ? { inactive: true } : null);
+    }
+    return;
+  }
   for (const party of parties) {
     if (!party.watch) continue;
     // a custom site may hold a known player inside it (a YouTube embed, say): in the Watch Party
@@ -332,7 +352,7 @@ function injectFrame(tabId, frameId, url) {
   if (partyOrigin && u.origin === partyOrigin) return;
   const target = { tabId, frameIds: [frameId] };
   if (wpServiceOf(u.hostname)) {
-    chrome.scripting.executeScript({ target, files: ['services.js', 'service.js'] })
+    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'service.js'] })
       .then(() => wpServiceOf(u.hostname) === 'netflix' ? chrome.scripting.executeScript({ target, world: 'MAIN', files: ['netflix-main.js'] }) : null)
       .catch(() => {});
     return;
