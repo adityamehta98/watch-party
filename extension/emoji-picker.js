@@ -17,6 +17,9 @@
   const emojiLike = text => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20E3]/u.test(text);
   function nativeEmoji(emoji) {
     if (glyphCache.has(emoji)) return glyphCache.get(emoji);
+    // An unsupported hand plus a colored skin-tone swatch is still a missing glyph.
+    const base = emoji.replace(/[\u{1f3fb}-\u{1f3ff}]/gu, '');
+    if (base !== emoji && !nativeEmoji(base)) return false;
     let supported = false;
     try {
       if (glyphContext === undefined) glyphContext = globalThis.document?.createElement('canvas').getContext?.('2d', { willReadFrequently: true }) || null;
@@ -52,7 +55,7 @@
     const url = mediaUrl(String(text || '').trim());
     if (url) {
       const google = url.startsWith('https://fonts.gstatic.com/');
-      return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="${google ? 'Animated sticker by Google Noto' : 'GIF from GIPHY'}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:160px;width:auto;border-radius:10px;margin:6px 0"><small>${google ? 'Google Noto' : 'GIPHY'} · open ${google ? 'sticker' : 'GIF'}</small></a>${google ? ' <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer"><small>CC BY 4.0</small></a>' : ''}`;
+      return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${google ? 'Google Noto · CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)' : 'GIF from GIPHY'}"><img src="${esc(url)}" alt="${google ? 'Animated sticker by Google Noto' : 'GIF from GIPHY'}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:160px;width:auto;border-radius:10px;margin:6px 0"></a>`;
     }
     const value = String(text || '').trim();
     const onlyEmoji = value && Array.from(value).length <= 40 && !value.replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0F\u200D\u20E3\u{e0020}-\u{e007f}\s]/gu, '');
@@ -75,7 +78,7 @@
       else { active = null; previousText = ''; image.removeAttribute('src'); }
     };
     remove.addEventListener('click', () => { input.value = previousText; sync(); input.focus(); });
-    input.addEventListener('input', sync); input.form?.addEventListener('submit', () => queueMicrotask(sync)); sync();
+    input.addEventListener('input', sync); sync();
     return { sync, pick(value) {
       if (mediaUrl(value)) { if (!active) previousText = input.value; input.value = value; sync(); input.form?.querySelector?.('[type=submit]')?.focus(); }
       else { if (active) input.value = previousText; const start = input.selectionStart ?? input.value.length; input.setRangeText(value, start, input.selectionEnd ?? start, 'end'); sync(); input.focus(); }

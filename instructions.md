@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.17.1 must be reloaded after installing this build.
+release conditions. Extension 1.17.2 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -235,3 +235,8 @@ If the device font cannot draw a color emoji (for example Unicode 18 cracking
 face), the picker and received chat use a static Google Noto image. This requires
 an internet connection and does not use GIPHY calls. The emoji still sends as
 Unicode text. Native text inputs and other apps depend on their own emoji fonts.
+
+GIF/sticker previews clear immediately after Send in the room, extension sidebar
+and video overlay. Sent media has no text-link caption; provider/license credits
+remain in the image tooltip, media picker and bundled notices. New hand emoji
+with skin tones use Noto artwork when the base hand is missing from the device font.

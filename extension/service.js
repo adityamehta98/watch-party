@@ -618,7 +618,7 @@
       const i = root.getElementById('input');
       const text = i.value.trim();
       if (text) act({ op: 'chat', text });
-      i.value = '';
+      i.value = ''; i.dispatchEvent(new Event('input'));
     });
     // Netflix occasionally blurs the active element while its native controls mount/unmount. Restore
     // only an involuntary blur (no related target), so deliberate clicks on Netflix still work.

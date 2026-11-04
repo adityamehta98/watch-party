@@ -94,12 +94,55 @@ test('media drafts show a removable preview, restore typed text and clear after 
  class DraftElement extends Element {
   constructor(){super();this.style={};this.value='';this.selectionStart=0;this.selectionEnd=0;}
   append(...children){this.children.push(...children);} removeAttribute(name){delete this[name];} focus(){this.focused=true;}
+  dispatchEvent(event){this.listeners[event.type]?.(event);}
   setRangeText(value,start,end){this.value=this.value.slice(0,start)+value+this.value.slice(end);this.selectionStart=this.selectionEnd=start+value.length;}
  }
  const input=new DraftElement(),holder=new DraftElement();holder.insertBefore=child=>holder.children.push(child);input.parentNode=holder;input.ownerDocument={createElement:()=>new DraftElement()};input.form=new DraftElement();const submit=new DraftElement();input.form.querySelector=()=>submit;
  const api=load({queueMicrotask}),draft=api.createDraft(input);input.value='Unsent text';draft.pick(valid);
  const card=holder.children[0];assert.equal(input.hidden,true);assert.equal(submit.focused,true);assert.equal(card.children[0].src,valid);assert.equal(card.children[1].textContent,'GIF ready to send');
  card.children[2].listeners.click();assert.equal(input.value,'Unsent text');assert.equal(input.hidden,false);
- draft.pick(valid);input.value='';input.form.listeners.submit();await tick();assert.equal(input.hidden,false);assert.equal(card.style.display,'none');
+ draft.pick(valid);input.value='';input.dispatchEvent({type:'input'});assert.equal(input.hidden,false);assert.equal(card.style.display,'none');
  draft.pick('https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/512.webp');assert.equal(card.children[1].textContent,'Sticker ready to send');
+});
+
+
+test('sent GIFs and stickers contain only the clickable image, with attribution in accessible metadata',()=>{
+ const api=load();
+ for(const url of [valid,'https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/512.webp']){
+  const html=api.chatHtml(url);
+  assert.equal(html.replace(/<[^>]*>/g,''),'','no visible link captions');
+  assert.match(html,/<a [^>]*title=/);assert.match(html,/<img [^>]*alt=/);assert.doesNotMatch(html,/<small>/);
+ }
+ assert.match(api.chatHtml(valid),/GIF from GIPHY/);
+ assert.match(api.chatHtml('https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/512.webp'),/CC BY 4.0/);
+});
+
+test('room, extension sidebar and video overlay clear drafts synchronously in their real send handlers',()=>{
+ class DraftElement extends Element {
+  constructor(){super();this.style={};this.value='';}
+  append(...children){this.children.push(...children);} removeAttribute(name){delete this[name];} focus(){}
+  dispatchEvent(event){this.listeners[event.type]?.(event);}
+ }
+ for(const surface of ['room','sidebar','overlay']){
+  const input=new DraftElement(),holder=new DraftElement(),form=new DraftElement();holder.insertBefore=child=>holder.children.push(child);input.parentNode=holder;input.ownerDocument={createElement:()=>new DraftElement()};input.form=form;
+  const sent=[],context=vm.createContext({URL,URLSearchParams,Event:class{constructor(type){this.type=type;}},isHost:true,S:{perms:{chat:true}},conn:{send:m=>sent.push(m)},act:m=>sent.push(m),noPerm:()=>{throw Error('unexpected permission failure');},$:selector=>selector==='#chatForm'?form:input,root:{getElementById:id=>id==='form'?form:input}});
+  vm.runInContext(source,context);const draft=context.WpEmoji.createDraft(input),card=holder.children[0];
+  let handler;
+  if(surface==='room'){
+   const app=fs.readFileSync(require('node:path').join(__dirname,'../public/js/app.js'),'utf8');
+   vm.runInContext(app.match(/function sendChat\(input\) \{[\s\S]*?\n\}/)[0],context);handler=()=>context.sendChat(input);
+  }else{
+   const file=surface==='sidebar'?'sidebar':'service',js=fs.readFileSync(require('node:path').join(__dirname,'../extension/'+file+'.js'),'utf8');
+   const start=js.indexOf(surface==='sidebar'?"$('#chatForm').addEventListener('submit'":"root.getElementById('form').addEventListener('submit'");
+   assert.ok(start>=0);const end=js.indexOf('\n'+(surface==='sidebar'?'':'    ')+'});',start);
+   assert.ok(end>start);vm.runInContext(js.slice(start,end)+ '\n});',context);handler=()=>form.listeners.submit({preventDefault(){}});
+  }
+  for(const url of [valid,'https://fonts.gstatic.com/s/e/notoemoji/latest/1f602/512.webp']){
+   draft.pick(url);assert.equal(input.hidden,true);handler();
+   assert.equal(sent.at(-1).text,url,surface);assert.equal(input.value,'',surface);assert.equal(input.hidden,false,surface);assert.equal(card.style.display,'none',surface);assert.equal(card.children[0].src,undefined,surface);
+  }
+  if(surface==='room'){
+   draft.pick(valid);context.isHost=false;context.S.perms.chat=false;context.noPerm=()=>{};handler();assert.equal(input.value,valid,'permission rejection preserves the draft');assert.equal(card.style.display,'flex');
+  }
+ }
 });

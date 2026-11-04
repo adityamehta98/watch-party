@@ -198,7 +198,7 @@ $('#chatForm').addEventListener('submit', e => {
   const text = i.value.trim();
   if (!text) return;
   act({ op: 'chat', text });
-  i.value = '';
+  i.value = ''; i.dispatchEvent(new Event('input'));
 });
 $('#partyBtn').addEventListener('click', () => send({ type: 'party-tab' }));
 $('#bigBtn').addEventListener('click', () => send({ type: 'big-screen' }));

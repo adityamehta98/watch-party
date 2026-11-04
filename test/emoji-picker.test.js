@@ -70,3 +70,14 @@ test('glyph detection keeps native color emoji and falls back for boxes or split
  assert.match(context.WpEmoji.emojiHtml('\u{1faeb}','cracking face'),/128\.png/);
  assert.match(context.WpEmoji.emojiHtml('👩\u200d🚒','woman firefighter'),/128\.png/);
 });
+
+
+test('a skin-tone swatch beside a missing base glyph never counts as a supported emoji',()=>{
+ let painted='';const ctx={canvas:{},measureText:()=>({width:32}),fillText:text=>{painted=text;},getImageData:()=>({data:new Uint8ClampedArray(painted.includes('🏻')?[255,190,150,255]:[80,80,80,255])})};
+ const context=vm.createContext({document:{createElement:()=>({getContext:()=>ctx})}});vm.runInContext(read('public/js/emoji-picker.js'),context);
+ for(const code of ['1faf9','1fafa']){
+  const emoji=String.fromCodePoint(parseInt(code,16))+'🏻';
+  assert.match(context.WpEmoji.emojiHtml(emoji),new RegExp('/'+code+'_1f3fb/128\\.png'));
+  assert.match(context.WpEmoji.chatHtml(emoji),new RegExp('/'+code+'_1f3fb/128\\.png'));
+ }
+});

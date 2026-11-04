@@ -1358,7 +1358,7 @@ function sendChat(input) {
   if (!text) return;
   if (!(isHost || S.perms.chat)) return noPerm('chat');
   conn.send({ type: 'chat', text });
-  input.value = '';
+  input.value = ''; input.dispatchEvent(new Event('input'));
 }
 $('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('#chatInput')); });
 $('#quickChat').addEventListener('submit', e => { e.preventDefault(); sendChat($('#quickChatInput')); $('#quickChat').hidden = true; poke(); });
