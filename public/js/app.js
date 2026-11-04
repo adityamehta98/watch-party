@@ -1,6 +1,7 @@
 import { Connection } from './net.js';
 import { animeResumeCard } from './anime-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
+import { createPlayerMenu } from './player-menu.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
@@ -32,6 +33,7 @@ function randId() { const a = new Uint8Array(12); crypto.getRandomValues(a); ret
 function resLabel(w, h) { if (!w) return ''; if (w >= 3200 || h >= 1800) return '4K'; if (w >= 1800 || h >= 1000) return '1080p'; if (w >= 1200 || h >= 700) return '720p'; return `${h}p`; }
 function codecLabel(c) { return ({ hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', vc1: 'VC-1' })[c] || (c || '').toUpperCase(); }
 
+const moreMenu = createPlayerMenu($('#playerMorePop'));
 const app = $('#app');
 const parts = location.pathname.split('/').filter(Boolean);
 const mode = parts[0] === 'host' ? 'host' : parts[0] === 'join' ? 'guest' : null;
@@ -345,6 +347,17 @@ function canUseAmbient() {
 
   return !!(visualPrefs.ambient && visuals.ambient && S.movie && isNativeMovie(S.movie) && video.readyState >= 2 && document.visibilityState === 'visible');
 }
+function renderMoreControls() {
+  moreMenu.update({
+    cam: S.cam, mic: S.mic,
+    ambientPreference: visualPrefs.ambient, ambientAllowed: visuals.ambient,
+    ambientReason: visuals.reasons.filter(reason => reason !== 'manual').join(', ') || (visuals.saver ? 'battery saver' : ''),
+    saver: visuals.saver, manualSaver: visualPrefs.saver,
+    saverReason: visuals.reasons.filter(reason => ['data saver', 'low battery'].includes(reason)).join(', '),
+    canPip: 'documentPictureInPicture' in window || (isTheater && kindOf(S.movie) === 'service'),
+    pip: !!pipWin || theaterPipOpen,
+  });
+}
 function renderVisualControls() {
   const ambient = $('#ambientBtn'), eco = $('#ecoBtn');
   const active = visualPrefs.ambient && visuals.ambient;
@@ -354,16 +367,7 @@ function renderVisualControls() {
   eco.classList.toggle('on', visuals.saver);
   eco.setAttribute('aria-pressed', String(visualPrefs.saver));
   eco.title = visuals.saver ? `Battery saver is on${visuals.reasons.length ? ` (${visuals.reasons.join(', ')})` : ''}` : 'Turn on battery saver';
-  const ambientMenu = $('#playerMorePop [data-control="ambientBtn"]');
-  const saverMenu = $('#playerMorePop [data-control="ecoBtn"]');
-  ambientMenu.textContent = `Ambient light · ${active ? 'On' : 'Off'}`;
-  ambientMenu.setAttribute('aria-label', 'Ambient light');
-  ambientMenu.setAttribute('aria-pressed', String(active));
-  ambientMenu.title = ambient.title;
-  saverMenu.textContent = `Battery saver · ${visuals.saver ? 'On' : 'Off'}`;
-  saverMenu.setAttribute('aria-label', 'Battery saver');
-  saverMenu.setAttribute('aria-pressed', String(visuals.saver));
-  saverMenu.title = eco.title;
+  renderMoreControls();
   app.classList.toggle('motion-off', !visuals.motion);
 }
 function stopAmbientSampling() {
@@ -1092,6 +1096,7 @@ let idleTimer = null, goneTimer = null;
 const controlsEl = $('#controls');
 function setIdle(idle) {
   clearTimeout(goneTimer);
+  for (const el of [controlsEl, ...stage.querySelectorAll('.anime-actions, .anime-social')]) el.inert = idle;
   if (idle) {
     stage.dataset.idle = 'true';
     goneTimer = setTimeout(() => { if (stage.dataset.idle === 'true') controlsEl.classList.add('gone'); }, 300);
@@ -1106,7 +1111,11 @@ function poke() {
   if (stage.dataset.idle !== 'false' || controlsEl.classList.contains('gone')) setIdle(false);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden || !$('#playerMorePop').hidden || !$('#quickChat').hidden || stage.querySelector('.controls:hover') || dragFrac != null;
+    const hovered = matchMedia('(hover: hover)').matches
+      && stage.querySelector('.controls:hover, .anime-actions:hover, .anime-social:hover');
+    const keyboard = stage.querySelector('.controls :focus-visible, .anime-actions :focus-visible, .anime-social :focus-visible');
+    const busy = !$('#reactPop').hidden || !$('#animeReactPop').hidden || !$('#ccPop').hidden
+      || !$('#playerMorePop').hidden || !$('#quickChat').hidden || hovered || keyboard || dragFrac != null;
     if (S.state && S.state.playing && !busy) setIdle(true); else poke();
   }, 2800);
 }
@@ -1135,20 +1144,32 @@ function closePops(except) {
 }
 function togglePop(id) {
   const el = $(id), open = el.hidden;
-  if (id === '#playerMorePop') el.style.maxHeight = `${Math.max(64, Math.min(320, stage.clientHeight - 76))}px`;
+  if (id === '#playerMorePop') {
+    renderMoreControls();
+    el.style.maxHeight = Math.max(64, Math.min(480, stage.clientHeight - 96, window.innerHeight * .65)) + 'px';
+  }
   closePops(id); el.hidden = !open; poke();
 }
 $('#playerMoreBtn').addEventListener('click', e => {
   e.stopPropagation(); togglePop('#playerMorePop');
   $('#playerMoreBtn').setAttribute('aria-expanded', String(!$('#playerMorePop').hidden));
 });
+let forwardingMoreControl = false;
 $('#playerMorePop').addEventListener('click', e => {
   const action = e.target.closest('[data-control]');
-  if (!action) return;
-  closePops();
-  document.getElementById(action.dataset.control)?.click();
+  if (!action || action.disabled) return;
+  e.stopPropagation();
+  if (!action.dataset.toggle) closePops();
+  forwardingMoreControl = true;
+  try { document.getElementById(action.dataset.control)?.click(); }
+  finally { forwardingMoreControl = false; }
+  renderMoreControls();
+  poke();
 });
-document.addEventListener('click', e => { if (!e.target.closest('.pop-wrap')) closePops(); });
+
+document.addEventListener('click', e => {
+  if (!forwardingMoreControl && !e.target.closest('.pop-wrap')) closePops();
+});
 
 function subtitleTimingKey(movie = S.movie) {
   const id = kindOf(movie) === 'anime' ? `anime-${movie.anilistId}-${movie.language}` : movie?.id || 'none';
@@ -1471,6 +1492,7 @@ function afterLocalChange() {
   conn.send({ type: 'media', cam: S.cam, mic: S.mic });
   for (const id of ['#camBtn', '#animeCamBtn']) { $(id).innerHTML = icon(S.cam ? 'cam' : 'cam-off'); $(id).classList.toggle('live', S.cam); }
   for (const id of ['#micBtn', '#animeMicBtn']) { $(id).innerHTML = icon(S.mic ? 'mic' : 'mic-off'); $(id).classList.toggle('live', S.mic); }
+  renderMoreControls();
   renderCams();
 }
 $('#camBtn').addEventListener('click', () => (S.cam ? stopLocal('video') : startLocal('video')));

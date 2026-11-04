@@ -83,14 +83,20 @@ The top previous/next controls are compact arrow buttons. The header episode
 picker lists the known series episodes with watched and resume markers; an
 equivalent picker appears inside the expanded/fullscreen stage. Selecting an
 episode retains the current series and audio language and resolves a fresh stream.
+The language and episode toolbar fades with the playback controls on every screen
+size, reappears on touch or pointer activity, and stays available while paused,
+using a menu, hovering with a mouse or navigating controls with a keyboard.
 
 On narrow phone screens, the playback controls remain on one compact row.
 Secondary controls (camera, microphone, lighting, battery saver, chat, and
 10-second jumps) are in More controls. Reactions stay visible as static badges
 when reduced motion or battery saver disables animation. Reaction delivery does
 not rely on a phone clock being synchronized during connection startup.
-Ambient light and Battery saver are the first two More controls entries, with
-their current on/off states. System reduced-motion, data-saving, or low-memory
+Camera, Microphone, Ambient light and Battery saver appear as icon cards in More
+controls, with short explanations, visible switches and gold On states. Toggles
+stay open while their state changes; automatically paused lighting is labeled
+Paused, with the reason. Floating cameras are marked Desktop only when unavailable.
+System reduced-motion, data-saving, or low-memory
 policies can pause ambient effects; the menu retains the controls and describes
 the active policy. iPhone browsers may not expose a battery percentage, so the
 manual battery-saver control remains available without automatic battery sensing.
