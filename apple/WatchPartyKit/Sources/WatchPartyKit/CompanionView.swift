@@ -18,7 +18,7 @@ public struct WatchPartyCompanionView: View {
       }
       .navigationTitle("Watch Party")
     }
-    .onReceive(room.$movie) { syncPlayer.load(movie: $0, from: room.invite, clientID: room.clientID) }
+    .onReceive(room.$movie) { syncPlayer.load(movie: $0, from: room.invite, clientID: room.clientID, cookies: room.mediaCookies) }
     .onReceive(sharePlay.$pendingInvite.compactMap { $0 }) { url in invite = url.absoluteString; room.connect(invite: invite, name: name) }
     .task {
       while !Task.isCancelled {

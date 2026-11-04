@@ -11,7 +11,7 @@ public struct WatchPartyInvite: Equatable, Sendable {
 
   public init(_ url: URL) throws {
     let parts = url.path.split(separator: "/").map(String.init)
-    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil, url.user == nil, url.password == nil,
           parts.count == 2, parts[0] == "join",
           parts[1].range(of: "^[A-Za-z0-9]{16,64}$", options: .regularExpression) != nil else { throw InviteError.invalid }
     self.url = url
@@ -25,7 +25,7 @@ public struct WatchPartyInvite: Equatable, Sendable {
 
   public var webSocketURL: URL {
     var c = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-    c.scheme = c.scheme == "https" ? "wss" : "ws"
+    c.scheme = c.scheme?.lowercased() == "https" ? "wss" : "ws"
     c.path = "/ws"
     c.queryItems = [URLQueryItem(name: "k", value: key)]
     c.fragment = nil
@@ -80,6 +80,7 @@ public struct RoomClock: Sendable {
   public init() {}
 
   public mutating func sample(sent: Double, server: Double, received: Double) {
+    guard sent.isFinite, server.isFinite, received.isFinite else { return }
     let latency = received - sent
     guard latency >= 0, latency <= 10_000 else { return }
     samples.append((latency, server - (sent + received) / 2))

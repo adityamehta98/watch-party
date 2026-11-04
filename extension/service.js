@@ -3,12 +3,13 @@
 (() => {
   if (window.__wpService) return;
   window.__wpService = true;
-  // a known service, or the custom site the host opened in the Watch Party window (see custom-gate.js)
+  // a known service, or the custom site the host opened in the Watch Party window (see background.js)
   const SERVICE = wpServiceOf(location.hostname) || (window.__wpCustom ? 'custom' : null);
   if (!SERVICE) return;
   // The site's own page: normally the top of the tab, or the frame inside the Watch Party's "watch here" window.
   const TOP = window === window.top || !!(location.ancestorOrigins && location.ancestorOrigins.length === 1 && /^chrome-extension:/.test(location.ancestorOrigins[0]));
   const NETFLIX = SERVICE === 'netflix';
+  const sharedPageUrl = () => wpSharedPageUrl(location.href);
   const send = m => { try { chrome.runtime.sendMessage(m).catch(() => {}); } catch { /* extension was reloaded */ } };
   const NEXT_EPISODE_SELECTOR = '[data-uia="control-next"], [data-uia="next-episode-seamless-button"], [data-uia="next-episode-seamless-button-draining"]';
   let nextEpisodeIntent = null;
@@ -21,7 +22,7 @@
     if (!el || el.matches('[disabled], [aria-disabled="true"]')) return;
     const text = (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim();
     if (!el.matches(NEXT_EPISODE_SELECTOR) && !/^\s*(next episode|play next( episode)?|watch next|start next episode)\s*$/i.test(text)) return;
-    nextEpisodeIntent = { url: location.href, at: Date.now() };
+    nextEpisodeIntent = { url: sharedPageUrl(), at: Date.now() };
   }, true);
 
   let video = null;          // the element we control
@@ -30,7 +31,7 @@
   const expect = { play: 0, pause: 0, seek: 0 }; // until when an event of this kind was caused by us, not the viewer
   let blocked = false;
   if (NETFLIX) window.addEventListener('message', e => {
-    if (e.source === window && e.data?.source === 'wp-netflix' && e.data.op === 'play') blocked = e.data.ok === false;
+    if (e.source === window && e.origin === location.origin && e.data?.source === 'wp-netflix' && e.data.op === 'play') blocked = e.data.ok === false;
   });
   let lastContent = { t: 0, rate: 1 }; // where the show was before an ad took over
   let contentVideo = null;              // the element playing the show itself (the longest video)
@@ -120,7 +121,7 @@
     // During an ad, report the show's position (not the ad's), so the room simply waits.
     return {
       service: SERVICE, t: ad ? lastContent.t : v.currentTime, paused: ad ? false : v.paused, rate: ad ? lastContent.rate : v.playbackRate, dur: ad ? maxDur : d,
-      buffering: !v.paused && v.readyState < 3, ad, blocked, title: TOP ? title() : '', area: area(v), root: TOP, url: TOP ? location.href : '',
+      buffering: !v.paused && v.readyState < 3, ad, blocked, title: TOP ? title() : '', area: area(v), root: TOP, url: TOP ? sharedPageUrl() : '',
       vol: v.volume, muted: v.muted, hold: userBusy(),
       advanceFrom: TOP && nextEpisodeIntent && Date.now() - nextEpisodeIntent.at < 20000 ? nextEpisodeIntent.url : '',
     };
@@ -141,7 +142,7 @@
   }
   let lastPage = '', lastPageAt = 0;
   if (TOP) setInterval(() => {
-    const info = { url: location.href, signin: signingIn() };
+    const info = { url: sharedPageUrl(), signin: signingIn() };
     const key = info.url + '|' + info.signin;
     if (key === lastPage && Date.now() - lastPageAt < 5000) return;
     lastPage = key; lastPageAt = Date.now();
@@ -165,7 +166,7 @@
     if (!landing) return;
     if (!video || now - landing.since > 8000) { landing = null; return; }
     if (!video.seeking && !video.paused && video.readyState >= 3) {
-      if (now - landing.since > 600 && !isAd(video)) send({ wp: 'user', service: SERVICE, url: TOP ? location.href : '', action: 'seek', t: video.currentTime, land: true });
+      if (now - landing.since > 600 && !isAd(video)) send({ wp: 'user', service: SERVICE, url: TOP ? sharedPageUrl() : '', action: 'seek', t: video.currentTime, land: true });
       landing = null;
     }
   }, 150);
@@ -200,7 +201,7 @@
   function sendUserSeek() {
     const go = () => {
       userSeekOut.timer = null; userSeekOut.at = performance.now();
-      if (video && !isAd(video)) send({ wp: 'user', service: SERVICE, url: TOP ? location.href : '', action: 'seek', t: video.currentTime });
+      if (video && !isAd(video)) send({ wp: 'user', service: SERVICE, url: TOP ? sharedPageUrl() : '', action: 'seek', t: video.currentTime });
     };
     const now = performance.now();
     if (!userSeekOut.timer && now - userSeekOut.at >= 300) go();
@@ -216,7 +217,7 @@
     pendingPP = null;
     if (!video || isAd(video) || video.paused === p.before) return; // paused and played again: nothing changed
     landing = null;
-    send({ wp: 'user', service: SERVICE, url: TOP ? location.href : '', action: video.paused ? 'pause' : 'play', t: video.currentTime });
+    send({ wp: 'user', service: SERVICE, url: TOP ? sharedPageUrl() : '', action: video.paused ? 'pause' : 'play', t: video.currentTime });
   }
   // "the viewer is doing something here": the party holds off correcting this tab for a moment
   const userBusy = () => !!pendingPP || !!landing || (!seekOurs && settling(performance.now()));
@@ -246,7 +247,7 @@
     // a new video sets its own level while it starts: ours wins for its first few seconds
     if (volFor !== video || now - volForAt < 3000) { if (wantVol != null && Math.abs(video.volume - wantVol) > 0.02) applyLevelOnly(); return; }
     wantVol = video.volume; wantMuted = video.muted;
-    send({ wp: 'user', service: SERVICE, url: TOP ? location.href : '', action: 'volume', vol: video.volume, muted: video.muted });
+    send({ wp: 'user', service: SERVICE, url: TOP ? sharedPageUrl() : '', action: 'volume', vol: video.volume, muted: video.muted });
   }
   setInterval(() => {
     if (!video || (wantVol == null && wantMuted == null) || isAd(video) || video.readyState < 1) return;
@@ -266,6 +267,7 @@
     try { el.click(); return true; } catch { return false; }
   }
   function apply(c) {
+    if (!c || typeof c !== 'object') return;
     if (window.__wpCatalogRestoring && !['volume', 'mute'].includes(c.op)) return;
     if (c.op === 'next' && NETFLIX) { nextEpisode(); return; }
     const v = pick();

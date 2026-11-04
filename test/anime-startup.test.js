@@ -135,30 +135,6 @@ test('a playback error can dismiss the loading screen immediately during its exi
   assert.equal(f.overlay.hidden, false);
 });
 
-test('ready anime embed receives room play commands without a tab visibility change', async () => {
-  const sync = await import(`data:text/javascript;base64,${Buffer.from(read('sync.js')).toString('base64')}`);
-  const commands = [];
-  const context = vm.createContext({
-    ...sync, PLATFORM: {}, URL, Event, EventTarget, performance: { now: () => 10000 },
-    window: new EventTarget(),
-    document: Object.assign(new EventTarget(), {
-      createElement: () => ({ style: {}, contentWindow: { postMessage: command => commands.push(command) } }),
-    }),
-    setInterval() {}, setTimeout: () => 1, clearTimeout() {},
-  });
-  vm.runInContext(read('media.js').replace(/^export /gm, '') +
-    read('player.js').replace(/^import .*;$/gm, '').replace(/export /g, '') +
-    '\nglobalThis.Media = MegaplayMedia; globalThis.Player = SyncPlayer;', context);
-  const media = new context.Media({ innerHTML: '', appendChild() {} });
-  const player = new context.Player({ video: media, clock: { synced: true, now: () => 10000 }, onStatus() {} });
-  player.setMovie({ id: 'ep1', url: 'https://megaplay.buzz/stream/ani/151801/1/dub' });
-  player.setState({ movieId: 'ep1', playing: false, position: 0, anchor: 10000, seq: 1 });
-  media.onMessage({ source: media.frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'PLAYER_READY' } });
-  player.setState({ movieId: 'ep1', playing: true, position: 0, anchor: 10000, seq: 2 });
-  assert.ok(commands.some(command => command.cmd === 'PLAY_TOGGLE'), 'the sync engine must start a ready embed');
-  assert.equal(media.paused, false);
-});
-
 test('native anime clears the loading screen while video progress continues in the foreground', () => {
   const f = startup();
   f.context.scheduleUi = () => {};

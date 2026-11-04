@@ -36,14 +36,16 @@ function parse(buf) {
   if (buf.readUInt32BE(4) !== MAGIC) return null;
   const type = buf.readUInt16BE(0);
   const length = buf.readUInt16BE(2);
-  if (length + 20 > buf.length) return null;
+  if (length % 4 || length + 20 !== buf.length) return null;
   const attrs = [];
   let off = 20;
   while (off + 4 <= 20 + length) {
     const t = buf.readUInt16BE(off), l = buf.readUInt16BE(off + 2);
+    if (off + 4 + l + ((4 - (l % 4)) % 4) > 20 + length) return null;
     attrs.push({ type: t, value: buf.subarray(off + 4, off + 4 + l), offset: off });
     off += 4 + l + ((4 - (l % 4)) % 4);
   }
+  if (off !== 20 + length) return null;
   return { type, method: methodOf(type), cls: classOf(type), tid: buf.subarray(8, 20), attrs, raw: buf.subarray(0, 20 + length) };
 }
 const getAttr = (msg, t) => msg.attrs.find(a => a.type === t);
@@ -113,6 +115,7 @@ class TurnServer {
     this.externalIp = externalIp;
     this.localIps = new Set(['127.0.0.1', ...localIps]);
     this.allocations = new Map(); // "ip:port" of client -> allocation
+    this.pendingAllocations = new Map();
     this.byRelayPort = new Map();  // relay port -> allocation
     this.stats = { allocations: 0, bytes: 0 };
     this.maxAllocations = 40;
@@ -147,6 +150,7 @@ class TurnServer {
   }
 
   stop() {
+    this.stopped = true;
     clearInterval(this.sweeper);
     for (const a of this.allocations.values()) this.freeAllocation(a);
     try { this.sock.close(); } catch {}
@@ -160,6 +164,7 @@ class TurnServer {
       const alloc = this.allocations.get(`${rinfo.address}:${rinfo.port}`);
       if (!alloc) return;
       const ch = buf.readUInt16BE(0), len = buf.readUInt16BE(2);
+      if (4 + len > buf.length) return;
       const peer = alloc.channels.get(ch);
       if (!peer || peer.expires < Date.now()) return;
       this.relayOut(alloc, peer.ip, peer.port, buf.subarray(4, 4 + len));
@@ -199,16 +204,19 @@ class TurnServer {
 
     switch (msg.method) {
       case M.ALLOCATE: {
+        if (this.pendingAllocations.has(key)) return;
         if (alloc) {
           if (alloc.tid.equals(msg.tid)) return ok(alloc.successAttrs);
           return fail(437, 'Allocation Mismatch');
         }
-        const mine = [...this.allocations.values()].filter(x => x.client.ip === rinfo.address).length;
-        if (this.allocations.size >= this.maxAllocations || mine >= this.maxPerIp) return fail(486, 'Allocation Quota Reached');
+        const mine = [...this.allocations.values()].filter(x => x.client.ip === rinfo.address).length
+          + [...this.pendingAllocations.values()].filter(ip => ip === rinfo.address).length;
+        if (this.allocations.size + this.pendingAllocations.size >= this.maxAllocations || mine >= this.maxPerIp) return fail(486, 'Allocation Quota Reached');
         const rt = getAttr(msg, A.REQUESTED_TRANSPORT);
         if (!rt || rt.value[0] !== 17) return fail(442, 'Unsupported Transport Protocol');
         const lt = getAttr(msg, A.LIFETIME);
         const lifetime = Math.min(3600, lt ? lt.value.readUInt32BE(0) || DEFAULT_LIFETIME : DEFAULT_LIFETIME);
+        this.pendingAllocations.set(key, rinfo.address);
         this.createAllocation(key, rinfo, msg.tid, lifetime).then(a => {
           a.successAttrs = [
             [A.XOR_RELAYED_ADDRESS, encXorAddr(this.advertisedIp(), a.relayPort)],
@@ -216,7 +224,7 @@ class TurnServer {
             [A.LIFETIME, u32(lifetime)],
           ];
           ok(a.successAttrs);
-        }).catch(() => fail(508, 'Insufficient Capacity'));
+        }).catch(() => { if (!this.stopped) fail(508, 'Insufficient Capacity'); }).finally(() => this.pendingAllocations.delete(key));
         return;
       }
       case M.REFRESH: {
@@ -231,6 +239,7 @@ class TurnServer {
         if (!alloc) return fail(437, 'Allocation Mismatch');
         const peers = msg.attrs.filter(a => a.type === A.XOR_PEER_ADDRESS).map(a => xorAddr(a.value, msg.tid)).filter(Boolean);
         if (!peers.length) return fail(400, 'Bad Request');
+        if (new Set([...alloc.permissions.keys(), ...peers.map(p => p.ip)]).size > 64) return fail(508, 'Permission Quota Reached');
         for (const p of peers) alloc.permissions.set(p.ip, Date.now() + PERMISSION_LIFETIME * 1000);
         return ok([]);
       }
@@ -241,6 +250,9 @@ class TurnServer {
         const ch = chA.value.readUInt16BE(0);
         const peer = xorAddr(pa.value, msg.tid);
         if (ch < 0x4000 || ch > 0x7ffe || !peer) return fail(400, 'Bad Request');
+        if ((!alloc.channels.has(ch) && alloc.channels.size >= 64) || (!alloc.permissions.has(peer.ip) && alloc.permissions.size >= 64)) return fail(508, 'Channel Quota Reached');
+        const previous = alloc.channels.get(ch);
+        if (previous) alloc.peerChannels.delete(`${previous.ip}:${previous.port}`);
         const expires = Date.now() + CHANNEL_LIFETIME * 1000;
         alloc.channels.set(ch, { ...peer, expires });
         alloc.peerChannels.set(`${peer.ip}:${peer.port}`, ch);
@@ -255,8 +267,9 @@ class TurnServer {
   createAllocation(key, rinfo, tid, lifetime) {
     return new Promise((resolve, reject) => {
       const relay = dgram.createSocket('udp4');
-      relay.once('error', reject);
+      relay.once('error', error => { try { relay.close(); } catch {} reject(error); });
       relay.bind(0, '127.0.0.1', () => { // never reachable from outside; only used internally
+        if (this.stopped) { relay.close(); reject(new Error('stopped')); return; }
         relay.removeListener('error', reject);
         relay.on('error', () => {});
         const a = {

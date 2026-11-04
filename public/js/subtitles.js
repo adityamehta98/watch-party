@@ -43,7 +43,7 @@ export class SubtitleTracks {
     if (this.movieId !== movie.id) this.reset(movie.id);
     const pref = this.preference();
     for (const sub of movie.subs || []) {
-      if (this.tracks.has(sub.key)) continue;
+      if (this.tracks.has(sub.key) || !/^\/(?![\/\\])/.test(String(sub.url || ''))) continue;
       // Match labels as well: some providers omit the language on every episode.
       const failed = this.selected && this.status(this.selected) === 'error' ? this.sources.get(this.selected) : null;
       if (!this.off && sub.local && ((failed && language(sub.lang || sub.label) === language(failed.lang || failed.label)) || language(sub.lang) === this.preferLocal)) {

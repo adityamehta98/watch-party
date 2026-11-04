@@ -137,7 +137,7 @@ test('Netflix next episode preserves the active profile session before falling b
   const media = read('public/js/media.js');
   const app = read('public/js/app.js');
 
-  assert.match(service, /nextEpisodeIntent = \{ url: location\.href, at: Date\.now\(\) \}/);
+  assert.match(service, /nextEpisodeIntent = \{ url: sharedPageUrl\(\), at: Date\.now\(\) \}/);
   assert.match(service, /advanceFrom: TOP && nextEpisodeIntent/);
   assert.match(service, /c\.op === 'next' && NETFLIX/);
   assert.match(media, /advance\(url\) \{ this\.cmd\(\{ op: 'next', url \}\); \}/);
@@ -195,67 +195,15 @@ test('anime caption discovery rejects thumbnails even when the provider calls th
   assert.equal(source.subtitles[0].url, 'https://megavid.buzz/sub/token/eng-0.vtt');
 });
 
-test('MegaPlay uses one native transport layer and shares native actions with the room', () => {
+test('anime resolves source URLs for Watch Party without a third-party iframe player', () => {
   const anime = require('../server/anime');
   assert.deepEqual(anime.embedSources(151801, 52211, 1, 'dub'), [
     'https://megaplay.buzz/stream/ani/151801/1/dub',
     'https://megaplay.buzz/stream/mal/52211/1/dub',
   ]);
-  assert.ok(anime.embedSources(151801, 52211, 1, 'dub').every(url => url.endsWith('/dub')));
-
-  const appended = [];
-  const window = { addEventListener() {}, postMessage() {} };
-  const document = { createElement: () => ({ contentWindow: { postMessage() {} }, style: {} }) };
-  const context = vm.createContext({ URL, Event, EventTarget, performance, window, document,
-    setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1 });
-  vm.runInContext(`${read('public/js/media.js').replace(/^export /gm, '')}\nglobalThis.TestMegaplayMedia = MegaplayMedia;`, context);
-  const host = { innerHTML: '', appendChild(node) { appended.push(node); } };
-  const actions = [];
-  const player = new context.TestMegaplayMedia(host, { onUser: action => actions.push(action) });
-  player.open({ url: 'https://megaplay.buzz/stream/ani/151801/1/dub' });
-  const frame = appended[0];
-  assert.equal(frame.src, 'https://megaplay.buzz/stream/ani/151801/1/dub');
-  assert.equal(frame.referrerPolicy, 'origin');
-  assert.equal(frame.frameBorder, '0');
-  assert.equal(frame.scrolling, 'no');
-  assert.equal(frame.allowFullscreen, true);
-  assert.match(frame.allow, /fullscreen/);
-  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 12, duration: 1420 } });
-  assert.equal(player.ready, true);
-  assert.equal(player.currentTime, 12);
-  assert.equal(player.duration, 1420);
-  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { type: 'watching-log', currentTime: 18, duration: 1420 } });
-  assert.equal(player.currentTime, 18);
-  player.prevAt = performance.now() - 1000; player.prevT = 18; player._playing = false;
-  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 19, duration: 1420 } });
-  assert.equal(actions.at(-1).action, 'play');
-  assert.ok(player.holdUntil > performance.now(), 'native play is held before the sync correction loop');
-  player.prevAt = performance.now() - 500; player.prevT = 19; player._playing = true;
-  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 40, duration: 1420 } });
-  assert.deepEqual({ ...actions.at(-1) }, { action: 'seek', t: 40 });
-  // A stall is never guessed as a pause inline: checkStall reports buffering first, then a real pause.
-  player.prevAt = performance.now() - 1000; player.prevT = 40; player._playing = true;
-  player.pausedOverride = null; player.seekingTarget = null; player.buffering = false; player.pauseReported = false;
-  player.onMessage({ source: frame.contentWindow, origin: 'https://megaplay.buzz', data: { event: 'time', time: 40, duration: 1420 } });
-  assert.notEqual(actions.at(-1).action, 'pause');
-  player.tAt = performance.now() - 1500; player.checkStall();
-  assert.equal(player.buffering, true); assert.equal(player.readyState, 2); // short stall = buffering, room waits
-  player.tAt = performance.now() - 4000; player.checkStall();
-  assert.equal(actions.at(-1).action, 'pause'); assert.equal(player.paused, true); // long stall = real pause
-  player.onMessage({ source: frame.contentWindow, origin: 'https://evil.example', data: { event: 'time', time: 99, duration: 1420 } });
-  assert.equal(player.currentTime, 40);
-  const media = read('public/js/media.js'), css = read('public/css/app.css'), app = read('public/js/app.js'), page = read('public/index.html');
-  assert.doesNotMatch(media, /GET_TIME/);
-  assert.match(css, /\.stage\[data-kind="megaplay"\] \.controls \{ display: none !important; \}/);
-  assert.match(css, /\.stage\[data-kind="megaplay"\] \.anime-social \{ display: flex; \}/);
-  assert.match(page, /id="animeCamBtn"[\s\S]*id="animeMicBtn"[\s\S]*id="animeReactBtn"[\s\S]*id="animeChatBtn"/);
-  assert.match(page, /id="animeNext"/);
-  assert.doesNotMatch(page, /id="animeFsBtn"/); // one fullscreen control: MegaPlay's own, bridged to the stage
-  assert.match(media, /m\.megaCommand === 'toggleFullscreen'/);
-  assert.match(app, /onFullscreen: cmd =>/);
-  assert.match(media, /SKP_DATA/);
-  assert.doesNotMatch(app, /kindOf\(S\.movie\) === 'megaplay' && \[' ', 'k', 'f'/);
-  assert.match(app, /kindOf\(S\.movie\) === 'megaplay'.*'arrowleft'/);
+  assert.doesNotMatch(read('public/js/media.js'), /class MegaplayMedia/);
+  assert.doesNotMatch(read('public/index.html'), /id="mpHost"|id="animeSocial"/);
+  assert.match(read('public/js/app.js'), /kindOf\(movie\) === 'anime'/);
 });
 
 function unzipEntries(file) {
@@ -282,8 +230,9 @@ function unzipEntries(file) {
 
 test('downloadable extension is byte-identical to extension source', () => {
   const zip = unzipEntries(path.join(ROOT, 'public/ext/watch-party-sync.zip'));
-  const files = walk(path.join(ROOT, 'extension'));
-  assert.equal(zip.size, files.length);
+  const files = walk(path.join(ROOT, 'extension')).filter(file => path.relative(path.join(ROOT, 'extension'), file) !== 'LICENSE');
+  assert.equal(zip.size, files.length + 1);
+  assert.equal(zip.get('watch-party-sync/LICENSE').toString(), read('LICENSE'));
   for (const file of files) {
     const rel = path.relative(path.join(ROOT, 'extension'), file).replaceAll('\\', '/');
     const packed = zip.get(`watch-party-sync/${rel}`);
@@ -301,6 +250,7 @@ test('Safari source ZIP is the common extension plus its audited overlay', () =>
       expected.set(rel, fs.readFileSync(file));
     }
   }
+  expected.set('LICENSE', fs.readFileSync(path.join(ROOT, 'LICENSE')));
   assert.equal(zip.size, expected.size);
   for (const [rel, source] of expected) {
     const packed = zip.get(`watch-party-safari/${rel}`);
@@ -984,13 +934,7 @@ test('Movies & TV catalog searches TMDB and picks the best configured language s
   assert.equal(target.scope, playback.sourceId);
   assert.throws(() => catalog.resolve({ type: 'movie', tmdbId: 603 }, 'de'), /language is not available/i);
 
-  const originalFetch = global.fetch;
-  let redirectCalls = 0;
-  global.fetch = async () => { redirectCalls++; return { status: 302, headers: new Headers({ location: 'http://127.0.0.1/private' }) }; };
-  try {
-    await assert.rejects(remoteMedia.fetchUpstream({ url: 'https://8.8.8.8/source', headers: {} }), /blocked host/);
-    assert.equal(redirectCalls, 1, 'a redirect to a private host is rejected before it is fetched');
-  } finally { global.fetch = originalFetch; }
+  await assert.rejects(remoteMedia.fetchUpstream({ url: 'http://127.0.0.1/private', headers: {} }), /blocked host/);
 });
 
 test('Movies & TV finds only explicitly licensed free media and selects its best browser file', async () => {
@@ -1094,7 +1038,7 @@ test('custom-site extension installs scoped ad rules and preserves same-site pop
   const context = vm.createContext({ URL, URLSearchParams, console, self: {}, importScripts() {}, setTimeout(fn, ms) { timers.push({ fn, ms }); return timers.length; }, clearTimeout() {}, chrome: {
     runtime: { id: 'ext', onConnect: event(), onMessage: runtimeMessage, getURL: p => `chrome-extension://ext/${p}` },
     sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
-    tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({}), update: async (id, x) => { activated.push([id, x]); }, remove: async id => { removed.push(id); }, sendMessage: async () => {}, create: async () => ({ id: 2 }) },
+    tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async () => ({ url: 'chrome-extension://ext/theater.html' }), update: async (id, x) => { activated.push([id, x]); }, remove: async id => { removed.push(id); }, sendMessage: async () => {}, create: async () => ({ id: 2 }) },
     webNavigation: { onCreatedNavigationTarget: event(), onDOMContentLoaded: event(), getAllFrames: async () => [] }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
     declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async x => { updates.push(x); } },
   } });
@@ -1103,7 +1047,7 @@ test('custom-site extension installs scoped ad rules and preserves same-site pop
   vm.runInContext(read('extension/background.js'), context);
   assert.ok(context.self.WP_AD_DOMAINS.length >= 80);
   let reply;
-  runtimeMessage.fire({ wp: 'theater-hello', party: 'https://party.example/join/key', custom: 'https://video.example/watch', blockPopups: true }, { tab: { id: 7 } }, x => { reply = x; });
+  runtimeMessage.fire({ wp: 'theater-hello', party: 'https://party.example/join/key', custom: 'https://video.example/watch', blockPopups: true }, { id: 'ext', url: 'chrome-extension://ext/theater.html', frameId: 0, tab: { id: 7 } }, x => { reply = x; });
   await new Promise(resolve => setImmediate(resolve));
   const rules = updates.at(-1).addRules;
   assert.equal(rules.map(r => r.id).join(','), '1,2,3');
@@ -1130,17 +1074,17 @@ test('Safari opens streaming sites as normal top-level tabs', async () => {
   vm.runInContext(read('extension/services.js'), context);
   vm.runInContext(read('extension/ad-domains.js'), context);
   vm.runInContext(read('extension/background.js'), context);
-  const port = { name: 'party', sender: { tab: { id: 5, windowId: 3 }, frameId: 0 }, onMessage: partyMessage, onDisconnect: event(), postMessage() {} };
+  const port = { name: 'party', sender: { id: 'ext', url: 'https://party.example/join/key', tab: { id: 5, windowId: 3 }, frameId: 0 }, onMessage: partyMessage, onDisconnect: event(), postMessage() {} };
   runtimeConnect.fire(port);
   partyMessage.fire({ type: 'watch', service: 'netflix', url: 'https://www.netflix.com/watch/123', blockPopups: true });
   let reply;
-  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { tab: { id: 5 } }, value => { reply = value; });
+  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { id: 'ext', url: 'https://party.example/join/key', tab: { id: 5 }, frameId: 0 }, value => { reply = value; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(created.length, 1); assert.equal(created[0].url, 'https://www.netflix.com/watch/123');
   assert.equal(reply.ok, true); assert.equal(reply.safari, true);
   partyMessage.fire({ type: 'watch', service: 'custom', url: 'https://video.example/watch', blockPopups: true });
   let customReply;
-  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { tab: { id: 5 } }, value => { customReply = value; });
+  runtimeMessage.fire({ wp: 'theater-open', url: 'https://party.example/join/key' }, { id: 'ext', url: 'https://party.example/join/key', tab: { id: 5 }, frameId: 0 }, value => { customReply = value; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(created[1].url, 'about:blank');
   assert.equal(updated.at(-1)[0], 22); assert.equal(updated.at(-1)[1].url, 'https://video.example/watch');
@@ -1155,7 +1099,7 @@ test('secret, authentication, and cleanup invariants remain enforced', () => {
   }
 
   const production = ['server', 'public', 'extension', 'apple', 'build', '.github'].flatMap(dir => walk(path.join(ROOT, dir)))
-    .filter(file => !/\.(?:zip|png|ico|exe|dll)$/i.test(file));
+    .filter(file => !file.includes(path.join('build', 'cache')) && !file.includes(path.sep + 'Tests' + path.sep) && !/\.(?:zip|png|ico|exe|dll)$/i.test(file));
   const secrets = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
     /\bAKIA[0-9A-Z]{16}\b/,

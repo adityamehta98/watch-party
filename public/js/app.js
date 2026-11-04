@@ -10,7 +10,7 @@ import { StageFullscreen } from './fullscreen.js';
 import { SubtitleTracks } from './subtitles.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
-import { YouTubeMedia, MegaplayMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
+import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -64,7 +64,7 @@ const PLAYBACK = playbackCapabilities(video, globalThis, PLATFORM);
 const stage = $('#stage');
 // The media everything talks to: the <video> for your files, or a YouTube / streaming-tab adapter.
 let M = video;
-let ytMedia = null, mpMedia = null, remote = null;
+let ytMedia = null, remote = null;
 let pipWin = null; // pop-out camera window
 let theaterPipOpen = false;
 const room = $('#room');
@@ -132,7 +132,6 @@ function start(name) {
     onPeerGone: id => { S.remoteStreams.delete(id); renderCams(); },
   });
   ytMedia = new YouTubeMedia($('#ytHost'));
-  mpMedia = new MegaplayMedia($('#mpHost'), { onUser: onMegaplayUserAction, onFullscreen: cmd => { if (cmd === 'toggle') toggleFullscreen(); else mpMedia.fsState(isFs()); } });
   remote = new RemoteMedia({ onInfo: () => {
     renderServicePanel(); maybeSendMeta();
     finishCatalogServiceLaunch();
@@ -168,7 +167,7 @@ function wire() {
     pill.querySelector('b').textContent = s === 'open' ? 'Connected' : s === 'reconnecting' ? 'Reconnecting…' : 'Connecting…';
   });
   conn.on('clock', c => { if (c.rtt != null) $('#connPill').title = `Connected · ${Math.round(c.rtt)} ms round trip`; });
-  conn.on('pending', () => screen('pending'));
+  conn.on('pending', m => { rememberClientId(m.you); screen('pending'); });
   conn.on('denied', m => {
     const map = {
       removed: ['You were removed', 'The host removed you from this watch party.'],
@@ -250,7 +249,11 @@ function wire() {
   conn.on('link-changed', () => { refreshInfo().then(() => openInvite()); toast('New invite link created. Share it with your guests again.'); });
 }
 
+function rememberClientId(you) {
+  if (you?.id && you.id !== clientId) { clientId = you.id; store.set(isHost ? 'wp.hostId' : 'wp.clientId', clientId); }
+}
 function onWelcome(m) {
+  rememberClientId(m.you);
   S.me = m.you;
   S.perms = m.you.perms;
   S.settings = m.settings || {};
@@ -433,7 +436,7 @@ document.addEventListener('visibilitychange', syncAmbient);
 
 function mediaFor(movie) {
   const k = kindOf(movie);
-  return k === 'youtube' ? ytMedia : k === 'megaplay' ? mpMedia : k === 'service' ? remote : video;
+  return k === 'youtube' ? ytMedia : k === 'service' ? remote : video;
 }
 
 let fileStartTimer = null;
@@ -628,7 +631,7 @@ function renderServicePanel() {
         <li>Click <b>Load unpacked</b> and choose the extracted <b>watch-party-sync</b> folder (the one with manifest.json inside).</li>
         <li>Come back to this tab and reload it. You stay in the party.</li>
       </ol>
-      <p class="fine">Keep the extracted folder; the browser uses it from there. The extension only sees play, pause and position on streaming sites, never your password or anything else.</p>`;
+      <p class="fine">Keep the extracted folder; the browser uses it from there. The extension synchronizes playback and does not intentionally read login cookies or passwords. Its site permissions grant access to controlled pages.</p>`;
     }
   } else if (extOutdated(remote.version)) {
     status = `Your <b>Watch Party Sync</b> extension is out of date (${esc(remote.version || '?')}). This party needs the newer one.`;
@@ -709,17 +712,6 @@ function onRemoteUserAction(m) {
     const pos = m.action === 'play' ? t + Math.max(0, conn.clock.now() - at) / 1000 : t;
     sendCmd(m.action === 'seek' ? 'seek' : m.action, m.action === 'seek' ? t + Math.max(0, conn.clock.now() - at) / 1000 * (S.state.playing ? 1 : 0) : pos);
   }, 700);
-}
-
-function onMegaplayUserAction(m) {
-  if (kindOf(S.movie) !== 'megaplay' || !Number.isFinite(Number(m.t))) return;
-  if (!canControl()) { toast('Only people the host allows can play, pause or seek.', { timeout: 3000 }); return; }
-  const t = Math.max(0, Number(m.t));
-  const at = conn.clock.now();
-  if (m.action === 'pause') predict({ playing: false, position: t, anchor: at });
-  else if (m.action === 'play') predict({ playing: true, position: t, anchor: at });
-  else predict({ position: t, anchor: at });
-  sendCmd(m.action, t);
 }
 
 // The host tells the room the real title and length once the player knows them.
@@ -883,17 +875,13 @@ function applyPerms() {
   $('#chatInput').disabled = !chatOk;
   $('#quickChatInput').disabled = !chatOk;
   $('#chatEmojiBtn').disabled = !chatOk;
-  $('#animeChatBtn').classList.toggle('denied', !chatOk);
   $('#chatInput').placeholder = chatOk ? 'Message everyone' : 'The host turned off chat for you';
   $('#chatForm').classList.toggle('disabled', !chatOk);
   $('#reactBtn').classList.toggle('denied', !(isHost || S.perms.react));
   $('#tbReact').classList.toggle('denied', !(isHost || S.perms.react));
-  $('#animeReactBtn').classList.toggle('denied', !(isHost || S.perms.react));
   const camOk = isHost || S.perms.camera;
   $('#camBtn').classList.toggle('denied', !camOk);
   $('#micBtn').classList.toggle('denied', !camOk);
-  $('#animeCamBtn').classList.toggle('denied', !camOk);
-  $('#animeMicBtn').classList.toggle('denied', !camOk);
   renderBookmarks();
   renderPeople();
 }
@@ -975,12 +963,14 @@ function osd(text) {
 function changeVolume(delta) {
   if (player.autoMuted) unblock();
   let v = Math.round(Math.max(0, Math.min(1, (M.muted ? 0 : M.volume) + delta)) * 100) / 100;
-  M.volume = v;
+  try { M.volume = v; } catch { osd('Use your device volume buttons'); return false; }
+  if (Math.abs(M.volume - v) > .001) { osd('Use your device volume buttons'); return false; }
   M.muted = v === 0;
   $('#volume').value = v;
   store.set('wp.volume', v);
   osd(v === 0 ? 'Muted' : `Volume ${Math.round(v * 100)}%`);
   scheduleUi();
+  return true;
 }
 function unblock() { player.unblock(); $('#unmutePill').hidden = true; renderNotice(); scheduleUi(); }
 
@@ -996,34 +986,52 @@ let swipedAt = 0;
 (() => {
   const onPicture = t => t === video || (t && t.id === 'clickLayer');
 
-  const noSwipe = t => !t || !t.closest || !!t.closest('.controls, button, input, select, textarea, .cams, .chat-float, .quick-chat, .toasts, .pop');
+  const noSwipe = t => !t || !t.closest || !!t.closest('.controls, button, input, select, textarea, .cams, .chat-float, .quick-chat,  .toasts, .pop, .stage-empty');
   let sw = null;
-  const begin = (x, y, target, id) => { sw = noSwipe(target) ? null : { id, x, y, at: performance.now(), wasIdle: stage.dataset.idle === 'true', claimed: false }; };
+  const begin = (x, y, target, id) => { sw = noSwipe(target) ? null : { id, x, y, at: performance.now(), wasIdle: stage.dataset.idle === 'true', claimed: false, volume: M.muted ? 0 : M.volume }; };
+  const move = (x, y) => {
+    if (!sw) return;
+    const dx = x - sw.x, dy = y - sw.y;
+    if (!sw.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 10) {
+      if (Math.abs(dy) > Math.abs(dx) * 1.3) sw.axis = 'volume';
+      else if (Math.abs(dx) > Math.abs(dy) * 1.3) sw.axis = 'seek';
+    }
+    sw.claimed = !!sw.axis;
+    if (sw.axis === 'volume' && !sw.volumeBlocked) {
+      const target = Math.max(0, Math.min(1, sw.volume + (sw.y - y) / Math.max(120, stage.clientHeight)));
+      sw.volumeBlocked = changeVolume(target - (M.muted ? 0 : M.volume)) === false;
+    }
+  };
   const finish = (x, y, id) => {
-    const st = sw; sw = null;
+    const st = sw;
     if (!st || st.id !== id) return;
+    move(x, y); sw = null;
     const dx = x - st.x, dy = y - st.y;
-    if (Math.abs(dx) < Math.max(40, Math.min(100, stage.clientWidth * 0.08)) || Math.abs(dx) < Math.abs(dy) * 1.3 || performance.now() - st.at > 1200) return;
+    if (st.axis !== 'volume') {
+      if (Math.abs(dx) < Math.max(40, Math.min(100, stage.clientWidth * 0.08)) || Math.abs(dx) < Math.abs(dy) * 1.3 || performance.now() - st.at > 1200) return;
+      seekBy(dx > 0 ? SWIPE_SKIP : -SWIPE_SKIP);
+    }
     swipedAt = performance.now();
-    seekBy(dx > 0 ? SWIPE_SKIP : -SWIPE_SKIP);
-    if (st.wasIdle) { setIdle(true); clearTimeout(idleTimer); } // just skip, don't bring up the controls
+    if (st.wasIdle) { setIdle(true); clearTimeout(idleTimer); }
   };
   stage.addEventListener('touchstart', e => { if (e.touches.length === 1) begin(e.touches[0].clientX, e.touches[0].clientY, e.target, 'touch'); else sw = null; }, { capture: true, passive: true });
   stage.addEventListener('touchmove', e => {
     if (!sw || sw.id !== 'touch' || e.touches.length !== 1) return;
-    const dx = e.touches[0].clientX - sw.x, dy = e.touches[0].clientY - sw.y;
-    if (!sw.claimed && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) sw.claimed = true;
+    move(e.touches[0].clientX, e.touches[0].clientY);
     if (sw.claimed && e.cancelable) e.preventDefault();
   }, { capture: true, passive: false });
   stage.addEventListener('touchend', e => { if (e.changedTouches.length) finish(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch'); }, { capture: true, passive: true });
   stage.addEventListener('touchcancel', () => { sw = null; }, { capture: true, passive: true });
   const hasTouchEvents = 'ontouchstart' in window;
   stage.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' || !e.isPrimary || (e.pointerType === 'touch' && hasTouchEvents)) return; begin(e.clientX, e.clientY, e.target, e.pointerId); }, true);
+  stage.addEventListener('pointermove', e => { if (sw && sw.id === e.pointerId) { move(e.clientX, e.clientY); if (sw.claimed && e.cancelable) e.preventDefault(); } }, true);
+  stage.addEventListener('pointercancel', () => { sw = null; }, true);
   stage.addEventListener('pointerup', e => { if (sw && sw.id === e.pointerId) finish(e.clientX, e.clientY, e.pointerId); }, true);
   // trackpad: sideways scrolling; one skip per swipe (the scroll keeps coming for a moment after the fingers lift)
   let sum = 0, lastWheel = 0, fired = false;
   stage.addEventListener('wheel', e => {
     if (!onPicture(e.target) || e.ctrlKey) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 1.3) { e.preventDefault(); changeVolume(Math.max(-.1, Math.min(.1, -e.deltaY * .002))); return; }
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     e.preventDefault(); // otherwise the browser takes it as "go back a page"
     const now = performance.now();
@@ -1080,7 +1088,6 @@ const fullscreen = new StageFullscreen(stage, fs => {
   const label = fullscreen.pageMode ? 'Exit expanded player' : fs ? 'Exit fullscreen' : 'Fullscreen';
   $('#fsBtn').setAttribute('aria-label', label);
   $('#fsBtn').title = label;
-  if (kindOf(S.movie) === 'megaplay' && mpMedia) mpMedia.fsState(fs);
   poke();
 }, { onUnavailable: () => {
   // Some iPad browsers turn a stage request into video-only fullscreen.
@@ -1096,7 +1103,7 @@ let idleTimer = null, goneTimer = null;
 const controlsEl = $('#controls');
 function setIdle(idle) {
   clearTimeout(goneTimer);
-  for (const el of [controlsEl, ...stage.querySelectorAll('.anime-actions, .anime-social')]) el.inert = idle;
+  for (const el of [controlsEl, ...stage.querySelectorAll('.anime-actions')]) el.inert = idle;
   if (idle) {
     stage.dataset.idle = 'true';
     goneTimer = setTimeout(() => { if (stage.dataset.idle === 'true') controlsEl.classList.add('gone'); }, 300);
@@ -1112,9 +1119,9 @@ function poke() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     const hovered = matchMedia('(hover: hover)').matches
-      && stage.querySelector('.controls:hover, .anime-actions:hover, .anime-social:hover');
-    const keyboard = stage.querySelector('.controls :focus-visible, .anime-actions :focus-visible, .anime-social :focus-visible');
-    const busy = !$('#reactPop').hidden || !$('#animeReactPop').hidden || !$('#ccPop').hidden
+      && stage.querySelector('.controls:hover, .anime-actions:hover:hover');
+    const keyboard = stage.querySelector('.controls :focus-visible, .anime-actions :focus-visible :focus-visible');
+    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden
       || !$('#playerMorePop').hidden || !$('#quickChat').hidden || hovered || keyboard || dragFrac != null;
     if (S.state && S.state.playing && !busy) setIdle(true); else poke();
   }, 2800);
@@ -1138,7 +1145,7 @@ document.addEventListener('webkitfullscreenchange', () => poke());
 poke();
 
 function closePops(except) {
-  for (const p of ['#reactPop', '#tbReactPop', '#animeReactPop', '#ccPop', '#chatEmojiPop', '#playerMorePop']) if (p !== except) $(p).hidden = true;
+  for (const p of ['#reactPop', '#tbReactPop', '#ccPop', '#chatEmojiPop', '#playerMorePop']) if (p !== except) $(p).hidden = true;
   if (except !== '#playerMorePop') $('#playerMoreBtn').setAttribute('aria-expanded', 'false');
   if (except !== '#chatEmojiPop') $('#chatEmojiBtn').setAttribute('aria-expanded', 'false');
 }
@@ -1227,15 +1234,12 @@ function buildReactions() {
   const html = S.reactions.map(r => `<button type="button" data-emoji="${r}">${r}</button>`).join('');
   $('#reactPop').innerHTML = html;
   $('#tbReactPop').innerHTML = html; // same reactions in the top bar (shown in the Netflix "watch here" window)
-  $('#animeReactPop').innerHTML = html;
 }
 function onReactClick(e) { const b = e.target.closest('[data-emoji]'); if (b) conn.send({ type: 'react', emoji: b.dataset.emoji }); }
 $('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
 $('#reactPop').addEventListener('click', onReactClick);
 $('#tbReact').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#tbReactPop'); });
 $('#tbReactPop').addEventListener('click', onReactClick);
-$('#animeReactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#animeReactPop'); });
-$('#animeReactPop').addEventListener('click', onReactClick);
 $('#chatEmojiPop').innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
 $('#chatEmojiBtn').addEventListener('click', e => {
   e.stopPropagation();
@@ -1295,7 +1299,7 @@ function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
   return el;
 }
 window.addEventListener('message', e => {
-  if (!isTheater || e.source !== window.parent || !e.data) return;
+  if (!isTheater || e.source !== window.parent || !e.data || e.origin !== location.ancestorOrigins?.[0] || !/^chrome-extension:\/\/[a-p]{32}$/.test(e.origin)) return;
   if (e.data.wpTheater === 'pip-state') {
     theaterPipOpen = !!e.data.open;
     $('#pipBtn').classList.toggle('live', theaterPipOpen);
@@ -1385,11 +1389,6 @@ $('#chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($(
 $('#quickChat').addEventListener('submit', e => { e.preventDefault(); sendChat($('#quickChatInput')); $('#quickChat').hidden = true; poke(); });
 function openQuickChat() { $('#quickChat').hidden = false; $('#quickChatInput').focus(); poke(); }
 $('#quickChatBtn').addEventListener('click', openQuickChat);
-$('#animeChatBtn').addEventListener('click', () => {
-  closePops();
-  if (isFs() || room.classList.contains('no-sidebar')) openQuickChat();
-  else { setTab('chat'); $('#chatInput').focus(); }
-});
 $('#quickChatInput').addEventListener('keydown', e => { if (e.key === 'Escape') { $('#quickChat').hidden = true; e.stopPropagation(); } });
 
 function renderBadges() {
@@ -1437,7 +1436,6 @@ document.addEventListener('keydown', e => {
   if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && !field.value)) return;
   const k = e.key.toLowerCase();
 
-  if (kindOf(S.movie) === 'megaplay' && [' ', 'k', 'm', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k)) return;
   if (k === ' ' || k === 'k') { e.preventDefault(); togglePlay(); }
   else if (k === 'f') { if (theaterSvc()) theaterPost({ wpTheater: 'fullscreen' }); else toggleFullscreen(); }
   else if (k === 'm') { M.muted = !M.muted; if (player.autoMuted) unblock(); scheduleUi(); }
@@ -1490,15 +1488,13 @@ async function stopLocal(kind) {
 }
 function afterLocalChange() {
   conn.send({ type: 'media', cam: S.cam, mic: S.mic });
-  for (const id of ['#camBtn', '#animeCamBtn']) { $(id).innerHTML = icon(S.cam ? 'cam' : 'cam-off'); $(id).classList.toggle('live', S.cam); }
-  for (const id of ['#micBtn', '#animeMicBtn']) { $(id).innerHTML = icon(S.mic ? 'mic' : 'mic-off'); $(id).classList.toggle('live', S.mic); }
+  for (const id of ['#camBtn']) { $(id).innerHTML = icon(S.cam ? 'cam' : 'cam-off'); $(id).classList.toggle('live', S.cam); }
+  for (const id of ['#micBtn']) { $(id).innerHTML = icon(S.mic ? 'mic' : 'mic-off'); $(id).classList.toggle('live', S.mic); }
   renderMoreControls();
   renderCams();
 }
 $('#camBtn').addEventListener('click', () => (S.cam ? stopLocal('video') : startLocal('video')));
 $('#micBtn').addEventListener('click', () => (S.mic ? stopLocal('audio') : startLocal('audio')));
-$('#animeCamBtn').addEventListener('click', () => $('#camBtn').click());
-$('#animeMicBtn').addEventListener('click', () => $('#micBtn').click());
 
 const tiles = new Map();
 const cameraGallery = createCameraGallery($('#cams'));
@@ -2279,7 +2275,6 @@ $('#customGo').addEventListener('click', () => {
 }
 $('#customUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#customGo').click(); } });
 
-function inPip() { return !!pipWin; }
 const canPip = () => 'documentPictureInPicture' in window;
 function partyPanelWidth() {
   const width = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 348;
@@ -2302,7 +2297,7 @@ async function togglePip(opts = {}) {
   }
   const svg = document.querySelector('body > svg');
   if (svg) doc.body.appendChild(svg.cloneNode(true));
-  doc.body.className = `pip-body${kindOf(S.movie) === 'megaplay' ? ' social-only' : ''}`;
+  doc.body.className = 'pip-body';
   doc.title = 'Watch Party';
   const cams = $('#cams');
   doc.body.appendChild(cams);
@@ -2334,7 +2329,6 @@ async function togglePip(opts = {}) {
   doc.getElementById('popForm').addEventListener('submit', e => { e.preventDefault(); sendChat(doc.getElementById('popInput')); });
   doc.addEventListener('keydown', e => {
     if (e.target.closest('input')) return;
-    if (kindOf(S.movie) === 'megaplay') return;
     if (e.key === ' ') { e.preventDefault(); togglePlay(); }
     else if (e.key === 'ArrowLeft') seekBy(-10);
     else if (e.key === 'ArrowRight') seekBy(10);
@@ -2353,7 +2347,6 @@ let popChatKey = '';
 function popRender(force) {
   if (!pipWin) return;
   const doc = pipWin.document;
-  doc.body.classList.toggle('social-only', kindOf(S.movie) === 'megaplay');
   const t = doc.getElementById('popTime');
   if (!t) return;
   const playing = !!(S.state && S.state.playing);
@@ -2422,7 +2415,7 @@ function dockTime() {
 setInterval(() => { dockPush(); dockTime(); dockRtcSync(); }, 500);
 let dockTimeAt = 0;
 window.addEventListener('message', e => {
-  if (e.source !== window || !e.data || e.data.source !== 'wp-ext' || e.data.type !== 'status' || !dock.open) return;
+  if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-ext' || e.data.type !== 'status' || !dock.open) return;
   const t = performance.now();
   if (t - dockTimeAt > 450) { dockTimeAt = t; dockPush(); dockTime(); }
 });
@@ -2546,7 +2539,8 @@ try { if (sessionStorage.getItem('wp.staleReload') === '1') setTimeout(() => { t
 const theaterSvc = () => isTheater && kindOf(S.movie) === 'service';
 function theaterPost(msg) {
   if (!isTheater) return;
-  const origin = (location.ancestorOrigins && location.ancestorOrigins[0]) || '*';
+  const origin = location.ancestorOrigins?.[0];
+  if (!/^chrome-extension:\/\/[a-p]{32}$/.test(origin || '')) return;
   try { window.parent.postMessage(msg, origin); } catch { /* not in the window anymore */ }
 }
 let theaterLast = '', theaterTimer = null;
@@ -2904,7 +2898,7 @@ function showCatalogResults(query, list) {
     const key = item.type === 'free' ? `free:${item.freeId}` : `${item.type}:${item.tmdbId}`;
     catalogItems.set(key, item);
     const ready = !!item.hasSources;
-    const meta = [item.type === 'tv' ? 'Series' : item.type === 'free' ? 'Free & legal' : 'Movie', item.year, item.rating ? `★ ${Number(item.rating).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+    const meta = [item.type === 'tv' ? 'Series' : item.type === 'free' ? 'Free media' : 'Movie', item.year, item.rating ? `★ ${Number(item.rating).toFixed(1)}` : ''].filter(Boolean).join(' · ');
     const attribution = item.attribution ? `<div class="catalog-attribution">${item.attribution.creator ? `${esc(item.attribution.creator)} · ` : ''}<a href="${esc(item.attribution.licenseUrl)}" target="_blank" rel="noopener noreferrer">${esc(item.attribution.licenseLabel)}</a> · <a href="${esc(item.attribution.sourcePage)}" target="_blank" rel="noopener noreferrer">Internet Archive</a></div>` : '';
     return `<article class="anime-card catalog-card${item.poster ? '' : ' no-poster'}" data-catalog-key="${esc(key)}">
       ${item.poster ? `<img src="${esc(item.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
@@ -3076,7 +3070,7 @@ function animeAutomationLeader() {
   return leader ? leader.id === S.me?.id : isHost;
 }
 function saveAnimeProgress(status = player?.status(), flush = false) {
-  if (!animeAutomationLeader() || !conn || !status || !['anime', 'megaplay'].includes(S.movie?.kind)) return;
+  if (!animeAutomationLeader() || !conn || !status || S.movie?.kind !== 'anime') return;
   conn.send({ type: 'anime-progress', status, flush });
 }
 function returnHome() {
@@ -3251,7 +3245,7 @@ video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTune
 let episodePickerKey = '';
 function renderAnimeEpisodePicker() {
   const m = S.movie;
-  const show = !!m && ['anime', 'megaplay'].includes(kindOf(m)) && !!m.anilistId;
+  const show = !!m && kindOf(m) === 'anime' && !!m.anilistId;
   $('#animeEpisodePicker').hidden = !show;
   $('#animeEpisodeSelectInline').hidden = !show;
   if (!show) { episodePickerKey = ''; return; }
@@ -3277,7 +3271,7 @@ function renderAnimeEpisodePicker() {
 }
 function chooseAnimeEpisode(episode) {
   const m = S.movie;
-  if (!m || !['anime', 'megaplay'].includes(kindOf(m)) || !m.anilistId || !Number.isInteger(episode) || episode < 1) return;
+  if (!m || kindOf(m) !== 'anime' || !m.anilistId || !Number.isInteger(episode) || episode < 1) return;
   if (Number(m.episodes) > 0 && episode > Number(m.episodes)) return;
   if (episode === Number(m.episode)) return;
   selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode, episodes: m.episodes || 0,
@@ -3296,7 +3290,7 @@ function renderAnimeOverlay() {
   const catalogToggle = $('#catalogLangToggle');
   const m = S.movie;
   renderAnimeEpisodePicker();
-  const series = m && (['anime', 'megaplay'].includes(kindOf(m)) || kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv');
+  const series = m && (kindOf(m) === 'anime' || kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv');
   button.hidden = previous.hidden = !series;
   const current = Number(kindOf(m) === 'catalog' ? m?.catalogRef?.episode : m?.episode) || 1;
   previous.disabled = current <= 1;
@@ -3314,7 +3308,7 @@ function renderAnimeOverlay() {
   }
   catalogToggle.hidden = true;
   catalogToggle.innerHTML = '';
-  const isAnime = m && (kindOf(m) === 'anime' || kindOf(m) === 'megaplay');
+  const isAnime = m && (kindOf(m) === 'anime');
   if (!isAnime) { button.disabled = true; toggle.hidden = true; return; }
   const episode = Math.max(1, Number(m.episode) || 1);
   const atEnd = Number(m.episodes) > 0 && episode >= Number(m.episodes);
@@ -3331,7 +3325,7 @@ $('#animeNext').addEventListener('click', () => {
     conn.send({ type: 'select-catalog', ref: { ...m.catalogRef, episode: Number(m.catalogRef.episode) + 1 }, language: m.language, title: m.catalogTitle || 'TV series' });
     return;
   }
-  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
+  if (!m || !(kindOf(m) === 'anime') || !m.anilistId) return;
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
   chooseAnimeEpisode(episode + 1);
@@ -3357,7 +3351,7 @@ $('#animeLangToggle').addEventListener('click', e => {
   if (!b) return;
   const m = S.movie;
   if (!canControl()) return noPerm('playback');
-  if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
+  if (!m || !(kindOf(m) === 'anime') || !m.anilistId) return;
   const next = b.dataset.lang === 'dub' ? 'dub' : 'sub';
   if (next === (m.language === 'dub' ? 'dub' : 'sub')) return;
   const episode = Math.max(1, Number(m.episode) || 1);

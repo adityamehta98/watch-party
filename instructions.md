@@ -175,3 +175,11 @@ return home while a source request is pending. On an admitted iPad guest, verify
 the shared shelf, manual controls, page-expanded fullscreen, both buffering modes,
 and sustained playback. Repeat with the host browser closed to verify progress
 reporting and automatic skipping transfer to an eligible guest.
+
+Swipe up/down on the picture to adjust local volume; left/right still seeks.
+Controls, menus, camera tiles and the home shelf are excluded. On devices that
+block script volume changes (including iOS native video), use the hardware volume
+buttons; the player shows that instruction instead of a false percentage.
+
+See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
+release conditions. Extension 1.15.1 must be reloaded after installing this build.

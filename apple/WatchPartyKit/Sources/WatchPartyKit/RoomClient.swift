@@ -10,6 +10,7 @@ public final class RoomClient: ObservableObject {
   @Published public private(set) var state: RoomState?
   @Published public private(set) var errorMessage = ""
   public private(set) var invite: WatchPartyInvite?
+  public private(set) var mediaCookies: [HTTPCookie] = []
   public let clientID = UUID().uuidString
 
   private var clock = RoomClock()
@@ -23,18 +24,44 @@ public final class RoomClient: ObservableObject {
   public func connect(invite text: String, name: String) {
     disconnect()
     errorMessage = ""
-    do { invite = try WatchPartyInvite(text) } catch { errorMessage = error.localizedDescription; status = .failed; return }
+    let parsed: WatchPartyInvite
+    do { parsed = try WatchPartyInvite(text); invite = parsed } catch { errorMessage = error.localizedDescription; status = .failed; return }
     status = .connecting
     let config = URLSessionConfiguration.ephemeral
     config.urlCache = nil
+    config.urlCredentialStorage = nil
     config.requestCachePolicy = .reloadIgnoringLocalCacheData
     let session = URLSession(configuration: config)
-    let socket = session.webSocketTask(with: invite!.webSocketURL)
     self.session = session
-    self.socket = socket
-    socket.resume()
-    send(["type": "hello", "clientId": clientID, "name": String(name.prefix(32)), "capabilities": ["hls": true, "mse": false]])
-    connectionTask = Task { [weak self] in await self?.receive(from: socket) }
+    connectionTask = Task { [weak self] in
+      do {
+        // Admission is bound to the server's HttpOnly browser-session cookie, not clientID.
+        // Keep it in this ephemeral session and supply it to both WebSocket and AVPlayer.
+        let (_, response) = try await session.data(from: parsed.url)
+        guard let self, !Task.isCancelled, self.session === session else { return }
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              http.url?.scheme?.lowercased() == parsed.url.scheme?.lowercased(),
+              http.url?.host?.lowercased() == parsed.url.host?.lowercased(), http.url?.port == parsed.url.port,
+              let cookies = session.configuration.httpCookieStorage?.cookies(for: parsed.url)?.filter({ $0.name == "wp_s" }),
+              !cookies.isEmpty else { throw URLError(.userAuthenticationRequired) }
+        self.mediaCookies = cookies
+        var request = URLRequest(url: parsed.webSocketURL)
+        for (key, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: key) }
+        let socket = session.webSocketTask(with: request)
+        self.socket = socket
+        socket.resume()
+        self.send(["type": "hello", "clientId": self.clientID, "name": String(name.prefix(32)), "capabilities": ["hls": true, "mse": false]])
+        self.startPings()
+        await self.receive(from: socket)
+      } catch {
+        guard let self, !Task.isCancelled, self.session === session else { return }
+        self.errorMessage = "Could not establish a private room session. Check the invite and server certificate."
+        self.status = .failed
+      }
+    }
+  }
+
+  private func startPings() {
     pingTask = Task { [weak self] in
       for _ in 0..<6 {
         guard let self, !Task.isCancelled else { return }
@@ -43,7 +70,7 @@ public final class RoomClient: ObservableObject {
       }
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: 3_000_000_000)
-        guard let self else { return }
+        guard let self, !Task.isCancelled else { return }
         self.send(["type": "ping", "t0": Self.now()])
       }
     }
@@ -55,6 +82,7 @@ public final class RoomClient: ObservableObject {
     session?.invalidateAndCancel()
     connectionTask = nil; pingTask = nil; socket = nil; session = nil
     movie = nil; state = nil
+    invite = nil; mediaCookies = []; clock = RoomClock()
     if status != .failed { status = .idle }
   }
 
@@ -74,6 +102,7 @@ public final class RoomClient: ObservableObject {
     do {
       while !Task.isCancelled, task === socket {
         let message = try await task.receive()
+        guard !Task.isCancelled, task === socket else { return }
         let data: Data
         switch message { case .data(let value): data = value; case .string(let value): data = Data(value.utf8); @unknown default: continue }
         let envelope = try JSONDecoder().decode(RoomEnvelope.self, from: data)

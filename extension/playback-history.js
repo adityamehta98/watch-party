@@ -31,15 +31,24 @@ var WPPlayback = (() => {
     return { season: match ? Number(match[1]) : null, episode: match ? Number(match[2]) : null };
   }
   function clean(entry, service) {
-    if (!entry || !asset(entry.url, service) || asset(entry.url, service).assetId !== entry.assetId
+    const identity = entry && asset(entry.url, service);
+    if (!identity || identity.assetId !== entry.assetId
       || !Number.isFinite(entry.position) || entry.position < 0 || !Number.isFinite(entry.duration) || entry.duration <= 0
-      || !Number.isFinite(entry.lastWatched)) return null;
-    return { ...entry, position: Math.min(entry.position, entry.duration),
+      || !Number.isFinite(entry.lastWatched) || entry.lastWatched < 0) return null;
+    // Persist an allowlist, including the canonical page URL returned by asset(). Old or malformed
+    // entries must not retain URL tokens, fragments or arbitrary fields on the next write.
+    const catalog = {};
+    if (['movie', 'tv'].includes(entry.catalog?.type)) catalog.type = entry.catalog.type;
+    if (Number.isSafeInteger(entry.catalog?.tmdbId) && entry.catalog.tmdbId > 0) catalog.tmdbId = entry.catalog.tmdbId;
+    if (/^(?:19|20)\d{2}$/.test(String(entry.catalog?.year || ''))) catalog.year = Number(entry.catalog.year);
+    return { ...identity, showId: String(entry.showId || identity.assetId).slice(0, 100),
+      title: String(entry.title || '').slice(0, 140), catalog,
+      position: Math.min(entry.position, entry.duration), duration: entry.duration, lastWatched: entry.lastWatched,
       season: Number.isInteger(entry.season) && entry.season >= 0 ? entry.season : null,
       episode: Number.isInteger(entry.episode) && entry.episode > 0 ? entry.episode : null };
   }
   class History {
-    constructor(storage, storageKey, service) { this.storage = storage; this.key = storageKey; this.service = service; this.entries = {}; this.queue = Promise.resolve(); }
+    constructor(storage, storageKey, service) { this.storage = storage; this.key = storageKey; this.service = service; this.entries = Object.create(null); this.queue = Promise.resolve(); }
     async load() {
       // A read failure must not turn existing progress into a fresh start.
       const data = (await this.storage.get(this.key))?.[this.key];

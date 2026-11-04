@@ -87,7 +87,7 @@
   }
   const report = error => { if (intent && !notified) { notified = true; chrome.runtime.sendMessage({ wp: 'catalog-launch-unmatched', id: intent.id, error }).catch(() => {}); } };
   window.addEventListener('message', e => {
-    if (e.source !== window || e.data?.source !== 'wp-netflix' || e.data.ok !== false || !intent) return;
+    if (e.source !== window || e.origin !== location.origin || e.data?.source !== 'wp-netflix' || e.data.ok !== false || !intent) return;
     if (e.data.op === 'play') report('Playback needs a click. Press Play inside Netflix to continue.');
     if (e.data.op === 'seek' && seekAt) {
       remember('unmatched'); window.__wpCatalogRestoring = false;

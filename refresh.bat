@@ -17,8 +17,11 @@ if exist "_update\WatchParty.part01" set PARTS=%PARTS%+"_update\WatchParty.part0
 if exist "_update\WatchParty.part02" set PARTS=%PARTS%+"_update\WatchParty.part02"
 copy /b %PARTS% "_update\update.zip" >nul
 if errorlevel 1 goto joinfail
-powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '_update\update.zip' -DestinationPath '_update\new'"
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath((Join-Path (Get-Location) '_update')); $target=[IO.Path]::GetFullPath((Join-Path $root 'new')); if (-not $target.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update path' }; if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }; Expand-Archive -LiteralPath '_update\update.zip' -DestinationPath $target"
+if errorlevel 1 goto unzipfail
 if not exist "_update\new\WatchParty.exe" goto unzipfail
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; foreach ($folder in @('bin','extension','LICENSES')) { $source=Join-Path '_update\new' $folder; if (Test-Path -LiteralPath $source -PathType Container) { Copy-Item -LiteralPath $source -Destination '.' -Recurse -Force } }; foreach ($file in @('LICENSE','THIRD_PARTY_NOTICES.md','BUILD-MANIFEST.json')) { $source=Join-Path '_update\new' $file; if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination $file -Force } }"
+if errorlevel 1 goto inuse
 move /y "_update\new\WatchParty.exe" "WatchParty.exe" >nul
 if errorlevel 1 goto inuse
 rmdir /s /q "_update" >nul 2>nul

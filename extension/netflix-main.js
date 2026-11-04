@@ -11,7 +11,7 @@
     } catch { return null; }
   }
   window.addEventListener('message', e => {
-    if (e.source !== window || !e.data || e.data.source !== 'wp-cs') return;
+    if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-cs') return;
     const { op, t } = e.data;
     const p = player();
     const v = document.querySelector('video');

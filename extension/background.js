@@ -10,10 +10,22 @@ const theaterTabs = new Set(); // tabs showing the "watch here" window (party + 
 const theaterParty = new Map(); // theater tab -> origin of the Watch Party page inside it
 const customHosts = new Map();  // theater tab -> { host, blockPopups } for the custom site it shows
 function originOf(url) { try { return new URL(url).origin; } catch { return ''; } }
+function partyPageUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    if (u.username || u.password) return false;
+    return (u.protocol === 'https:' && /^\/join\/[A-Za-z0-9]+\/?$/.test(u.pathname)) ||
+      (u.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(u.hostname) && /^\/host\/[A-Za-z0-9]+\/?$/.test(u.pathname));
+  } catch { return false; }
+}
+function extensionPage(url, file) {
+  try { const u = new URL(url); return u.href.split(/[?#]/)[0] === chrome.runtime.getURL(file); } catch { return false; }
+}
+const theaterSender = sender => sender?.id === chrome.runtime.id && sender.tab && !sender.frameId && extensionPage(sender.url, 'theater.html');
 function customSite(url, partyOrigin, blockPopups) {
   try {
     const u = new URL(String(url || ''));
-    if (!/^https?:$/.test(u.protocol) || u.origin === partyOrigin) return null;
+    if (!/^https?:$/.test(u.protocol) || u.username || u.password || u.origin === partyOrigin) return null;
     return { host: u.hostname.toLowerCase(), blockPopups: blockPopups !== false };
   } catch { return null; }
 }
@@ -26,7 +38,7 @@ function post(port, msg) { try { port.postMessage(msg); } catch { /* closed */ }
 function allowedUrl(url) {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && !!wpServiceOf(u.hostname);
+    return u.protocol === 'https:' && !u.username && !u.password && !!wpServiceOf(u.hostname);
   } catch { return false; }
 }
 
@@ -97,7 +109,9 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 function onPartyPort(port) {
+  if (port.sender?.id !== chrome.runtime.id || !partyPageUrl(port.sender.url)) { port.disconnect(); return; }
   const tab = port.sender && port.sender.tab;
+  if (tab && theaterParty.has(tab.id) && originOf(port.sender.url) !== theaterParty.get(tab.id)) { port.disconnect(); return; }
   const party = { port, watch: null, link: null, pendingTab: null, tabId: tab && tab.id, frameId: port.sender ? port.sender.frameId : 0, windowId: tab && tab.windowId, ui: null, dockOpen: false, inTheater: false };
   // inside the "watch here" window, the streaming site sits in the same tab
   if (tab && theaterTabs.has(tab.id)) { party.inTheater = true; party.pendingTab = tab.id; }
@@ -169,6 +183,7 @@ function onPartyPort(port) {
 }
 
 function onDockPort(port) {
+  if (port.sender?.id !== chrome.runtime.id || (!extensionPage(port.sender.url, 'sidebar.html') && !partyControlsTab(port.sender.tab?.id))) { port.disconnect(); return; }
   const dock = { port, windowId: null, party: null, kind: 'panel', tabId: port.sender && port.sender.tab ? port.sender.tab.id : null };
   docks.add(dock);
   port.onDisconnect.addListener(() => {
@@ -207,9 +222,9 @@ function onDockPort(port) {
 
 // Messages from the streaming tabs and the party pages.
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
-  if (!m || !m.wp) return;
+  if (!m || !m.wp || sender.id !== chrome.runtime.id) return;
   if (m.wp === 'ping') { reply({ ok: true }); return; } // the party page checking that this part is running
-  if (m.wp === 'theater-hello' && sender.tab) {
+  if (m.wp === 'theater-hello' && theaterSender(sender) && partyPageUrl(m.party)) {
     // the "watch here" window opened in this tab, or reminds us it's there (it does every few seconds,
     // since this background part is put to sleep by the browser now and then and forgets)
     const tab = sender.tab.id;
@@ -228,11 +243,11 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     updateFrameRules().then(() => { injectTabFrames(tab); reply({ ok: true }); }, e => reply({ ok: false, error: String(e.message || e) }));
     return true;
   }
-  if (m.wp === 'theater-open' && sender.tab) {
+  if (m.wp === 'theater-open' && sender.tab && partyPageUrl(sender.url)) {
     // Safari on iPhone/iPad cannot use Chrome's side panel or a dependable two-frame theater.
     // Keep the party in its own tab and open the player as a normal top-level Safari tab instead.
     const url = String(m.url || '');
-    if (!/^(https:\/\/[^/]+\/join\/|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/host\/)/.test(url)) { reply({ ok: false, error: 'not a Watch Party page' }); return; }
+    if (!partyPageUrl(url) || originOf(url) !== originOf(sender.url) || new URL(url).pathname !== new URL(sender.url).pathname) { reply({ ok: false, error: 'not this Watch Party page' }); return; }
     if (IS_SAFARI) {
       const party = [...parties].find(p => p.tabId === sender.tab.id);
       const custom = party && party.watch && party.watch.service === 'custom';
@@ -260,9 +275,9 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       .then(() => reply({ ok: true }), e => reply({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
-  if (m.wp === 'frame-allow' && sender.tab && theaterTabs.has(sender.tab.id)) {
+  if (m.wp === 'frame-allow' && theaterSender(sender) && theaterTabs.has(sender.tab.id)) {
     // the Watch Party window is about to show a custom site: let that site load inside it
-    if (m.party) theaterParty.set(sender.tab.id, originOf(m.party));
+    if (partyPageUrl(m.party) && originOf(m.party) === theaterParty.get(sender.tab.id)) theaterParty.set(sender.tab.id, originOf(m.party));
     const party = theaterParty.get(sender.tab.id);
     const site = customSite(m.url, party, m.blockPopups);
     if (site && party) customHosts.set(sender.tab.id, site); else customHosts.delete(sender.tab.id);
@@ -275,6 +290,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     return true;
   }
   if (!sender.tab) return;
+  if (!partyControlsTab(sender.tab.id)) {
+    if (m.wp === 'catalog-launch') reply(null);
+    return;
+  }
   const tabId = sender.tab.id, frameId = sender.frameId || 0;
   if (m.wp === 'catalog-launch' || m.wp === 'catalog-launch-unmatched') {
     const service = (() => { try { return wpServiceOf(new URL(sender.url).hostname); } catch { return null; } })();
@@ -314,13 +333,13 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       party.link.area = st.area || 0;
       party.link.at = Date.now();
       if (st.root) party.link.rootFrame = frameId;
-      post(party.port, { type: 'status', st });
+      post(party.port, { type: 'status', st: { ...st, url: wpSharedPageUrl(st.url), advanceFrom: wpSharedPageUrl(st.advanceFrom) } });
     } else if (m.wp === 'page') {
       // the tab this party watches in (linked, or the one we opened / the window it lives in)
       const mine = party.link ? party.link.tabId === tabId : (party.pendingTab == null || party.pendingTab === tabId);
-      if (mine) post(party.port, { type: 'page', url: m.url, signin: !!m.signin });
+      if (mine) post(party.port, { type: 'page', url: wpSharedPageUrl(m.url), signin: !!m.signin });
     } else if (m.wp === 'user' && party.link && party.link.tabId === tabId) {
-      post(party.port, { type: 'user', action: m.action, t: m.t, land: !!m.land, url: m.url || '', vol: m.vol, muted: m.muted });
+      post(party.port, { type: 'user', action: m.action, t: m.t, land: !!m.land, url: wpSharedPageUrl(m.url), vol: m.vol, muted: m.muted });
     }
   }
 });
@@ -333,6 +352,28 @@ chrome.tabs.onRemoved.addListener(tabId => {
     if (party.link && party.link.tabId === tabId) unlink(party);
     if (party.pendingTab === tabId) party.pendingTab = null;
   }
+});
+
+// A tab ID is not permanent consent: typing another address into a theater must revoke its
+// frame-header exceptions, popup cleanup and content-script injection for the new page.
+function releaseTheaterTab(tabId) {
+  const changed = theaterTabs.delete(tabId);
+  theaterParty.delete(tabId);
+  customHosts.delete(tabId);
+  for (const party of parties) {
+    if (party.link?.tabId === tabId) unlink(party);
+    if (party.pendingTab === tabId) party.pendingTab = null;
+    if (party.tabId === tabId) party.inTheater = false;
+  }
+  if (changed) updateFrameRules().catch(e => console.warn('frame rules', e));
+}
+if (chrome.webNavigation?.onBeforeNavigate) chrome.webNavigation.onBeforeNavigate.addListener(d => {
+  if (!IS_SAFARI && d.frameId === 0 && theaterTabs.has(d.tabId) && !extensionPage(d.url, 'theater.html')) releaseTheaterTab(d.tabId);
+});
+if (chrome.webNavigation?.onCommitted) chrome.webNavigation.onCommitted.addListener(d => {
+  if (d.frameId !== 0 || !theaterTabs.has(d.tabId)) return;
+  const manual = ['typed', 'auto_bookmark', 'generated', 'keyword', 'keyword_generated'].includes(d.transitionType) || d.transitionQualifiers?.includes('from_address_bar');
+  if ((!IS_SAFARI && !extensionPage(d.url, 'theater.html')) || (IS_SAFARI && manual)) releaseTheaterTab(d.tabId);
 });
 
 // ---- content-script injection ------------------------------------------------------------------
@@ -430,7 +471,12 @@ async function installFrameRules() {
     }
   } catch { /* can't list them: the windows remind us themselves */ }
   for (const t of [...theaterTabs]) {
-    try { await chrome.tabs.get(t); } catch { theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t); }
+    try {
+      const tab = await chrome.tabs.get(t);
+      if (!IS_SAFARI && !extensionPage(tab.url || tab.pendingUrl, 'theater.html')) {
+        theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t);
+      }
+    } catch { theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t); }
   }
   updateFrameRules().catch(e => console.warn('frame rules', e));
 })();

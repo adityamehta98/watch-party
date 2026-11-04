@@ -81,7 +81,7 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
 - **Movies & TV, no extension.** Search TMDB plus a free Public Domain/Creative Commons catalog, choose a movie or TV episode, and switch between available languages. Playback stays in Watch Party's own synchronized player; HLS uses its adaptive renditions and direct files use the highest available resolution.
 - **Anime, no extension.** Search by title and play an episode right in the page on any device, iPad and iPhone included. Watch Party resolves a real HLS stream and proxies it through the host, so it is synced exactly like a movie, carries subtitles and intro/outro skips, and shows no ads. Playback uses Watch Party's own controls. If a source cannot be resolved, an error lets you retry without switching to the provider's player.
 - **Anime watch history.** Admitted viewers share Continue watching cover cards with a gold progress bar. Hover or keyboard focus reveals Play, episode details, and an X to hide the card without deleting history. Hidden cards stay hidden until you select an episode again. Saved timestamps and watched indicators appear in the search result's episode dropdown. Resume resolves a fresh stream and starts at the saved position, even after restarting Watch Party. Episodes become watched at 90%. Progress uses the host player's actual position, saves to `watch-history.json` beside the app about every five seconds (and on pause, leaving the page, or shutdown), and is shared across sub/dub versions. History is stored on the host PC and shared with admitted room members. The host reports progress while connected; an eligible guest takes over when no host viewer is connected. Only the host can hide cards or manually change watched markers. Keep this file when moving or updating the app; it is separate from disposable media caches. Tracking starts with this version; earlier viewing cannot be recovered.
-- **Webcams and mic.** A built-in TURN relay runs on the host PC, so guests never learn each other's IP addresses. Camera tiles can be moved and resized over the movie.
+- **Webcams and mic.** A built-in TURN relay runs on the host PC. Relay mode hides peer addresses; direct peer-to-peer mode exposes them to participants. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
 - **Phones and tablets supported** for your own movies and YouTube; the signed Safari Web Extension also supports streaming-service sync on iPhone and iPad.
 - **Native Apple companion.** The optional Swift package adds AVPlayer HLS playback, Picture in Picture, AirPlay and SharePlay handoff while retaining Safari for DRM services.
@@ -333,7 +333,7 @@ sequenceDiagram
 
 ### 5. Webcams and mic
 
-`public/js/rtc.js` builds a small WebRTC mesh (fine for a handful of people). By default, media goes through **Watch Party's own STUN/TURN server** (`server/turn.js`, RFC 5389/5766, UDP only) on the host PC with credentials that change every run. Guests never connect to each other directly, so nobody learns anyone else's IP address. `webcamMode` can switch to direct peer-to-peer when needed (for example over a TCP-only public link).
+`public/js/rtc.js` builds a small WebRTC mesh (fine for a handful of people). By default, media goes through **Watch Party's own STUN/TURN server** (`server/turn.js`, RFC 5389/5766, UDP only) on the host PC with credentials that change every run. Relay mode avoids direct peer connections. `webcamMode` can switch to direct peer-to-peer, exposing participant network addresses, when needed (for example over a TCP-only public link).
 
 ### 6. Reaching the host from the internet
 
@@ -398,7 +398,7 @@ flowchart TD
 - **Host-only admin.** The host page, library and settings answer only on `localhost`, even with the admin key.
 - **Encrypted.** Guests always use HTTPS. Plain HTTP from the internet is only redirected to HTTPS.
 - **Read-only for guests.** Guests can stream only the movie currently shown. They can't browse files and can't upload anything.
-- **IP privacy.** Webcam traffic is relayed through the host, so guests don't learn each other's addresses. The relay forwards only between party members and never to arbitrary internet hosts.
+- **IP privacy.** Relay mode keeps camera traffic on a relay. Direct peer-to-peer camera mode can expose participant network addresses. The relay forwards only between party members and never to arbitrary internet hosts.
 - **Clean shutdown.** When the app stops it removes the UPnP mapping and turns off any public link.
 
 **Honest limits:** no software is unbreakable. These measures reduce the exposure to one small app that answers only people holding a key that changes every run. The self-signed certificate means guests see a one-time browser warning (the connection is still encrypted). Use Tailscale HTTPS to avoid it.
@@ -466,7 +466,7 @@ How it behaves:
 - **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; DRM playback still opens in the streaming service's Safari tab.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
 - **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
-- The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It only moves play, pause, seek and volume, and never sees passwords, accounts or the video stream.
+- The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It synchronizes playback metadata and does not intentionally read login cookies or passwords. Its broad permissions still grant access to controlled page content; use trusted sites and see PRIVACY.md.
 
 ### Custom site (any website with a video)
 
@@ -486,7 +486,7 @@ In **Library → Watch together on a streaming service → Custom site**, the ho
 
 The **Movies & TV** picker plays in Watch Party's own player, so neither the host nor guests need a browser extension. It searches two sources, and can also hand a mainstream title off to a licensed streaming service:
 
-- **Free & legal:** explicitly licensed Public Domain, CC0, CC BY, and CC BY-SA video from curated Internet Archive collections. Watch Party rejects restricted items, unsupported files, licenses with extra restrictions, and unlicensed uploads. The result card links to the source and license.
+- **Free media:** video whose Internet Archive metadata declares Public Domain, CC0, CC BY, or CC BY-SA licensing. Watch Party filters restricted items, unsupported files and unsupported or missing license metadata. The result card links to the source and declared license; metadata alone does not establish an uploader's rights.
 - **Mainstream metadata:** TMDB supplies search results, posters and episode metadata; it does **not** supply video. For these titles, the host must configure media URLs they own, license, or are otherwise authorized to redistribute.
 - **Watch on a licensed service:** for a mainstream title with no authorized source, the result card lists the subscription services that carry it (from TMDB watch providers, US region) as **Watch on …** buttons. Choosing one opens that service — deep-linked to the title's search — through Watch Party's streaming-service sync: everyone signs in with their own account and the room stays in sync. Like the Streaming services tab, this path uses the Watch Party Sync extension.
 
@@ -552,7 +552,7 @@ For a selected language, Watch Party chooses the source with the largest `qualit
 **Letting others pick:** anyone with playback control also gets the **Library** tab. They can show your movies, start **Prepare**, search YouTube or pick a streaming service. They can't see folder names, change folders or delete prepared copies.
 
 **Keyboard:** `Space` play/pause · `←`/`→` back/forward 10 s (tap repeatedly to jump further) · `↑`/`↓` volume · `M` mute · `F` fullscreen · `Enter` chat
-**Swipes:** swipe right or left on the picture (or two fingers sideways on a trackpad) to skip ±20 s.
+**Swipes:** swipe right or left on the picture (or two fingers sideways on a trackpad) to skip ±20 s. Swipe up/down to adjust local volume. On iOS, use device volume buttons when the browser blocks script volume changes.
 
 ### What guests need
 - **Chrome on a computer** is best for 4K HEVC, with **Settings → System → Use graphics acceleration** on. Edge and Safari work too. Firefox may not play HEVC.
@@ -697,3 +697,7 @@ Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocke
 - Netflix, YouTube, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+ and Apple TV+ are trademarks of their respective owners. This project isn't affiliated with or endorsed by any of them.
 
 Please only share content you have the right to share.
+
+## Audit and privacy
+
+See [security and size audit](SECURITY_AUDIT.md), [privacy/storage inventory](PRIVACY.md), and [third-party notices](THIRD_PARTY_NOTICES.md). Binary redistribution still requires matching FFmpeg/linked-library source and license compliance; no media rights are granted by the app.

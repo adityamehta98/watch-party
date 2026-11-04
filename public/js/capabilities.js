@@ -16,8 +16,9 @@ export function deliverySources(movie, capabilities, key, clientId, { bufferMode
   if (clientId) auth.set('c', clientId);
   const signed = url => `${url}?${auth}`;
   const sources = [];
-  if (movie.url) sources.push({ type: 'direct', url: signed(movie.url) });
-  if (movie.hls) {
+  const local = value => /^\/(?![\/\\])/.test(String(value || ''));
+  if (local(movie.url)) sources.push({ type: 'direct', url: signed(movie.url) });
+  if (local(movie.hls)) {
     // Only Safari's native HLS is trusted (Chrome's fails on growing playlists).
     const appleNative = capabilities?.hls && capabilities.nativeHlsPreferred;
 

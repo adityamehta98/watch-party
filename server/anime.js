@@ -1,9 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
-const dns = require('dns').promises;
-const net = require('net');
 const { Readable } = require('stream');
+const { fetchPublic } = require('./upstream');
 
 const PRIMARY = 'https://megaplay.buzz';
 const STREAM_HOST = 'https://megavid.buzz';
@@ -117,22 +116,7 @@ function unsign(data, sig) {
 const PATH_RE = /^\/anime\/(m3u8|seg|sub)\/([A-Za-z0-9_-]+)\/([0-9a-f]{20})(?:\.[a-z0-9]+)?$/;
 function parseProxyPath(p) { const m = PATH_RE.exec(p); if (!m) return null; const info = unsign(m[2], m[3]); return info ? { kind: m[1], ...info } : null; }
 
-// Refuse upstreams that resolve to private/loopback addresses (SSRF guard).
-function isPrivateIp(ip) {
-  if (net.isIPv4(ip)) { const [a, b] = ip.split('.').map(Number); return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || a >= 224; }
-  const l = String(ip).toLowerCase();
-  if (l.startsWith('::ffff:')) return isPrivateIp(l.slice(7));
-  return l === '::1' || l === '::' || l.startsWith('fc') || l.startsWith('fd') || l.startsWith('fe80');
-}
-async function hostAllowed(host) {
-  if (!host || /^(localhost|.*\.local)$/i.test(host)) return false;
-  if (net.isIP(host)) return !isPrivateIp(host);
-  try { const addrs = await dns.lookup(host, { all: true }); return addrs.length > 0 && !addrs.some(x => isPrivateIp(x.address)); } catch { return false; }
-}
 async function fetchUpstream(url, referer, extraHeaders) {
-  let u; try { u = new URL(url); } catch { throw new Error('bad url'); }
-  if (!/^https?:$/.test(u.protocol)) throw new Error('bad protocol');
-  if (!(await hostAllowed(u.hostname))) throw new Error('blocked host');
   const headers = { 'Accept': '*/*', 'Referer': referer };
   // MegaPlay's CDN accepts its Referer with the normal server HTTP client.
   // Spoofing Chrome and adding Origin causes Cloudflare 403 responses there.
@@ -140,7 +124,7 @@ async function fetchUpstream(url, referer, extraHeaders) {
     const origin = new URL(referer).origin;
     if (origin !== PRIMARY) { headers['User-Agent'] = UA; headers['Origin'] = origin; }
   } catch { /* no origin */ }
-  return fetch(url, { headers: { ...headers, ...(extraHeaders || {}) }, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+  return fetchPublic(url, { headers: { ...headers, ...(extraHeaders || {}) } });
 }
 
 // Rewrite every playlist URI to a signed proxy link, carrying the room auth query onto each child.

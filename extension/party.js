@@ -31,7 +31,7 @@
     if (!document.querySelector('meta[name="watch-party-app"]')) return;
     connect();
     window.addEventListener('message', e => {
-      if (e.source !== window || !e.data || e.data.source !== 'wp-page') return;
+      if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-page') return;
       const { source, ...m } = e.data;
       if (m.type === 'ping') { toPage({ type: 'hello', version, platform }); return; }
       // straight to the extension while the click still counts (Chrome only opens the panel after a click)

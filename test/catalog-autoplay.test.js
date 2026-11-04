@@ -193,16 +193,16 @@ test('a party that reconnects before theater registration can launch without any
     declarativeNetRequest:{getSessionRules:async()=>[],updateSessionRules:async()=>{}},
   }});
   for (const file of ['extension/services.js','extension/ad-domains.js','extension/background.js']) vm.runInContext(read(file),context);
-  runtimeConnect.fire({name:'party',sender:{tab:{id:7,windowId:1},frameId:1},onMessage:partyMessage,onDisconnect:event(),postMessage(){}});
+  runtimeConnect.fire({name:'party',sender:{id:'ext',url:'http://127.0.0.1:8765/host/test',tab:{id:7,windowId:1},frameId:1},onMessage:partyMessage,onDisconnect:event(),postMessage(){}});
   partyMessage.fire({type:'watch',service:'netflix',url:'https://www.netflix.com/search?q=Latent',launchTitle:"India's Got Latent",launchId:'pick1'});
-  runtimeMessage.fire({wp:'theater-hello',party:'http://127.0.0.1:8765/host/test'}, {tab:{id:7}},()=>{});
+  runtimeMessage.fire({wp:'theater-hello',party:'http://127.0.0.1:8765/host/test'}, {id:'ext',url:'chrome-extension://ext/theater.html',frameId:0,tab:{id:7}},()=>{});
   await settle();
   let request;
-  runtimeMessage.fire({wp:'catalog-launch'}, {tab:{id:7},frameId:2,url:'https://www.netflix.com/search?q=Latent'}, value=>{request=value;});
+  runtimeMessage.fire({wp:'catalog-launch'}, {id:'ext',tab:{id:7},frameId:2,url:'https://www.netflix.com/search?q=Latent'}, value=>{request=value;});
   assert.equal(request?.title,"India's Got Latent");
   assert.equal(request?.id,'pick1');
   let unrelated='unset';
-  runtimeMessage.fire({wp:'catalog-launch'}, {tab:{id:8},frameId:0,url:'https://www.netflix.com/search?q=Latent'}, value=>{unrelated=value;});
+  runtimeMessage.fire({wp:'catalog-launch'}, {id:'ext',tab:{id:8},frameId:0,url:'https://www.netflix.com/search?q=Latent'}, value=>{unrelated=value;});
   assert.equal(unrelated,null,'a normal unrelated Netflix tab cannot claim this launch');
 });
 

@@ -27,7 +27,7 @@ function theater() {
   vm.runInContext(read('extension/theater.js'), context);
   return { context, element, messages,
     stage(url = 'https://www.netflix.com/search?q=Mashle') {
-      listeners.message({ source: element('party').contentWindow, data: {
+      listeners.message({ origin: 'http://127.0.0.1:8765', source: element('party').contentWindow, data: {
         wpTheater: 'stage', show: true, url, browsing: true, rect: { x: 0, y: 0, w: 1000, h: 700 },
       } });
     },

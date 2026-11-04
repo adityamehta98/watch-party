@@ -2,6 +2,7 @@
 
 const dgram = require('dgram');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 const { EventEmitter } = require('events');
 
@@ -40,12 +41,16 @@ function discover(timeoutMs = 3500) {
       const s = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       sockets.push(s);
       s.on('error', () => {});
-      s.on('message', msg => {
+      s.on('message', (msg, peer) => {
         const text = msg.toString();
         const m = text.match(/^location:\s*(.+)$/im);
         if (m) {
           const location = m[1].trim();
-          if (!found.has(location)) found.set(location, { location, localAddress: addr === '0.0.0.0' ? null : addr });
+          let url;
+          try { url = new URL(location); } catch { return; }
+          if (url.protocol !== 'http:' || url.username || url.password || !net.isIPv4(peer.address) || !isPrivate(peer.address)
+              || url.hostname !== peer.address || peer.address.startsWith('127.') || peer.address.startsWith('169.254.')) return;
+          if (found.size < 32 && !found.has(location)) found.set(location, { location, localAddress: addr === '0.0.0.0' ? null : addr });
         }
       });
       s.bind(0, addr, () => {
@@ -62,10 +67,12 @@ function discover(timeoutMs = 3500) {
 function httpRequest(url, { method = 'GET', headers = {}, body = null, timeout = 5000 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
+    if (u.protocol !== 'http:' || u.username || u.password) return reject(new Error('invalid router URL'));
     const req = http.request({ hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, method, headers, timeout }, res => {
       let data = '';
       res.setEncoding('utf8');
-      res.on('data', d => { data += d; });
+      res.on('data', d => { data += d; if (data.length > 1024 * 1024) req.destroy(new Error('router response too large')); });
+      res.on('error', reject);
       res.on('end', () => resolve({ status: res.statusCode, body: data }));
     });
     req.on('timeout', () => req.destroy(new Error('timeout')));
@@ -86,7 +93,10 @@ async function findService(dev) {
   }));
   const svc = services.find(s => /WANIPConnection/i.test(s.type)) || services.find(s => /WANPPPConnection/i.test(s.type));
   if (!svc) throw new Error('router does not offer port forwarding over UPnP');
-  return { type: svc.type, control: new URL(svc.control, base).toString(), location: dev.location, localAddress: dev.localAddress };
+  const control = new URL(svc.control, base);
+  if (control.protocol !== 'http:' || control.hostname !== new URL(dev.location).hostname || control.username || control.password
+      || !/^urn:schemas-upnp-org:service:WAN(?:IP|PPP)Connection:\d+$/.test(svc.type)) throw new Error('invalid router service');
+  return { type: svc.type, control: control.href, location: dev.location, localAddress: dev.localAddress };
 }
 
 async function soap(svc, action, args) {
@@ -139,6 +149,7 @@ class PortMapper extends EventEmitter {
       const localIp = pickLocalAddress(this.svc);
       let externalIp = null;
       try { externalIp = tag(await soap(this.svc, 'GetExternalIPAddress', {}), 'NewExternalIPAddress'); } catch { /* optional */ }
+      if (!net.isIPv4(externalIp || '')) externalIp = null;
       this.set({ localIp, externalIp });
       const mappings = [];
       for (const p of ports) mappings.push(await this.map(p, localIp));
@@ -166,7 +177,7 @@ class PortMapper extends EventEmitter {
         await tryMap(ext, lease);
         return { port, protocol, external: ext, lease };
       } catch (e) {
-        if (e.upnpCode === 725) { lease = 0; ext--; continue; }       // router only allows permanent leases
+        if (e.upnpCode === 725 && lease !== 0) { lease = 0; ext--; continue; } // router only allows permanent leases
         if (e.upnpCode === 718 || e.upnpCode === 729) continue;        // port taken by another device, try the next
         throw e;
       }

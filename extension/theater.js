@@ -169,7 +169,7 @@ chrome.runtime.onMessage.addListener((m, sender) => {
   showFrameFailure(m.error);
 });
 window.addEventListener('message', e => {
-  if (e.source !== partyFrame.contentWindow || !e.data || typeof e.data.wpTheater !== 'string') return;
+  if (e.source !== partyFrame.contentWindow || e.origin !== partyOrigin() || !e.data || typeof e.data.wpTheater !== 'string') return;
   const m = e.data;
   if (m.wpTheater === 'stage') {
     const show = !!m.show && allowedServiceUrl(m.url, !!m.custom);

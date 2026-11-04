@@ -26,6 +26,8 @@ apple/Local.xcconfig
 
 # Build output and binaries (publish these as GitHub Release assets instead)
 dist/
+/LICENSES/
+/BUILD-MANIFEST.json
 *.exe
 bin/*.dll
 bin/*.exe

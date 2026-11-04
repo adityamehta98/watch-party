@@ -29,6 +29,7 @@ const remoteMedia = require('./remote-media');
 const { Catalog } = require('./catalog');
 const { cleanAppleExtensionUrl, migrateConfig } = require('./settings');
 const pwa = require('./pwa');
+const { createSessions } = require('./sessions');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -48,7 +49,7 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
         try { orig(...a); } catch { /* no window */ }
         try {
           const line = a.map(x => (typeof x === 'string' ? x : x instanceof Error ? x.stack : JSON.stringify(x))).join(' ');
-          if (!/[▀▄█]/.test(line)) fs.appendFileSync(file, strip(line) + '\n'); // skip the text QR code
+          if (!/[▀▄█]/.test(line)) fs.appendFileSync(file, strip(line).replace(/\/(host|join)\/[A-Za-z0-9]+/g, '/$1/[private]') + '\n'); // skip the text QR code and redact bearer links
         } catch { /* ignore */ }
       };
     }
@@ -122,6 +123,7 @@ if (opt('--bind')) override('bind', opt('--bind'));
 if (flag('--tunnel')) override('tunnel', 'cloudflare');
 if (opt('--folder')) config.folders = [...new Set([...(config.folders || []), path.resolve(opt('--folder'))])];
 if (!config.adminKey) config.adminKey = randKey(20);
+const sessions = createSessions(config.adminKey);
 save();
 
 const bins = { ffmpeg: tools.findBin('ffmpeg'), ffprobe: tools.findBin('ffprobe'), cloudflared: config.tunnel === 'cloudflare' ? tools.findBin('cloudflared') : null };
@@ -199,7 +201,7 @@ function lanJoinUrl() {
 function isLocalHostHeader(host) {
   const h = String(host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
   if (process.env.WP_TEST_REMOTE_HOST && h === process.env.WP_TEST_REMOTE_HOST) return false; // tests only
-  return h === 'localhost' || h.startsWith('127.') || h === '::1';
+  return h.toLowerCase() === 'localhost' || (net.isIPv4(h) && h.startsWith('127.')) || h === '::1';
 }
 
 const PUBLIC_STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
@@ -384,7 +386,7 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
 
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://megaplay.buzz; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co https://image.tmdb.org; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co https://image.tmdb.org; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -394,7 +396,11 @@ function securityHeaders(req, res) {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 }
 
-const safeEq = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const safeEq = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+function mediaRole(req, key) {
+  const role = room.roleForKey(key, isLocal(req));
+  return role === 'guest' && !room.hasAdmittedSession(sessions.read(req)) ? null : role;
+}
 
 async function api(req, res, p) {
   // The host controls work only from this PC, never over the internet.
@@ -501,7 +507,7 @@ async function api(req, res, p) {
 }
 
 function media(req, res, p, u) {
-  const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
+  const role = mediaRole(req, u.searchParams.get('k'));
   if (!role) return notFound(req, res, 'media key');
   const m = p.match(/^\/media\/(\w+)\/(video|sub\/(\w+)\.vtt|hls\/(index\.m3u8|init\.mp4|seg-\d{5}\.m4s))$/);
   if (!m) return notFound(req, res, 'media path');
@@ -524,7 +530,7 @@ function media(req, res, p, u) {
       if (clientId) auth.set('c', clientId);
       const body = authorizeHlsPlaylist(fs.readFileSync(file, 'utf8'), auth.toString());
 
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff' });
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     } catch { return missing(); }
   }
@@ -538,7 +544,7 @@ function media(req, res, p, u) {
 }
 
 async function animeProxy(req, res, p, u) {
-  const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
+  const role = mediaRole(req, u.searchParams.get('k'));
   if (!role) return notFound(req, res, 'anime key');
   const target = anime.parseProxyPath(p);
   const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
@@ -553,26 +559,26 @@ async function animeProxy(req, res, p, u) {
       const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
       const c = u.searchParams.get('c'); if (c) auth.set('c', c);
       const body = anime.rewriteM3u8(text, r.url || target.url, target.referer, auth.toString());
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     }
     if (target.kind === 'sub') {
       const r = await anime.fetchUpstream(target.url, target.referer);
       if (!r.ok) return fail(r.status === 404 ? 404 : 502);
       const body = anime.toVtt(await r.text());
-      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     }
     // a media segment, encryption key or init segment: stream the bytes, relaying Range
     const extra = req.headers.range ? { Range: req.headers.range } : {};
     const r = await anime.fetchUpstream(target.url, target.referer, extra);
     if (!(r.ok || r.status === 206)) return fail(r.status === 404 ? 404 : 502);
-    const h = { 'Cache-Control': 'public, max-age=30', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes' };
+    const h = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
     const ct = r.headers.get('content-type'); if (ct) h['Content-Type'] = ct;
     const cl = r.headers.get('content-length'); if (cl) h['Content-Length'] = cl;
     const cr = r.headers.get('content-range'); if (cr) h['Content-Range'] = cr;
     res.writeHead(r.status === 206 ? 206 : 200, h);
-    if (req.method === 'HEAD' || !r.body) return res.end();
+    if (req.method === 'HEAD' || !r.body) { await r.body?.cancel().catch(() => {}); return res.end(); }
     const stream = anime.Readable.fromWeb(r.body);
     stream.on('error', () => res.destroy());
     res.on('close', () => stream.destroy());
@@ -581,7 +587,7 @@ async function animeProxy(req, res, p, u) {
 }
 
 async function catalogMediaProxy(req, res, p, u) {
-  const role = room.roleForKey(u.searchParams.get('k'), isLocal(req));
+  const role = mediaRole(req, u.searchParams.get('k'));
   if (!role) return notFound(req, res, 'catalog media key');
   const target = remoteMedia.parsePath(p);
   const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
@@ -594,25 +600,25 @@ async function catalogMediaProxy(req, res, p, u) {
       const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
       const clientId = u.searchParams.get('c'); if (clientId) auth.set('c', clientId);
       const body = remoteMedia.rewriteM3u8(await upstream.text(), upstream.url || target.url, target, auth.toString());
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     }
     if (target.kind === 'sub') {
       const upstream = await remoteMedia.fetchUpstream(target);
       if (!upstream.ok) return fail(upstream.status === 404 ? 404 : 502);
       const body = remoteMedia.toVtt(await upstream.text());
-      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' });
+      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       return req.method === 'HEAD' ? res.end() : res.end(body);
     }
     const extra = req.headers.range ? { Range: req.headers.range } : {};
     const upstream = await remoteMedia.fetchUpstream(target, extra);
     if (!(upstream.ok || upstream.status === 206)) return fail(upstream.status === 404 ? 404 : 502);
-    const headers = { 'Cache-Control': 'private, max-age=30', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes' };
+    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
     const contentType = upstream.headers.get('content-type'); if (contentType) headers['Content-Type'] = contentType;
     const contentLength = upstream.headers.get('content-length'); if (contentLength) headers['Content-Length'] = contentLength;
     const contentRange = upstream.headers.get('content-range'); if (contentRange) headers['Content-Range'] = contentRange;
     res.writeHead(upstream.status === 206 ? 206 : 200, headers);
-    if (req.method === 'HEAD' || !upstream.body) return res.end();
+    if (req.method === 'HEAD' || !upstream.body) { await upstream.body?.cancel().catch(() => {}); return res.end(); }
     const stream = remoteMedia.Readable.fromWeb(upstream.body);
     stream.on('data', chunk => room.addBytes(u.searchParams.get('c'), chunk.length));
     stream.on('error', () => res.destroy());
@@ -651,13 +657,17 @@ async function handler(req, res) {
     if ((m = p.match(/^\/join\/([A-Za-z0-9]+)\/?$/))) {
       if (!safeEq(m[1], room.roomKey)) return notFound(req, res, 'join key');
       // cookie lets the page load its own files; it's useless without the current room key
-      const cookies = [`wp_k=${room.roomKey}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`];
-      if (isTheaterPage(req) && secure) cookies.push(`wp_kt=${room.roomKey}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`);
+      const session = sessions.read(req) || sessions.issue();
+      const cookies = [`wp_k=${room.roomKey}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
+        `wp_s=${session}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`];
+      if (isTheaterPage(req) && secure) cookies.push(`wp_kt=${room.roomKey}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`,
+        `wp_st=${session}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`);
       return serveStatic(req, res, 'index.html', { 'Set-Cookie': cookies });
     }
     if (p.startsWith('/api/')) return await api(req, res, p);
     if (p.startsWith('/media/')) return media(req, res, p, u);
     if (p.startsWith('/captions/')) {
+      if (!mediaRole(req, u.searchParams.get('k'))) return notFound(req, res, 'caption admission');
       return captions.serve(req, res, p, u.searchParams.get('k'), { room, local, missing: () => notFound(req, res, 'caption unavailable') });
     }
     if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
@@ -704,7 +714,7 @@ function useTrustedCert() {
 for (const s of [httpServer, httpsServer]) {
   s.keepAliveTimeout = 65000;
   s.headersTimeout = 20000;  // slow-header attacks get cut off
-  s.requestTimeout = 0;      // but long movie downloads are fine
+  s.requestTimeout = 30000; // bounds slow request bodies; outgoing movie downloads are unaffected
   s.on('clientError', (e, sock) => sock.destroy());
 }
 
@@ -737,13 +747,15 @@ function listenLocalV6() {
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 function onUpgrade(req, socket, head) {
-  const u = new URL(req.url, 'http://x');
+  let u;
+  try { u = new URL(req.url, 'http://x'); } catch { socket.destroy(); return; }
   const local = isLocal(req);
   const role = room.roleForKey(u.searchParams.get('k'), local);
+  const session = sessions.read(req);
   // the page must come from this same address (blocks other websites from connecting)
   let originOk = true;
-  if (req.headers.origin) { try { const oh = new URL(req.headers.origin).host; originOk = oh === req.headers.host || oh === effectiveHost(req); } catch { originOk = false; } }
-  if (u.pathname !== '/ws' || !role || !originOk || (!local && !isSecure(req) && config.linkMode !== 'plain')) {
+  if (req.headers.origin) { try { const origin = new URL(req.headers.origin); originOk = origin.origin === `${isSecure(req) ? 'https' : 'http'}://${effectiveHost(req)}`; } catch { originOk = false; } }
+  if (u.pathname !== '/ws' || !role || (role === 'guest' && !session) || !originOk || guard.isBlocked(clientIp(req)) || (!local && !isSecure(req) && config.linkMode !== 'plain')) {
     if (!local && !room.hasAdmittedIp(clientIp(req))) guard.strike(clientIp(req), 'websocket');
     socket.destroy();
     return;
@@ -752,7 +764,7 @@ function onUpgrade(req, socket, head) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     const reqInfo = { host: req.headers.host, funnel: viaFunnel(req) };
-    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req) });
+    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req), session });
   });
 }
 httpServer.on('upgrade', onUpgrade);

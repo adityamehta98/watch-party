@@ -99,8 +99,9 @@ class FreeMedia {
     if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.value;
     const pending = this.json(METADATA_URL + encodeURIComponent(id)).then(record => this.normalize(id, record, hint)).catch(() => null);
     this.cache.set(id, { at: Date.now(), value: pending });
+    while (this.cache.size > MAX_CACHE) this.cache.delete(this.cache.keys().next().value);
     const value = await pending;
-    this.cache.set(id, { at: Date.now(), value });
+    if (this.cache.get(id)?.value === pending) this.cache.set(id, { at: Date.now(), value });
     return value;
   }
 

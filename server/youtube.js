@@ -60,7 +60,7 @@ async function search(query, fetchImpl = fetch) {
   // sp=EgIQAQ%3D%3D: videos only (no channels or playlists)
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%253D%253D&hl=en&gl=US`;
   const r = await fetchImpl(url, {
-    headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'CONSENT=YES+1; SOCS=CAI' },
+    headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
     signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) throw new Error(`YouTube answered ${r.status}`);

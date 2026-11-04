@@ -38,3 +38,26 @@ function wpCanonicalUrl(raw) {
   return `https://${u.hostname.toLowerCase()}${p}${u.search}`;
 }
 if (typeof self !== 'undefined') self.wpCanonicalUrl = wpCanonicalUrl;
+
+// Playback reports leave the service tab. Never forward sign-in redirects, URL credentials,
+// fragments, or service tracking parameters to the party. Custom sites may identify episodes in
+// their query string, so retain those parameters except common authentication credentials.
+function wpSharedPageUrl(raw) {
+  try {
+    const u = new URL(String(raw || ''));
+    if (!/^https?:$/.test(u.protocol)) return '';
+    u.username = ''; u.password = ''; u.hash = '';
+    const service = wpServiceOf(u.hostname);
+    if (service) {
+      const video = service === 'youtube' ? u.searchParams.get('v') : '';
+      u.search = '';
+      if (video) u.searchParams.set('v', video);
+    } else {
+      for (const key of [...u.searchParams.keys()]) {
+        if (/^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|auth|authorization|code|password|passwd|secret|api[_-]?key|session(?:id)?)$/i.test(key)) u.searchParams.delete(key);
+      }
+    }
+    return u.href;
+  } catch { return ''; }
+}
+if (typeof self !== 'undefined') self.wpSharedPageUrl = wpSharedPageUrl;

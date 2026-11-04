@@ -13,12 +13,12 @@
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   },
   "dependencies": {
     "hls.js": "1.7.3",
     "qrcode": "^1.5.4",
-    "ws": "^8.18.0"
+    "ws": "^8.22.0"
   },
   "license": "MIT",
   "devDependencies": {

@@ -77,6 +77,7 @@ function buildChromium() {
   fs.rmSync(CHROMIUM_OUTPUT, { force: true });
   fs.mkdirSync(CHROMIUM_STAGE, { recursive: true });
   fs.cpSync(COMMON, CHROMIUM_STAGE, { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(CHROMIUM_STAGE, 'LICENSE'));
   fs.mkdirSync(path.dirname(CHROMIUM_OUTPUT), { recursive: true });
   archiveDirectory(CHROMIUM_STAGE_ROOT, 'watch-party-sync', CHROMIUM_OUTPUT);
   fs.rmSync(CHROMIUM_STAGE_ROOT, { recursive: true, force: true });
@@ -90,6 +91,7 @@ function stageSafari(target = STAGE) {
   fs.mkdirSync(target, { recursive: true });
   fs.cpSync(COMMON, target, { recursive: true });
   fs.cpSync(OVERLAY, target, { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(target, 'LICENSE'));
   return target;
 }
 

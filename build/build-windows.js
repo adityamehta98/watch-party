@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { buildChromium, buildSafari } = require('./build-safari-extension');
+const { packageNotices, supportedNode } = require('./package-notices');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'dist', 'WatchParty');
@@ -13,6 +14,12 @@ const TMP = path.join(ROOT, 'dist', '.build');
 const [winNode, ffmpegBin] = process.argv.slice(2);
 const TOOLS = process.env.BUILD_TOOLS || path.join(ROOT, 'node_modules');
 if (!winNode || !ffmpegBin) { console.error('usage: node build/build-windows.js node.exe ffmpeg/bin'); process.exit(1); }
+const targetNodeVersion = execFileSync(winNode, ['--version'], { encoding: 'utf8', windowsHide: true }).trim();
+if (targetNodeVersion !== process.version) throw new Error(`SEA requires matching Node versions: builder ${process.version}, target ${targetNodeVersion}`);
+if (!supportedNode(process.version)) throw new Error('Build with a supported security release (Node 22.23.4+, 24.22.1+, or 26.12.1+); run build/prepare-tools.ps1');
+for (const tool of ['ffmpeg.exe', 'ffprobe.exe']) {
+  if (!fs.existsSync(path.join(ffmpegBin, tool))) throw new Error(`Missing required FFmpeg tool: ${tool}`);
+}
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.rmSync(TMP, { recursive: true, force: true });
@@ -21,18 +28,19 @@ fs.mkdirSync(TMP, { recursive: true });
 
 // 1) bundle the server into one file
 const esbuild = require(path.join(TOOLS, 'esbuild'));
-esbuild.buildSync({
+const bundle = esbuild.buildSync({
   entryPoints: [path.join(ROOT, 'server', 'index.js')],
   bundle: true, platform: 'node', target: 'node22', format: 'cjs',
   outfile: path.join(TMP, 'app.js'),
   external: ['bufferutil', 'utf-8-validate'],
-  legalComments: 'none',
+  legalComments: 'eof', metafile: true,
 });
 
 // 1a) browser extensions: downloadable Chromium/Safari packages, plus the host's Chromium folder
 fs.mkdirSync(path.join(ROOT, 'public', 'ext'), { recursive: true });
 buildChromium();
 fs.cpSync(path.join(ROOT, 'extension'), path.join(OUT, 'extension'), { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(OUT, 'extension', 'LICENSE'));
 buildSafari();
 
 // 2) embed the web page files
@@ -88,8 +96,11 @@ execFileSync(process.execPath, [path.join(TOOLS, 'postject', 'dist', 'cli.js'), 
 for (const f of fs.readdirSync(ffmpegBin)) {
   if (/^(ffmpeg|ffprobe)\.exe$/i.test(f) || /\.dll$/i.test(f)) fs.copyFileSync(path.join(ffmpegBin, f), path.join(OUT, 'bin', f));
 }
-const lic = path.join(ffmpegBin, '..', 'LICENSE.txt');
-if (fs.existsSync(lic)) fs.copyFileSync(lic, path.join(OUT, 'bin', 'FFMPEG-LICENSE.txt'));
-fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(OUT, 'README.md'));
+const ffmpegVersion = execFileSync(path.join(ffmpegBin, 'ffmpeg.exe'), ['-version'], { encoding: 'utf8', windowsHide: true }).trim();
+packageNotices(ROOT, OUT, winNode, ffmpegBin, Object.keys(bundle.metafile.inputs), ffmpegVersion);
+for (const file of ['README.md', 'instructions.md', 'PRIVACY.md', 'SECURITY_AUDIT.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
+fs.mkdirSync(path.join(OUT, 'docs'), { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'docs', 'AUDIT_COVERAGE.md'), path.join(OUT, 'docs', 'AUDIT_COVERAGE.md'));
+fs.copyFileSync(path.join(ROOT, 'refresh.bat'), path.join(OUT, 'refresh.bat'));
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log('built', OUT);

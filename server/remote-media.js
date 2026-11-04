@@ -5,9 +5,8 @@
 // access token). The catalog module is the only production caller that registers
 // targets, so guests cannot turn this into an open proxy.
 const crypto = require('crypto');
-const dns = require('dns').promises;
-const net = require('net');
 const { Readable } = require('stream');
+const { fetchPublic } = require('./upstream');
 
 let secret = 'watch-party-remote-media';
 const targets = new Map();
@@ -20,6 +19,7 @@ function normalizeHeaders(value) {
   const out = {};
   for (const [name, raw] of Object.entries(value)) {
     if (!/^[A-Za-z0-9-]{1,64}$/.test(name)) continue;
+    if (/^(?:host|connection|content-length|transfer-encoding|proxy-authorization|upgrade|trailer|te)$/i.test(name)) continue;
     const text = String(raw || '').replace(/[\r\n]/g, '').slice(0, 2048);
     if (text) out[name] = text;
   }
@@ -33,8 +33,10 @@ function remember(kind, url, options = {}) {
     scope: String(options.scope || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64),
     referer: /^https?:\/\//i.test(String(options.referer || '')) ? String(options.referer) : '',
     headers: normalizeHeaders(options.headers),
+    headerOrigin: String(options.headerOrigin || ''),
   };
   if (!/^https?:\/\//i.test(target.url)) return null;
+  try { target.headerOrigin ||= new URL(target.url).origin; } catch { return null; }
   const json = JSON.stringify(target);
   const id = crypto.createHmac('sha256', secret).update(json).digest('hex').slice(0, 32);
   if (targets.has(id)) targets.delete(id);
@@ -61,45 +63,15 @@ function parsePath(pathname) {
   return { ...target };
 }
 
-function isPrivateIp(ip) {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split('.').map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 192 && b === 168)
-      || (a === 172 && b >= 16 && b <= 31) || a >= 224;
-  }
-  const lower = String(ip).toLowerCase();
-  if (lower.startsWith('::ffff:')) return isPrivateIp(lower.slice(7));
-  return lower === '::1' || lower === '::' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80');
-}
-
-async function hostAllowed(host) {
-  if (!host || /^(localhost|.*\.local)$/i.test(host)) return false;
-  if (net.isIP(host)) return !isPrivateIp(host);
-  try {
-    const addresses = await dns.lookup(host, { all: true });
-    return addresses.length > 0 && !addresses.some(item => isPrivateIp(item.address));
-  } catch { return false; }
-}
-
 async function fetchUpstream(target, extraHeaders = {}) {
-  const headers = { 'User-Agent': 'WatchParty/1.0', Accept: '*/*', ...normalizeHeaders(target.headers) };
+  const configured = !target.headerOrigin || new URL(target.url).origin === target.headerOrigin ? normalizeHeaders(target.headers) : {};
+  const headers = { 'User-Agent': 'WatchParty/1.0', Accept: '*/*', ...configured };
   if (target.referer) {
     headers.Referer = target.referer;
     try { headers.Origin = new URL(target.referer).origin; } catch { /* optional */ }
   }
   Object.assign(headers, normalizeHeaders(extraHeaders));
-  let next = target.url;
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    let url;
-    try { url = new URL(next); } catch { throw new Error('bad url'); }
-    if (!/^https?:$/.test(url.protocol) || !(await hostAllowed(url.hostname))) throw new Error('blocked host');
-    const response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(20000) });
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-    const location = response.headers.get('location');
-    if (!location || redirects === 5) throw new Error('bad redirect');
-    next = new URL(location, url).href;
-  }
-  throw new Error('too many redirects');
+  return fetchPublic(target.url, { headers });
 }
 
 function rewriteM3u8(text, baseUrl, target, query) {
@@ -109,7 +81,8 @@ function rewriteM3u8(text, baseUrl, target, query) {
   const pathFor = (raw, tag = '') => {
     const url = absolute(raw);
     if (!url) return raw;
-    return signedPath(isPlaylist(url, tag) ? 'm3u8' : 'media', url, target) + auth;
+    const path = signedPath(isPlaylist(url, tag) ? 'm3u8' : 'media', url, target);
+    return path ? path + auth : '';
   };
   return String(text).split(/\r?\n/).map(line => {
     const trimmed = line.trim();

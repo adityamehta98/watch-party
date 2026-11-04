@@ -57,7 +57,7 @@ test('MegaPlay CDN proxy uses the accepted server headers and preserves byte ran
   const requests = [], module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../server/anime.js'), 'utf8'), {
     module, Buffer, URL, AbortSignal,
-    require: name => name === 'dns' ? { promises: { lookup: async () => [{ address: '203.0.113.10' }] } } : require(name),
+    require: name => name === './upstream' ? { fetchPublic: async (url, options) => { requests.push({ url, options }); return { ok: true }; } } : name === 'dns' ? { promises: { lookup: async () => [{ address: '203.0.113.10' }] } } : require(name),
     fetch: async (url, options) => { requests.push({ url, options }); return { ok: true }; },
   });
   await module.exports.fetchUpstream('https://cdn.example/segment.ts', 'https://megaplay.buzz/', { Range: 'bytes=0-1023' });

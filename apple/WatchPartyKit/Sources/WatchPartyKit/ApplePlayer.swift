@@ -19,12 +19,13 @@ public final class AppleSyncPlayer: ObservableObject {
     }
   }
 
-  public func load(movie: RoomMovie?, from invite: WatchPartyInvite?, clientID: String) {
+  public func load(movie: RoomMovie?, from invite: WatchPartyInvite?, clientID: String, cookies: [HTTPCookie] = []) {
     guard let movie, movie.kind == "file" else { movieID = nil; player.replaceCurrentItem(with: nil); return }
     guard let url = invite?.resourceURL(movie.hls ?? movie.url, clientID: clientID) else { return }
     guard movie.id != movieID else { return }
     movieID = movie.id
-    let item = AVPlayerItem(url: url)
+    let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: cookies])
+    let item = AVPlayerItem(asset: asset)
     item.preferredForwardBufferDuration = 8
     player.replaceCurrentItem(with: item)
   }

@@ -73,8 +73,13 @@ class Room {
     const role = this.roleForKey(key, !!ctx.local);
     if (!role) { ws.close(4004, 'bad-key'); return; }
     let client = null;
+    let floodStart = Date.now(), floodCount = 0, floodBytes = 0;
     const helloTimer = setTimeout(() => { if (!client) ws.close(4005, 'no-hello'); }, 10000);
     ws.on('message', raw => {
+      const now = Date.now();
+      if (now - floodStart > 1000) { floodStart = now; floodCount = 0; floodBytes = 0; }
+      floodBytes += Buffer.byteLength(raw);
+      if (++floodCount > 300 || floodBytes > 1024 * 1024) { ws.close(4006, 'flood'); return; }
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
       if (!msg || typeof msg.type !== 'string') return;
@@ -84,9 +89,6 @@ class Room {
         return;
       }
       if (client.ws !== ws) return; // replaced by a newer tab
-      const now = Date.now();
-      if (now - (client.floodStart || 0) > 1000) { client.floodStart = now; client.floodCount = 0; }
-      if (++client.floodCount > 300) { try { ws.close(4006, 'flood'); } catch {} return; } // way more than any real browser sends
       try { this.onMessage(client, msg); } catch (e) { console.error('[room] message error', e); }
     });
     ws.on('close', () => {
@@ -97,7 +99,11 @@ class Room {
   }
 
   hello(ws, role, key, msg, ctx = {}) {
-    const id = cleanId(msg.clientId) || randKey(16);
+    let id = cleanId(msg.clientId) || randKey(16);
+    const known = this.memory.get(id);
+    // IDs appear in the people list. Only the same private session and role may
+    // resume approval/permissions or replace a connected tab with that ID.
+    if (known && (known.role !== role || (role !== 'host' && (!ctx.session || known.session !== ctx.session)))) id = randKey(16);
     const mem = this.memory.get(id);
     const name = cleanName(msg.name) || (mem && mem.name) || (role === 'host' ? 'Host' : 'Guest');
     if (role === 'guest' && this.banned.has(id)) { this.send(ws, { type: 'denied', reason: 'removed' }); ws.close(4003, 'banned'); return null; }
@@ -108,7 +114,7 @@ class Room {
     if (old) { this.send(old.ws, { type: 'replaced' }); try { old.ws.close(4000, 'replaced'); } catch {} this.leave(old, true); }
     const perms = role === 'host' ? Object.fromEntries(PERMS.map(p => [p, true])) : { ...this.settings.defaults, ...((mem && mem.perms) || {}) };
     const client = {
-      id, name, role, ws, key, perms, iceFor: ctx.iceFor || (() => []), relayOnlyFor: ctx.relayOnly || (() => true), ip: ctx.ip || '',
+      id, name, role, ws, key, perms, session: ctx.session || '', iceFor: ctx.iceFor || (() => []), relayOnlyFor: ctx.relayOnly || (() => true), ip: ctx.ip || '',
       // nativeHls: Safari / iPhone / iPad, the only browsers that play the stream with their own HLS player
       capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse, nativeHls: !!(msg.capabilities?.hls && msg.capabilities?.nativeHlsPreferred) },
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
@@ -118,7 +124,12 @@ class Room {
       bytes: 0, lastBytes: 0, mbps: 0, joinedAt: Date.now(), lastReact: [],
     };
     this.clients.set(id, client);
-    this.memory.set(id, { name, perms, admitted: client.admitted });
+    this.memory.set(id, { name, perms, admitted: client.admitted, role, session: client.session });
+    // Keep reconnect state bounded without evicting anyone currently connected.
+    if (this.memory.size > 1000) for (const oldId of this.memory.keys()) {
+      if (!this.clients.has(oldId)) this.memory.delete(oldId);
+      if (this.memory.size <= 1000) break;
+    }
     if (role === 'guest') console.log(`  ${client.admitted ? 'Joined' : 'Waiting to join'}: "${name}" from ${client.ip}`);
     if (!client.admitted) {
       this.send(ws, { type: 'pending', you: { id, name } });
@@ -153,6 +164,9 @@ class Room {
   leave(client, silent) {
     if (this.clients.get(client.id) !== client) return;
     this.clients.delete(client.id);
+    client.closed = true;
+    clearTimeout(client.ytTimer);
+    clearTimeout(client.animeTimer);
     if (client.admitted) {
       this.broadcast({ type: 'peer-leave', id: client.id });
       if (!silent) {
@@ -166,6 +180,7 @@ class Room {
 
   admitted() { return [...this.clients.values()].filter(c => c.admitted); }
   hasAdmittedIp(ip) { return !!ip && this.admitted().some(c => c.role !== 'host' && c.ip === ip); }
+  hasAdmittedSession(session) { return !!session && this.admitted().some(c => c.role === 'guest' && c.session === session && c.ws.readyState === 1); }
 
   updateIce() {
     const key = JSON.stringify([...new Set(this.admitted().map(c => JSON.stringify([c.iceFor(), c.relayOnlyFor()])))].sort());
@@ -175,11 +190,15 @@ class Room {
   }
 
   send(ws, msg) {
+    if (ws && ws.bufferedAmount > 2 * 1024 * 1024) { ws.terminate?.(); return; }
     if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
   }
   broadcast(msg, except) {
     const s = JSON.stringify(msg);
-    for (const c of this.clients.values()) if (c.admitted && c !== except && c.ws.readyState === 1) { try { c.ws.send(s); } catch {} }
+    for (const c of this.clients.values()) if (c.admitted && c !== except && c.ws.readyState === 1) {
+      if (c.ws.bufferedAmount > 2 * 1024 * 1024) { c.ws.terminate?.(); continue; }
+      try { c.ws.send(s); } catch {}
+    }
   }
   broadcastHosts(msg) {
     for (const c of this.clients.values()) if (c.role === 'host') this.send(c.ws, msg);
@@ -187,6 +206,16 @@ class Room {
 
   canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback && !this.customOn())); }
   canChoose(client) { return !!client && !!client.admitted; }
+  async limitedTask(client, kind, run, { interval = 250, concurrent = 2 } = {}) {
+    client.tasks ||= {};
+    const state = client.tasks[kind] ||= { at: 0, active: 0 };
+    if (client.closed || state.active >= concurrent || (this.activeTasks || 0) >= 12 || Date.now() - state.at < interval) {
+      this.toast(client, 'Please wait a moment before trying again.');
+      return;
+    }
+    state.at = Date.now(); state.active++; this.activeTasks = (this.activeTasks || 0) + 1;
+    try { return await run(); } finally { state.active--; this.activeTasks--; }
+  }
   animeLeader() {
     return this.admitted().filter(c => this.canControl(c)).sort((a, b) =>
       Number(b.role === 'host') - Number(a.role === 'host') || a.id.localeCompare(b.id))[0] || null;
@@ -197,7 +226,9 @@ class Room {
     const L = this.library.list();
     return {
       folders: L.folders.length ? ['(the host\'s movies)'] : [], scanning: L.scanning,
-      items: L.items.map(it => ({ ...it, rel: String(it.rel || '').split(/[\\/]/).pop() })),
+      items: L.items.map(it => ({ ...it, rel: String(it.rel || '').split(/[\\/]/).pop(),
+        probeError: it.probeError ? 'Could not inspect this movie. Ask the host to check it.' : it.probeError,
+        job: it.job ? { ...it.job, error: it.job.error ? 'Preparation failed. Ask the host to check it.' : it.job.error } : it.job })),
     };
   }
   system(text) {
@@ -540,10 +571,10 @@ class Room {
     const seq = (this.animeSeq = (this.animeSeq || 0) + 1);
     let resolved = null;
     try { resolved = await this.animeResolve(anilistId, malId, episode, effectiveLanguage); } catch { resolved = null; }
-    if (seq !== this.animeSeq) return;
+    if (seq !== this.animeSeq || client.closed) return;
     if (!(resolved && resolved.url) && effectiveLanguage === 'dub') {
       try { resolved = await this.animeResolve(anilistId, malId, episode, 'sub'); } catch { resolved = null; }
-      if (seq !== this.animeSeq) return;
+      if (seq !== this.animeSeq || client.closed) return;
       if (resolved && resolved.url) effectiveLanguage = 'sub';
     }
     if (!(resolved && resolved.url)) {
@@ -696,7 +727,7 @@ class Room {
       }
       case 'anime-progress': {
         const leader = this.animeLeader();
-        if ((leader ? leader.id !== client.id : !isHost) || !this.animeHistory || !['anime', 'megaplay'].includes(this.movie?.kind)) return;
+        if ((leader ? leader.id !== client.id : !isHost) || !this.animeHistory || this.movie?.kind !== 'anime') return;
         const st = msg.status || {};
         // Reject old-episode / pre-seek reports, including a new stream's initial 0:00 metadata.
         if (st.movieId !== this.movie.id || st.seq !== this.state.seq || !st.loaded || st.seeking || st.error
@@ -822,7 +853,7 @@ class Room {
         }
         case 'select-movie': return this.selectMovie(client, msg.id);
         case 'select-url': return this.selectUrl(client, msg.url, !!msg.inTabs, { browsing: !!msg.browsing, follow: !!msg.follow, advanceFrom: msg.advanceFrom, custom: !!msg.custom, strict: msg.strict !== false, title: msg.title, launchTitle: msg.launchTitle, playbackRef: msg.playbackRef, duration: msg.duration, position: msg.position, playing: !!msg.playing });
-        case 'select-anime': return this.selectAnime(client, msg);
+        case 'select-anime': return this.limitedTask(client, 'anime-resolve', () => this.selectAnime(client, msg), { interval: 500 });
         case 'find-subtitles': return this.findSubtitles(client, msg);
         case 'select-catalog': return this.selectCatalog(client, msg);
         case 'movie-meta': return this.movieMeta(client, msg);
@@ -852,8 +883,9 @@ class Room {
           const q = String(msg.q || '').slice(0, 150);
           const run = () => {
             client.ytTimer = null; client.lastYt = Date.now();
-            this.ytSearch(q).then(results => this.send(client.ws, { type: 'yt-results', q, results }))
-              .catch(e => this.send(client.ws, { type: 'yt-results', q, error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` }));
+            if (client.closed) return;
+            this.limitedTask(client, 'yt-search', () => this.ytSearch(q).then(results => this.send(client.ws, { type: 'yt-results', q, results }))
+              .catch(e => this.send(client.ws, { type: 'yt-results', q, error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` })));
           };
           clearTimeout(client.ytTimer);
           const wait = client.lastYt ? 1000 - (Date.now() - client.lastYt) : 0;
@@ -865,8 +897,9 @@ class Room {
           const q = String(msg.q || '').slice(0, 150);
           const run = () => {
             client.animeTimer = null; client.lastAnime = Date.now();
-            this.animeSearch(q).then(results => this.send(client.ws, { type: 'anime-results', q, results }))
-              .catch(e => this.send(client.ws, { type: 'anime-results', q, error: `Couldn't search anime right now (${e.message}).` }));
+            if (client.closed) return;
+            this.limitedTask(client, 'anime-search', () => this.animeSearch(q).then(results => this.send(client.ws, { type: 'anime-results', q, results }))
+              .catch(e => this.send(client.ws, { type: 'anime-results', q, error: `Couldn't search anime right now (${e.message}).` })));
           };
           clearTimeout(client.animeTimer);
           const wait = client.lastAnime ? 1000 - (Date.now() - client.lastAnime) : 0;
@@ -888,7 +921,7 @@ class Room {
               this.send(client.ws, { type: 'catalog-response', requestId, result });
             } catch (error) { this.send(client.ws, { type: 'catalog-response', requestId, error: error.message }); }
           };
-          run();
+          this.limitedTask(client, 'catalog-query', run);
           return;
         }
         default:
@@ -953,6 +986,7 @@ class Room {
         this.config.roomKey = this.roomKey;
         this.save();
         this.banned.clear();
+        for (const [id, mem] of this.memory) if (mem.role !== 'host') this.memory.delete(id);
         for (const c of [...this.clients.values()]) {
           if (c.role === 'host') continue;
           this.send(c.ws, { type: 'denied', reason: 'link-changed' });

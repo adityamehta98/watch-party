@@ -1,6 +1,6 @@
 // Ad, pop-up and pop-under networks, blocked on custom sites in the Watch Party window (see background.js).
 // Each entry also blocks its subdomains. Only custom sites are affected; Netflix & co are left alone.
-const WP_AD_DOMAINS = [
+var WP_AD_DOMAINS = [
   // big ad exchanges and trackers
   'doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'googletagservices.com', 'adservice.google.com',
   'adnxs.com', 'adsrvr.org', 'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com',
