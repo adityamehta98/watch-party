@@ -57,6 +57,25 @@ test('restart resumes Mashle episode 3 at six minutes using a newly resolved str
   assert.doesNotMatch(fs.readFileSync(f.file, 'utf8'), /https:|m3u8|admin-secret/);
 });
 
+test('returning home cancels pending episode resolution and keeps persisted resume progress', async t => {
+  const f = fixture(t), host = f.client('host');
+  let finish, calls = 0;
+  const room = f.makeRoom(f.history, () => ++calls === 1
+    ? Promise.resolve({ url: 'https://fresh.example/master.m3u8' })
+    : new Promise(resolve => { finish = resolve; }));
+  await f.pick(room, host);
+  f.progress(room, host, { position: 815 }, true);
+  const pending = f.pick(room, host, { ep: mashle.episode + 1 });
+  room.selectMovie(host, null);
+  finish({ url: 'https://late.example/master.m3u8' });
+  await pending;
+  assert.equal(room.movie, null, 'a late source must not reopen playback after returning home');
+  assert.equal(room.state.playing, false);
+  assert.equal(room.state.movieId, null);
+  const restored = new AnimeHistory(f.file);
+  assert.equal(restored.get(mashle.anilistId, mashle.episode).position, 815);
+});
+
 test('only matching, loaded, settled host playback can update history', async t => {
   const f = fixture(t), host = f.client('host'), guest = f.client('guest'), room = f.makeRoom();
   await f.pick(room, host);
@@ -96,7 +115,7 @@ test('watched episodes remain watched on replay, support corrections, and offer 
   assert.equal(f.history.get(151801, 3).position, 0);
 });
 
-test('native and embedded playback share episode progress across audio languages', async t => {
+test('native playback retains episode progress across audio languages and failed source resolution', async t => {
   const f = fixture(t), host = f.client('host'), room = f.makeRoom();
   await f.pick(room, host);
   f.progress(room, host);
@@ -104,11 +123,15 @@ test('native and embedded playback share episode progress across audio languages
   assert.equal(room.state.position, 360, 'changing audio retains the episode position');
   assert.equal(f.history.list().length, 1);
   room.shutdown();
-  const embedded = f.makeRoom(new AnimeHistory(f.file), async () => null);
-  await f.pick(embedded, host, { lang: 'sub' });
-  assert.equal(embedded.movie.kind, 'megaplay');
-  assert.equal(embedded.state.position, 360);
-  f.progress(embedded, host, { position: 400 }, true);
+  const resumed = f.makeRoom(new AnimeHistory(f.file), async () => null);
+  await f.pick(resumed, host, { lang: 'sub' });
+  assert.equal(resumed.movie, null, 'a failed source does not switch to embedded playback');
+  assert.equal(new AnimeHistory(f.file).get(151801, 3).position, 360);
+  resumed.animeResolve = async () => ({ url: 'https://fresh.example/retry.m3u8', referer: 'https://megavid.buzz/' });
+  await f.pick(resumed, host, { lang: 'sub' });
+  assert.equal(resumed.movie.kind, 'anime');
+  assert.equal(resumed.state.position, 360);
+  f.progress(resumed, host, { position: 400 }, true);
   assert.equal(new AnimeHistory(f.file).get(151801, 3).position, 400);
 });
 

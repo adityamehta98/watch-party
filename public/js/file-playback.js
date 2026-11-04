@@ -60,6 +60,7 @@ export class FilePlayback {
     this.ready = false;
     this.networkRetries = 0;
     this.mediaRecoveries = 0;
+    const startPosition = () => Math.max(0, Number(typeof startAt === 'function' ? startAt() : startAt) || 0);
 
     if (source.type !== 'hls-js') {
       this.video.src = source.url;
@@ -88,6 +89,7 @@ export class FilePlayback {
       enableWorker: true,
     });
     this.hls = hls;
+    let manifestParsed = false;
     const fail = data => {
       if (generation !== this.generation) return;
       this.destroyHls();
@@ -97,7 +99,10 @@ export class FilePlayback {
       if (generation === this.generation) hls.loadSource(source.url);
     });
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      if (generation === this.generation) hls.startLoad(Math.max(0, Number(startAt) || 0));
+      if (generation === this.generation) {
+        manifestParsed = true;
+        hls.startLoad(startPosition());
+      }
     });
     hls.on(Hls.Events.FRAG_BUFFERED, () => {
       if (generation !== this.generation || this.ready) return;
@@ -107,7 +112,10 @@ export class FilePlayback {
     hls.on(Hls.Events.ERROR, (_event, data) => {
       if (generation !== this.generation || !data?.fatal) return;
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && this.networkRetries++ < 2) {
-        hls.startLoad(Math.max(0, Number(this.video.currentTime) || Number(startAt) || 0));
+        // startLoad() only restarts segment loading. Before a manifest exists it
+        // does nothing, leaving a timed-out startup stuck forever with no error.
+        if (!manifestParsed) hls.loadSource(source.url);
+        else hls.startLoad(Math.max(0, Number(this.video.currentTime) || startPosition()));
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && this.mediaRecoveries++ < 1) {
         hls.recoverMediaError();
       } else fail(data);

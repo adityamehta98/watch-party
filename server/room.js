@@ -441,7 +441,10 @@ class Room {
 
   selectMovie(client, id) {
     if (!this.canChoose(client)) return;
+    // Returning home also cancels an episode source still being resolved.
+    this.animeSeq = (this.animeSeq || 0) + 1;
     if (!id) {
+      this.animeHistory?.flush();
       this.movie = null;
       this.setState({ movieId: null, playing: false, position: 0, anchor: Date.now() });
       this.broadcast({ type: 'movie', movie: null });
@@ -501,7 +504,7 @@ class Room {
     this.system(browsing ? `${client.name} is picking something on ${info.name}` : `Now showing ${title ? `"${title}"` : 'something'} on ${info.name}`);
   }
 
-  // Resolve a native HLS stream and play it in the shared <video>; fall back to the iframe embed.
+  // Resolve only the video source; playback and controls stay in Watch Party.
   async selectAnime(client, msg) {
     if (!this.canChoose(client)) return;
     const anilistId = Math.trunc(Number(msg.anilistId));
@@ -512,7 +515,7 @@ class Room {
     const sources = anime.embedSources(anilistId, malId, episode, language);
     if (!sources.length) { this.toast(client, "That anime episode can't be played.", 'error'); return; }
     const id = 'a' + crypto.createHash('sha1').update(sources[0]).digest('hex').slice(0, 11);
-    if (this.movie && this.movie.id === id) {
+    if (this.movie && this.movie.id === id && this.movie.kind === 'anime') {
       if (client.role === 'host' && this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
       if (client.role === 'host' && msg.restart) {
         this.setState({ playing: true, position: 0, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
@@ -537,23 +540,23 @@ class Room {
       if (seq !== this.animeSeq) return;
       if (resolved && resolved.url) effectiveLanguage = 'sub';
     }
+    if (!(resolved && resolved.url)) {
+      this.send(client.ws, { type: 'toast', kind: 'error', selection: 'anime',
+        text: 'Could not load the video source for this episode. Try again or choose another language.' });
+      return;
+    }
     const title = `${base} · Ep ${episode}${effectiveLanguage === 'dub' ? ' (Dub)' : ''}`;
     const meta = { anilistId, malId, episode, episodes, language: effectiveLanguage, animeTitle: base, poster: msg.poster || '' };
-    if (this.movie && this.movie.id === id) return;
+    if (this.movie && this.movie.id === id && this.movie.kind === 'anime') return;
 
-    if (resolved && resolved.url) {
-      const subs = (resolved.subtitles || []).slice(0, 12).map((t, i) => ({
-        key: `s${i}`, label: String(t.label || `Track ${i + 1}`).slice(0, 60), lang: t.lang || '',
-        url: anime.signedPath('sub', t.url, resolved.referer),
-      }));
-      this.movie = { id, kind: 'anime', service: 'anime', serviceName: 'Anime', title, duration: null,
-        hlsPath: anime.signedPath('m3u8', resolved.url, resolved.referer), subs,
-        intro: resolved.intro || null, outro: resolved.outro || null,
-        browsing: false, by: client.name, strict: false, ...meta };
-    } else {
-      // Fallback: the old cross-origin iframe embed (ads + looser sync, but it still plays).
-      this.movie = { id, kind: 'megaplay', service: 'anime', serviceName: 'Anime', url: sources[0], sources, videoId: null, title, duration: null, subs: [], browsing: false, by: client.name, strict: false, ...meta };
-    }
+    const subs = (resolved.subtitles || []).slice(0, 12).map((t, i) => ({
+      key: `s${i}`, label: String(t.label || `Track ${i + 1}`).slice(0, 60), lang: t.lang || '',
+      url: anime.signedPath('sub', t.url, resolved.referer),
+    }));
+    this.movie = { id, kind: 'anime', service: 'anime', serviceName: 'Anime', title, duration: null,
+      hlsPath: anime.signedPath('m3u8', resolved.url, resolved.referer), subs,
+      intro: resolved.intro || null, outro: resolved.outro || null,
+      browsing: false, by: client.name, strict: false, ...meta };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
 
     const saved = client.role === 'host' ? this.animeHistory?.get(anilistId, episode) : null;

@@ -489,7 +489,7 @@ test('file playback owns HLS attachment, recovery, fallback, and stale loads', a
     on(name, callback) { this.events.set(name, callback); }
     emit(name, data) { this.events.get(name)?.(name, data); }
     attachMedia(video) { this.video = video; this.emit(FakeHls.Events.MEDIA_ATTACHED); }
-    loadSource(url) { this.url = url; }
+    loadSource(url) { this.url = url; this.sourceLoads = (this.sourceLoads || 0) + 1; }
     startLoad(at) { this.startedAt = at; this.starts = (this.starts || 0) + 1; }
     recoverMediaError() { this.recoveries = (this.recoveries || 0) + 1; }
     destroy() { this.destroyed = true; }
@@ -503,6 +503,9 @@ test('file playback owns HLS attachment, recovery, fallback, and stale loads', a
   await playback.open({ type: 'hls-js', url: '/movie.m3u8' }, 33);
   const first = instances[0];
   assert.equal(first.url, '/movie.m3u8');
+  first.emit(FakeHls.Events.ERROR, { fatal: true, type: FakeHls.ErrorTypes.NETWORK_ERROR, details: 'manifestLoadTimeOut' });
+  assert.equal(first.sourceLoads, 2, 'startup recovery must request the missing manifest again');
+  assert.equal(first.starts, undefined, 'starting segments cannot recover a missing manifest');
   first.emit(FakeHls.Events.MANIFEST_PARSED);
   assert.equal(first.startedAt, 33);
   first.emit(FakeHls.Events.FRAG_BUFFERED); first.emit(FakeHls.Events.FRAG_BUFFERED);
@@ -522,6 +525,17 @@ test('file playback owns HLS attachment, recovery, fallback, and stale loads', a
   assert.equal(instances.length, 1, 'stale async HLS load must not attach');
   stale.close();
   assert.equal(video.src, '');
+
+  let resumePosition = 0;
+  await playback.open({ type: 'hls-js', url: '/anime/m3u8/source/signature.m3u8?k=key' }, () => resumePosition);
+  resumePosition = 449;
+  instances.at(-1).emit(FakeHls.Events.MANIFEST_PARSED);
+  assert.equal(instances.at(-1).startedAt, 449, 'episode state arriving after open must determine the first downloaded segment');
+  await playback.open({ type: 'hls-js', url: '/anime/m3u8/retry/signature.m3u8?k=key' });
+  const retry = instances.at(-1);
+  for (let i = 0; i < 3; i++) retry.emit(FakeHls.Events.ERROR, { fatal: true, type: FakeHls.ErrorTypes.NETWORK_ERROR, details: 'manifestLoadTimeOut' });
+  assert.equal(retry.sourceLoads, 3, 'manifest retries are bounded');
+  assert.equal(fatal, 2, 'persistent source failures must surface instead of leaving an endless spinner');
 });
 
 test('Apple extension links are restricted to App Store and TestFlight HTTPS URLs', () => {
@@ -798,7 +812,7 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
     : id === 'live' ? { id, title: 'Live', file: null, duration: 100, hls: true, progressive: true, subs: [] } : null,
   list: () => ({ folders: ['D:\\private'], scanning: false, items: [{ id: 'movie', rel: 'secret\\movie.mp4' }] }) };
   const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', safariExtensionUrl: 'https://testflight.apple.com/join/AbCd1234', room: {} }, library, save() {}, animeSearch: async q => [{ id: 151801, title: q }],
-    // ep 2 resolves to a native HLS stream; anything else fails to resolve (exercises the iframe fallback)
+    // ep 2 resolves to native HLS; other episodes exercise source resolution failure.
     animeResolve: async (anilistId, malId, ep) => ep === 2 ? { url: 'https://cdn.example/stream/master.m3u8', referer: 'https://megaplay.buzz/stream/ani/151801/2/dub', subtitles: [{ url: 'https://cdn.example/subs/en.vtt', label: 'English', lang: 'en', kind: 'captions' }], intro: { start: 0, end: 90 }, outro: null } : null });
   t.after(() => room.shutdown());
   assert.equal(room.roleForKey('admin-secret-key', true), 'host');
@@ -836,9 +850,10 @@ test('room keys, permissions, URL selection, public data, and timeline commands 
   assert.equal(am.subs.length, 1); assert.match(am.subs[0].url, /^\/anime\/sub\//);
   assert.deepEqual({ anilistId: am.anilistId, episode: am.episode, language: am.language }, { anilistId: 151801, episode: 2, language: 'dub' });
   await room.selectAnime(guest, { ...am, ep: room.movie.episode + 1, lang: room.movie.language, title: room.movie.animeTitle });
-  assert.equal(room.movie.episode, 3);
-  assert.equal(room.movie.kind, 'megaplay', 'when no stream resolves it falls back to the iframe embed');
-  assert.match(room.movie.url, /\/3\/dub$/);
+  assert.equal(room.movie.episode, 2, 'failed resolution preserves the current episode');
+  assert.equal(room.movie.kind, 'anime', 'source failure must never replace Watch Party controls with an embed');
+  assert.equal(guestMessages.at(-1).selection, 'anime');
+  assert.equal(guestMessages.at(-1).kind, 'error');
   const beforeCustom = room.movie.id;
   room.selectUrl(guest, 'https://example.com/watch', false, { custom: true });
   assert.equal(room.movie.id, beforeCustom, 'arbitrary custom sites remain host-only');

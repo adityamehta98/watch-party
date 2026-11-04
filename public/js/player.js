@@ -79,7 +79,12 @@ export class SyncPlayer {
       if (t - (this.seekStartedAt || 0) < 3000 || t - (this.lastHardSeek || 0) < 3000 || t - (this.playStartedAt || 0) < 3000) return;
       this.stalls = (this.stalls || 0) + 1;
     });
-    on('playing', () => { if (!this.playStartedAt || performance.now() - this.playStartedAt > 60000) this.playStartedAt = performance.now(); });
+    on('playing', () => {
+      if (!this.playStartedAt || performance.now() - this.playStartedAt > 60000) this.playStartedAt = performance.now();
+      // Embedded players confirm playback asynchronously. Clear the startup sync
+      // notice once they report playing, even before the next correction tick.
+      if (media.isAdapter && this.movie && !this.aligned) { this.aligned = true; this.onChange(); }
+    });
     on('timeupdate', () => {
       this.onChange();
 
@@ -298,6 +303,15 @@ export class SyncPlayer {
     // periodic decoder restart while an Apple video is otherwise playing smoothly.
     const commandSeek = !v.isAdapter && this.needsAlignment && Math.abs(diff) > pausedEps;
     this.needsAlignment = false;
+    // A stalled decoder needs its pending data, not another seek to a newer room
+    // timestamp. In a slow stream that otherwise keeps moving the load target
+    // forward before any frames can play. Explicit timeline commands still align.
+    if (!v.isAdapter && v.readyState < 3 && !commandSeek) {
+      this.driftOutsideAt = null;
+      if (v.paused && !this.blocked) this.tryPlay();
+      this.setRate(1);
+      return;
+    }
     if (!commandSeek && Math.abs(diff) > hardSeek) {
       if (this.driftOutsideAt == null) this.driftOutsideAt = driftNow;
     } else this.driftOutsideAt = null;

@@ -22,6 +22,7 @@ class AdapterBase extends EventTarget {
   removeAttribute() {}
   querySelectorAll() { return []; }
   canPlayType() { return ''; }
+  get currentSrc() { return this.src; }
   get ended() { return !!this.duration && this.currentTime >= this.duration - 0.25; }
 }
 

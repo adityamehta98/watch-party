@@ -111,6 +111,16 @@ test('buffering after a seek is not restarted every sync tick', async () => {
   assert.ok(f.video.seeks[1] >= 300);
 });
 
+test('native buffering never chases the advancing room clock with repeated seeks', async () => {
+  const f = await playerFixture();
+  f.time(100); f.state();
+  f.video.readyState = 2;
+  for (let i = 0; i < 200; i++) { f.advance(200, false); f.player.correct(); }
+  assert.equal(f.video.seeks.length, 0, 'slow incoming data must be allowed to reach the decoder');
+  f.state({ position: 200, seq: 2 });
+  assert.equal(f.video.seeks.length, 1, 'a user seek still applies immediately while buffering');
+});
+
 test('continuous iPad playback never adjusts speed or seeks for small timestamp jitter', async () => {
   const f = await playerFixture();
   f.time(100); f.video.paused = false; f.state();
