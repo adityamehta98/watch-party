@@ -28,6 +28,7 @@ test('release assembly retains full license texts and records binary integrity a
   const ffmpeg = path.join(root, 'ffmpeg', 'bin');
   const put = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); };
   put(path.join(root, 'LICENSE'), 'Application MIT notice\n');
+  put(path.join(root, 'public', 'data', 'emoji.LICENSE.txt'), 'Unicode License V3\n');
   put(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'Third-party notice\n');
   put(node, 'original Node binary');
   put(path.join(path.dirname(node), 'LICENSE'), 'Complete Node and third-party notices\n');

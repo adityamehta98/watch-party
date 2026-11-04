@@ -53,7 +53,7 @@ function dismissNotice(id) {
 function showNotice(m) {
   const id = String(m.id || '').slice(0, 80);
   if (!id) return;
-  dismissNotice(id);
+  for (const existing of [...notices.children]) dismissNotice(existing.dataset.id);
   const el = document.createElement('div');
   el.className = `notice ${['error', 'knock', 'request'].includes(m.kind) ? m.kind : ''}`;
   el.dataset.id = id;
@@ -76,7 +76,7 @@ function showNotice(m) {
     el.appendChild(group);
   }
   notices.appendChild(el);
-  while (notices.childElementCount > 4) dismissNotice(notices.firstElementChild.dataset.id);
+
   const timeout = Math.max(1000, Math.min(30000, Number(m.timeout) || 4000));
   noticeTimers.set(id, setTimeout(() => dismissNotice(id), timeout));
 }

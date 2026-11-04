@@ -83,6 +83,7 @@ const DEFAULT_CONFIG = {
 
   cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
+  giphyKey: '',             // Public browser API key; editable only by the host
   tmdbToken: '',            // TMDB API Read Access Token; never sent to guests
   wyzieKey: '',             // Subtitle provider key; host only
   freeMedia: true,           // public-domain / permissively licensed Internet Archive titles
@@ -385,7 +386,7 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
 
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co https://image.tmdb.org; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host}; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://i.ytimg.com https://s4.anilist.co https://image.tmdb.org https://media.giphy.com https://media0.giphy.com https://media1.giphy.com https://media2.giphy.com https://media3.giphy.com https://media4.giphy.com https://i.giphy.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host} https://api.giphy.com; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -473,6 +474,11 @@ async function api(req, res, p) {
       printInvite();
     }
     if ('publicHost' in body) { config.publicHost = String(body.publicHost || '').trim().replace(/^https?:\/\//, '').replace(/[:/].*$/, '').replace(/[^A-Za-z0-9.-]/g, ''); delete cliOriginal.publicHost; }
+    if ('giphyKey' in body) {
+      const value = String(body.giphyKey || '').trim();
+      if (value && !/^[A-Za-z0-9_-]{16,128}$/.test(value)) return sendJson(res, 400, { error: 'Enter a valid GIPHY API key.' });
+      config.giphyKey = value; room.broadcastSettings();
+    }
     if ('tmdbToken' in body) {
       config.tmdbToken = String(body.tmdbToken || '').trim().replace(/[\r\n\s]/g, '').slice(0, 1024);
       room.broadcastSettings();

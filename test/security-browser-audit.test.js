@@ -44,5 +44,5 @@ test('offline shell cache excludes room HTML, messages, credentials and media',(
  const source=read('sw.js'),cached=/const SHELL = new Set\(\[([\s\S]*?)\]\)/.exec(source)[1];
  const paths=[...cached.matchAll(/'([^']+)'/g)].map(m=>m[1]);
  assert.ok(paths.length>10);
- for(const value of paths) assert.match(value,/^\/(?:js\/|css\/|vendor\/|favicon\.svg$|icon-\d+\.png$)/);
+ for(const value of paths) assert.match(value,/^\/(?:js\/|css\/|vendor\/|data\/emoji\.json$|favicon\.svg$|icon-\d+\.png$)/);
 });

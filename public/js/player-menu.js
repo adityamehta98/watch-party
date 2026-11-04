@@ -9,6 +9,7 @@ const ACTIONS = [
   ['fwdBtn', 'Forward 10 seconds', 'fwd10'],
   ['pipBtn', 'Floating cameras', 'pip'],
   ['quickChatBtn', 'Chat', 'chat'],
+  ['notificationBtn', 'Notifications', 'bell'],
 ];
 const icon = name => '<svg aria-hidden="true"><use href="#i-' + name + '"/></svg>';
 

@@ -89,8 +89,8 @@ test('streaming overlays keep chat interactive, show every participant, and scat
 
   // Chat emoji insertion is separate from room reactions, and reactions choose both axes instead of
   // using the old fixed upper-right notification stack.
-  assert.match(service, /data-chat-emoji/);
-  assert.match(sidebar, /data-chat-emoji/);
+  assert.match(service, /WpEmoji.create/);
+  assert.match(sidebar, /WpEmoji.create/);
   assert.match(page, /id="chatEmojiBtn"/);
   assert.match(service, /Math\.random\(\) \* 86/);
   assert.match(service, /Math\.random\(\) \* 62/);

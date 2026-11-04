@@ -37,7 +37,7 @@ function idleFixture({ playing = true, hover = false, pointerHover = true, focus
   let sequence = 0;
   const classes = new Set();
   const controls = { classList: { add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value) } };
-  const actions = {}, social = {}, pops = Object.fromEntries(['#reactPop', '#animeReactPop', '#ccPop', '#playerMorePop', '#quickChat'].map(id => [id, { hidden: true }]));
+  const actions = {}, social = {}, pops = Object.fromEntries(['#reactPop', '#animeReactPop', '#ccPop', '#playerMorePop', '#quickChat', '#notificationPanel'].map(id => [id, { hidden: true }]));
   const stage = { dataset: { idle: 'false' },
     querySelectorAll: () => [actions, social],
     querySelector: selector => selector.includes(':focus-visible') ? focus : hover };

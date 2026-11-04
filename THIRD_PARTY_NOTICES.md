@@ -40,3 +40,13 @@ References: [FFmpeg legal guidance](https://ffmpeg.org/legal.html),
 Codec patents, trademarks, media rights, and the terms of streaming services are
 separate from these open-source copyright licenses. This notice does not grant
 rights to any movie, subtitle, service, or trademark.
+
+The local emoji catalog is derived from Unicode Emoji 18.0 keyboard/display data under Unicode License V3. Full terms are in LICENSES/Unicode-LICENSE.txt in Windows packages and emoji.LICENSE.txt in the extension. Catalog metadata records its upstream source and SHA-256. Native operating-system fonts render the glyphs; no WhatsApp/Instagram artwork is bundled.
+
+Optional GIF search and media are provided by GIPHY and credited in the picker
+and messages. GIPHY content remains subject to its API Terms of Service:
+https://support.giphy.com/hc/en-us/articles/360020027752-GIPHY-API-Terms-of-Service
+No GIPHY media or search response is bundled or saved to disk by the app.
+The unmodified static Powered By GIPHY mark embedded in the picker comes from
+https://media.giphy.com/giphy-attribution-marks.zip (Static Logos/Small/Dark
+Backgrounds/PoweredBy_200px-Black_HorizLogo.png); GIPHY trademarks remain theirs.

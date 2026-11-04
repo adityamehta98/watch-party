@@ -542,7 +542,7 @@ For a selected language, Watch Party chooses the source with the largest `qualit
 **Letting others pick:** anyone with playback control also gets the **Library** tab. They can show your movies, start **Prepare**, search YouTube or pick a streaming service. They can't see folder names, change folders or delete prepared copies.
 
 **Keyboard:** `Space` play/pause · `←`/`→` back/forward 10 s (tap repeatedly to jump further) · `↑`/`↓` volume · `M` mute · `F` fullscreen · `Enter` chat
-**Swipes:** swipe right or left on the picture (or two fingers sideways on a trackpad) to skip ±20 s. Swipe up/down to adjust local volume. On iOS, use device volume buttons when the browser blocks script volume changes.
+**Swipes:** swipe right or left on the picture (or two fingers sideways on a trackpad) to skip ±20 s. Swipe up/down on the left half for local picture brightness and on the right half for local volume. On iOS, use device volume buttons when the browser blocks script volume changes.
 
 ### What guests need
 - **Chrome on a computer** is best for 4K HEVC, with **Settings → System → Use graphics acceleration** on. Edge and Safari work too. Firefox may not play HEVC.
@@ -691,3 +691,18 @@ Please only share content you have the right to share.
 See [security and size audit](SECURITY_AUDIT.md), [privacy/storage inventory](PRIVACY.md), and [third-party notices](THIRD_PARTY_NOTICES.md). Binary redistribution still requires matching FFmpeg/linked-library source and license compliance; no media rights are granted by the app.
 
 See [Safari extension removal, unused-code results and FFmpeg compatibility checks](DEAD_CODE_AND_FFMPEG.md). Run `npm run audit:unused` for the pinned Knip analysis, and `npm run test:ffmpeg` for local-media/fixture validation. The latter reads configured movies and writes only under `cache/`; reports contain private paths and must not be published.
+
+## Notification history and emoji
+
+Only one popup is shown at a time. The silent bell has no badge/count and opens your own received notifications with timestamps. Only the host can clear every viewer's history. Closing the panel keeps it; closing the host executable erases the in-memory history. Storage is bounded to 1,000 recent notices across the room.
+
+The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Appearance depends on the device's emoji font; no third-party emoji CDN or analytics is used. Reload extension 1.16.0 after updating.
+
+Continue Watching hides a series when its most recently watched episode is the known final episode with at most five minutes remaining. For short episodes, at least half must be watched. Saved progress remains available from the library and episode picker. Unknown episode totals are retained.
+
+Optional free GIF chat uses your own GIPHY beta key (100 API calls/hour, shared by
+all viewers). Add it in Room settings, then open chat's emoji picker → GIFs. Search
+runs on explicit submit; choose a result and press Send. The key is editable only
+by the host and necessarily visible to admitted clients for GIPHY's direct-browser
+API. No paid plan or automatic upgrade is configured. See instructions.md and
+PRIVACY.md for setup and third-party requests.

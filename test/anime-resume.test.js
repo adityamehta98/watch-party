@@ -38,3 +38,18 @@ test('shared guest cards can resume without exposing the host-only dismiss actio
   assert.match(card, /data-history-play="151801"/);
   assert.doesNotMatch(card, /data-history-dismiss=/);
 });
+
+test('only a known final episode near its end leaves Continue watching', async()=>{
+ const {animeSeriesFinished}=await moduleOf();
+ const entry={...episode,episode:12,episodes:12,position:1140,duration:1440};
+ assert.equal(animeSeriesFinished([entry]),true);
+ assert.equal(animeSeriesFinished([{...entry,position:1139}]),false);
+ assert.equal(animeSeriesFinished([{...entry,episode:11}]),false);
+ assert.equal(animeSeriesFinished([{...entry,episodes:0}]),false);
+ assert.equal(animeSeriesFinished([{...entry,position:0}]),false);
+ assert.equal(animeSeriesFinished([{...entry,duration:0}]),false);
+ assert.equal(animeSeriesFinished([{...entry,episode:1},entry]),false,'a replayed earlier episode is still resumable');
+ assert.equal(animeSeriesFinished([{...entry,duration:120,position:1}]),false,'short episodes must not vanish immediately');
+ assert.equal(animeSeriesFinished([{...entry,duration:120,position:100}]),true);
+ assert.equal(animeSeriesFinished([{...entry,episodes:0},{...entry,episode:11}]),true,'known series length is retained from older history');
+});

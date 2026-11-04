@@ -222,6 +222,18 @@ function onDockPort(port) {
 // Messages from the streaming tabs and the party pages.
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (!m || !m.wp || sender.id !== chrome.runtime.id) return;
+  if (m.wp === 'giphy-search') {
+    let url; try { url = new URL(m.url); } catch { return; }
+    if (url.origin !== 'https://api.giphy.com' || url.username || url.password || !/^\/v1\/gifs\/(?:search|trending)$/.test(url.pathname)) return;
+    fetch(url.href, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(10000) }).then(async response => {
+      if (!response.ok) throw Error(response.status === 429 ? 'Free GIF search limit reached. Try again later.' : 'GIPHY is unavailable. Check the key or try again later.');
+      return response.json();
+    }).then(reply, error => reply({ error: error.message })); return true;
+  }
+  if (m.wp === 'emoji-catalog') {
+    fetch(chrome.runtime.getURL('emoji-data.json')).then(response => response.json()).then(reply, () => reply(null));
+    return true;
+  }
   if (m.wp === 'ping') { reply({ ok: true }); return; } // the party page checking that this part is running
   if (m.wp === 'theater-hello' && theaterSender(sender) && partyPageUrl(m.party)) {
     // the "watch here" window opened in this tab, or reminds us it's there (it does every few seconds,
@@ -370,14 +382,14 @@ function injectFrame(tabId, frameId, url) {
   if (partyOrigin && u.origin === partyOrigin) return;
   const target = { tabId, frameIds: [frameId] };
   if (wpServiceOf(u.hostname)) {
-    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'service.js'] })
+    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'emoji-picker.js', 'service.js'] })
       .then(() => wpServiceOf(u.hostname) === 'netflix' ? chrome.scripting.executeScript({ target, world: 'MAIN', files: ['netflix-main.js'] }) : null)
       .catch(() => {});
     return;
   }
   if (!customHosts.has(tabId)) return;                            // a custom site, only where the host opened one
   chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
-    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
+    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'emoji-picker.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
     .catch(() => {});
 }
 // every frame already loaded in a tab (a tab claimed after it loaded, or a woken-up background part);

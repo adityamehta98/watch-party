@@ -33,6 +33,7 @@ function packageNotices(root, out, winNode, ffmpegBin, inputs, ffmpegVersion) {
   const nodeLicense = path.join(path.dirname(winNode), 'LICENSE');
   if (!fs.existsSync(nodeLicense)) throw new Error('Node LICENSE (including bundled dependency notices) is required next to node.exe; run build/prepare-tools.ps1');
   fs.copyFileSync(nodeLicense, path.join(licenseRoot, 'Node-LICENSE.txt'));
+  fs.copyFileSync(path.join(root, 'public', 'data', 'emoji.LICENSE.txt'), path.join(licenseRoot, 'Unicode-LICENSE.txt'));
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(out, 'LICENSE'));
   fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(out, 'THIRD_PARTY_NOTICES.md'));
   const packages = [];

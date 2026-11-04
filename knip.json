@@ -18,7 +18,8 @@
     "build/build-extensions.js",
     "benchmark/sync-benchmark.js",
     "test/**/*.test.js",
-    "benchmark/ffmpeg-compatibility.js"
+    "benchmark/ffmpeg-compatibility.js",
+    "extension/emoji-picker.js"
   ],
   "project": [
     "server/**/*.js",

@@ -1,3 +1,14 @@
+// Keep saved progress available in the episode picker; only the home shelf is filtered.
+export function animeSeriesFinished(entries) {
+  const latest = entries[0];
+  if (!latest) return false;
+  const total = Math.max(...entries.map(entry => Number(entry.episodes) || 0));
+  if (!total || latest.episode !== total) return false;
+  const duration = Number(latest.duration), position = Number(latest.position);
+  if (!(duration > 0)) return latest.completed === true;
+  return position > 0 && duration - position <= Math.min(300, duration / 2);
+}
+
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const time = value => {
   const seconds = Math.floor(Math.max(0, Number(value) || 0));

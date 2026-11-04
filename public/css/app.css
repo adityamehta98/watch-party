@@ -603,7 +603,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .side-cams .cams { position: static; inset: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; padding: 8px; pointer-events: auto; overflow: visible; max-height: 42vh; overflow-y: auto; }
 .side-cams .cams:not(.has-cameras) { display: none; }
 .side-cams .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; cursor: default; }
-#app.theater-svc .stage > :not(.cams):not(video):not(.toasts) { visibility: hidden; }
+#app.theater-svc .stage > :not(.cams):not(video):not(.toasts):not(.notification-panel) { visibility: hidden; }
 /* the streaming site covers the stage, so pop-up messages ("Priya wants to join") move over the sidebar */
 #app.theater-svc .toasts { display: none; } /* mirrored by the theater wrapper above Netflix */
 .person .sub.why { color: #f7d08a; white-space: normal; margin-top: 4px; line-height: 1.35; }
@@ -1438,3 +1438,23 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 
 /* Keep one-finger volume/seek gestures on the picture; menus still scroll. */
 .stage.has-movie video, .stage.has-movie .click-layer { touch-action: pinch-zoom; }
+
+/* Picture-only brightness keeps menus and controls unchanged. */
+.stage > video, .stage > .yt-host { filter: brightness(var(--picture-brightness, 1)); }
+
+/* Chat gets the full searchable catalog; reactions retain the compact buttons. */
+.popover.chat-emoji-pop { display: block; width: min(330px, calc(100vw - 28px)); padding: 10px; max-height: min(420px, 65dvh); overflow: auto; touch-action: pan-y; }
+
+.notification-panel { position:absolute; top:12px; right:12px; z-index:25; width:min(380px,calc(100% - 24px)); max-height:calc(100% - 28px); overflow:auto; overscroll-behavior:contain; touch-action:pan-y; padding:14px; color:var(--text); background:rgba(16,18,23,.98); border:1px solid var(--border-2); border-radius:14px; box-shadow:0 14px 50px #0009; }
+.notification-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.notification-panel ol { list-style:none; padding:0; margin:12px 0 0; }
+.notification-panel li { border-top:1px solid var(--border); padding:12px 2px; }
+.notification-panel li p { margin:5px 0 0; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.notification-panel time { font-size:10px; color:var(--muted); }
+.notification-panel li.notification-error p { color:#ffaaaa; }
+.notification-panel li .btn { margin:8px 6px 0 0; }
+.notification-panel .fine { margin:8px 0; }
+#notificationBtn { flex:none; }
+@media(max-width:640px) { #notificationBtn { width:30px; height:30px; padding:5px; } }
+
+#notificationBtn[aria-expanded="true"] { color:var(--accent); border-color:rgba(245,181,68,.5); }

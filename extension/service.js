@@ -309,7 +309,7 @@
     el.setAttribute('style', `all:initial;position:fixed;inset:auto;left:${x}vw;top:${y}vh;z-index:2147483647;margin:0;padding:0;border:0;background:transparent;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px;filter:drop-shadow(0 5px 12px rgba(0,0,0,.65));transform:translate(-50%,-50%);`);
     const emoji = document.createElement('span');
     emoji.setAttribute('style', 'all:initial;font:42px/1 "Apple Color Emoji","Segoe UI Emoji",sans-serif;');
-    emoji.textContent = String(item.emoji || '').slice(0, 8);
+    emoji.textContent = String(item.emoji || '').slice(0, 64);
     const name = document.createElement('span');
     name.setAttribute('style', 'all:initial;color:#fff;background:rgba(0,0,0,.62);border-radius:99px;padding:2px 7px;font:600 11px/1.2 system-ui,"Segoe UI",sans-serif;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;');
     name.textContent = String(item.name || '').slice(0, 32);
@@ -366,8 +366,8 @@
     crunchyroll: ['#f47521', '#fff'], paramount: ['#0064ff', '#fff'], max: ['#002be7', '#fff'], disney: ['#1f4fe0', '#fff'],
     appletv: ['#f2f2f7', '#111'], youtube: ['#ff0033', '#fff'],
   }[SERVICE] || ['#f5b544', '#1a1300'];
+  let chatPicker = null;
   let host = null, root = null, chatOpen = false, reactsOpen = false, chatEmojiOpen = false, facesOpen = true;
-  const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
   const hue = str => { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || '?';
   let pc = null, pendingIce = [], streams = new Map();
@@ -530,6 +530,7 @@
     // controls without covering this UI or changing its stacking order.
     host.popover = 'manual';
     host.setAttribute('style', 'all:initial;position:fixed;inset:auto;z-index:2147483647;left:0;top:0;margin:0;padding:0;border:0;background:transparent;overflow:visible;');
+    chatPicker = null;
     root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>
       :host { all: initial; }
@@ -591,6 +592,7 @@
       </div>
       <div class="reacts" id="reacts" hidden></div>
       <div class="faces" id="faces"></div>
+      <style>.emoji-menu{display:block;width:min(330px,calc(100vw - 24px));padding:9px;max-height:400px;overflow:auto}</style>
       <div class="chat" id="chat" hidden><div class="list" id="list"></div><form id="form" autocomplete="off"><button class="emoji-toggle" type="button" data-a="chat-emoji" title="Add emoji" aria-label="Add emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/></svg></button><div class="emoji-menu" id="chatEmoji" hidden></div><input id="input" maxlength="500" placeholder="Say something…"><button class="send" type="submit">Send</button></form></div>
     </div>`;
     // typing here must not reach the video player's keyboard shortcuts (space would pause it)
@@ -599,12 +601,6 @@
       if (ev === 'keydown' && e.key === 'Escape' && chatEmojiOpen) { chatEmojiOpen = false; render(); }
     });
     root.addEventListener('click', e => {
-      const chatEmoji = e.target.closest('button[data-chat-emoji]');
-      if (chatEmoji) {
-        const input = root.getElementById('input'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-        input.setRangeText(chatEmoji.dataset.chatEmoji, start, end, 'end');
-        chatEmojiOpen = false; input.focus({ preventScroll: true }); render(); return;
-      }
       const em = e.target.closest('button[data-emoji]');
       if (em) { if (ui && ui.canReact) act({ op: 'react', emoji: em.dataset.emoji }); reactsOpen = false; render(); return; }
       const b = e.target.closest('button[data-a]');
@@ -701,14 +697,17 @@
     chatEmojiButton.setAttribute('aria-expanded', String(chatEmojiOpen));
     const chatEmoji = root.getElementById('chatEmoji');
     chatEmoji.hidden = !chatOpen || !chatEmojiOpen || !ui.canChat;
-    if (!chatEmoji.dataset.ready) {
-      chatEmoji.dataset.ready = '1';
-      chatEmoji.innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
+    if (!chatEmoji.hidden) {
+      chatPicker ||= WpEmoji.create(chatEmoji, { load: () => chrome.runtime.sendMessage({ wp: 'emoji-catalog' }), giphyKey: () => ui?.giphyKey || '', request: async url => { const result = await chrome.runtime.sendMessage({ wp: 'giphy-search', url }); if (result?.error) throw Error(result.error); return result; }, onPick: emoji => {
+        if (!ui?.canChat) return;
+        const input = root.getElementById('input'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+        input.setRangeText(emoji, start, end, 'end'); chatEmojiOpen = false; input.focus({ preventScroll: true }); render();
+      } }); chatPicker.open();
     }
     if (chatOpen) seenChat = ui.chat.length;
     root.querySelector('.dot').classList.toggle('show', !chatOpen && ui.chat.length > seenChat && ui.chat.slice(seenChat).some(c => !c.system && !c.me));
     const list = root.getElementById('list');
-    const html = ui.chat.slice(-40).map(c => c.system ? `<div class="sys">${esc(c.text)}</div>` : `<div><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
+    const html = ui.chat.slice(-40).map(c => c.system ? `<div class="sys">${esc(c.text)}</div>` : `<div><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${WpEmoji.chatHtml(c.text)}</div>`).join('');
     if (list.dataset.h !== html) { list.dataset.h = html; list.innerHTML = html; list.scrollTop = list.scrollHeight; }
     root.getElementById('input').disabled = !ui.canChat;
     renderFaces();

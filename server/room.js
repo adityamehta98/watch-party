@@ -41,6 +41,8 @@ class Room {
     this.memory = new Map();    // clientId -> { name, perms, admitted } (survives refresh / reconnect)
     this.banned = new Set();
     this.chat = [];
+    this.notificationSession = randKey(16);
+    this.notifications = []; // Private per-viewer histories, in memory for this process only.
     this.bookmarks = [];
     this.syncEvents = []; // ephemeral observability only; never written to config or disk
     this.movie = null;
@@ -150,6 +152,7 @@ class Room {
       you: { id: client.id, name: client.name, role: client.role, perms: client.perms },
       state: this.state, movie: this.publicMovie(), chat: this.chat.slice(-60), bookmarks: this.bookmarks,
       peers: this.admitted().filter(c => c !== client).map(c => ({ id: c.id, name: c.name, media: c.media })),
+      notifications: this.notificationHistory(client), notificationSession: this.notificationSession,
       settings: this.publicSettings(client.role === 'host'),
       ...(this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden() } : {}),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
@@ -240,7 +243,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
+    const s = { giphyKey: this.config.giphyKey || '', autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }
@@ -708,10 +711,31 @@ class Room {
     if (c) c.bytes += n;
   }
 
+  notificationOwner(client) { return client.role === 'host' ? 'host:' + client.id : 'guest:' + (client.session || client.id); }
+  notificationHistory(client) {
+    const owner = this.notificationOwner(client);
+    return this.notifications.filter(entry => entry.owner === owner).map(({ owner: _owner, ...entry }) => entry);
+  }
+
   onMessage(client, msg) {
     const isHost = client.role === 'host';
     if (!client.admitted) return;
     switch (msg.type) {
+      case 'notification': {
+        if (!/^[A-Za-z0-9_-]{6,64}$/.test(msg.id || '')) return;
+        const owner = this.notificationOwner(client);
+        if (this.notifications.some(entry => entry.owner === owner && entry.id === msg.id)) return;
+        const text = String(msg.text || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 500);
+        if (!text) return;
+        const entry = { id: msg.id, ts: Date.now(), text, kind: ['error', 'knock', 'request', 'info'].includes(msg.kind) ? msg.kind : 'info' };
+        this.notifications.push({ ...entry, owner });
+        if (this.notifications.length > 1000) this.notifications.shift();
+        this.send(client.ws, { type: 'notification', notification: entry });
+        return;
+      }
+      case 'notifications-clear':
+        if (isHost) { this.notifications = []; this.broadcast({ type: 'notifications-clear' }); }
+        return;
       case 'anime-continue-dismiss': {
         if (isHost && this.animeHistory?.dismiss(msg.anilistId)) this.sendAnimeHistory();
         return;

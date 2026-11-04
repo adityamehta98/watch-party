@@ -7,7 +7,6 @@ let ui = null;
 let time = null;
 let port = null;
 let pc = null, pendingIce = [], streams = new Map();
-const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
 
 function connect() {
   port = chrome.runtime.connect({ name: 'dock' });
@@ -79,7 +78,7 @@ function render() {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
     list.innerHTML = ui.chat.map(c => c.system
       ? `<div class="msg system">${esc(c.text)}</div>`
-      : `<div class="msg${c.me ? ' me' : ''}"><div class="who" style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}${c.host ? ' · host' : ''}<time>${new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div><div class="body">${esc(c.text)}</div></div>`).join('');
+      : `<div class="msg${c.me ? ' me' : ''}"><div class="who" style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}${c.host ? ' · host' : ''}<time>${new Date(c.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div><div class="body">${WpEmoji.chatHtml(c.text)}</div></div>`).join('');
     if (atBottom || (ui.chat.length && ui.chat[ui.chat.length - 1].me)) list.scrollTop = list.scrollHeight;
   }
   renderCams();
@@ -178,18 +177,16 @@ $('#seek').addEventListener('click', e => {
 });
 $('#camBtn').addEventListener('click', () => act({ op: 'cam' }));
 $('#micBtn').addEventListener('click', () => act({ op: 'mic' }));
-$('#reacts').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b) act({ op: 'react', emoji: b.dataset.emoji }); });
-$('#emojiPicker').innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
+$('#reacts').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b && ui?.canReact) act({ op: 'react', emoji: b.dataset.emoji }); });
+const emojiPicker = WpEmoji.create($('#emojiPicker'), { load: () => fetch(chrome.runtime.getURL('emoji-data.json')).then(response => response.json()), giphyKey: () => ui?.giphyKey || '', onPick: emoji => {
+  if (!ui?.canChat) return;
+  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+  input.setRangeText(emoji, start, end, 'end'); $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false'); input.focus();
+} });
 $('#emojiBtn').addEventListener('click', () => {
   const picker = $('#emojiPicker'), open = picker.hidden;
-  picker.hidden = !open; $('#emojiBtn').classList.toggle('on', open); $('#emojiBtn').setAttribute('aria-expanded', String(open));
+  picker.hidden = !open; if (open) emojiPicker.open(); $('#emojiBtn').classList.toggle('on', open); $('#emojiBtn').setAttribute('aria-expanded', String(open));
   if (!open) $('#chatInput').focus();
-});
-$('#emojiPicker').addEventListener('click', e => {
-  const button = e.target.closest('[data-chat-emoji]'); if (!button) return;
-  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-  input.setRangeText(button.dataset.chatEmoji, start, end, 'end');
-  $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false'); input.focus();
 });
 document.addEventListener('click', e => {
   if (e.target.closest('#emojiBtn, #emojiPicker')) return;

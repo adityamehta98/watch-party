@@ -176,15 +176,38 @@ the shared shelf, manual controls, page-expanded fullscreen, both buffering mode
 and sustained playback. Repeat with the host browser closed to verify progress
 reporting and automatic skipping transfer to an eligible guest.
 
-Swipe up/down on the picture to adjust local volume; left/right still seeks.
+Swipe up/down on the left half for picture brightness, or the right half for local volume; left/right still seeks.
 Controls, menus, camera tiles and the home shelf are excluded. On devices that
 block script volume changes (including iOS native video), use the hardware volume
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.15.2 must be reloaded after installing this build.
+release conditions. Extension 1.16.0 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
 streaming-service sync uses the Chromium extension on computers; Safari/mobile
 users can open the service separately and follow the room clock.
+
+The notification bell silently records your own received notices with timestamps.
+Closing the panel does not delete them. Only the host has Clear all, which clears
+every viewer's history. History is in-memory (latest 1,000 notices across the room)
+and disappears when the host executable closes. Popups never stack.
+
+Chat emoji pickers support Unicode 18.0 with search, categories and skin tones.
+Reactions retain their compact quick buttons. Newest
+glyphs depend on the operating system font. Brightness dims only the picture
+(20–100%), keeping controls and cameras unchanged; it does not change device
+hardware brightness. iOS may still require hardware buttons for volume.
+
+For free GIF chat, create a Web/API beta key at https://developers.giphy.com/dashboard/
+and enter it in Room settings → GIPHY API key → Save GIF key. Open chat's emoji
+picker and select GIFs for trending or search. Choosing a GIF adds its link to the
+message draft; press Send to share it. Use a standalone GIF link for an inline
+preview. Free beta keys allow 100 API calls/hour across everyone using the key;
+GIPHY enforces the allowance and the app never upgrades or purchases a plan.
+The picker shows quota/network/key errors without retrying automatically. Only
+the host can change the key, but it is browser-visible to admitted viewers because
+GIPHY prohibits server proxies. Clearing the field and saving removes the key.
+Some streaming-service pages restrict external image previews; their GIF link
+remains clickable. Google's Tenor API closed on June 30, 2026.

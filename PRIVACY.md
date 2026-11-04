@@ -27,7 +27,7 @@ network requests needed for the features you enable.
 | Service worker Cache Storage | A fixed list of app scripts, styles, icons and the HLS library | Replaced on app-shell version changes or when site data is cleared |
 | `watch-history.json` | Episode position, completion, language and artwork metadata | Until the host removes/resets the local history |
 | Host `cache/` | Prepared local media, captions, metadata, certificates and diagnostics | Feature-specific eviction or explicit host cleanup; prepared media can be large |
-| Room memory | Live chat, reactions, participants and synchronization diagnostics | Bounded live buffers; room/server lifetime |
+| Room memory | Live chat, reactions, participants, private per-viewer notifications and synchronization diagnostics | Bounded live buffers; room/server lifetime |
 
 Authentication cookies are HttpOnly, SameSite-scoped, and Secure on HTTPS.
 Partitioned theater cookies use Secure and SameSite=None. Public HTTP mode cannot
@@ -69,3 +69,15 @@ purposes; a blanket cookie-free or consent-exempt claim would be inaccurate.
 and [Chrome Web Store user-data requirements](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)
 describe relevant disclosure obligations. Jurisdiction, audience and distribution
 model still require assessment before a public launch.
+
+Notification histories are private to the viewer's server-bound session and live only in host-process memory (at most 1,000 recent notices across the room). The host-only clear command clears every viewer's notification history. Closing the panel does not clear it; stopping the host process does. No unread badge or notification count is generated. Picture brightness is local and does not change device hardware settings. The bundled Unicode picker loads from the host/extension; no emoji CDN or analytics service is contacted.
+
+GIF search is optional and uses the host's GIPHY beta API key. Only the host can
+change it; GIPHY requires direct browser requests, so this public client key is
+available to admitted viewers and the extension. Do not reuse a secret credential
+from another service. Opening the GIF tab sends a trending request; searches run
+only when Search/Enter is pressed. GIPHY receives your IP and search terms; GIF
+images load directly from GIPHY's media hosts (including when receiving a GIF).
+No GIPHY response, GIF image, search term or key is added to offline shell caches.
+The key is saved in the host's config.json; sent GIF URLs stay in live room chat
+only, and no optional GIPHY analytics calls or persistent GIF favorites are added.

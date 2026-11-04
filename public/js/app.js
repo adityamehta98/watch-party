@@ -1,5 +1,7 @@
+import { createNotificationCenter } from './notifications.js';
+import './emoji-picker.js';
 import { Connection } from './net.js';
-import { animeResumeCard } from './anime-resume.js';
+import { animeResumeCard, animeSeriesFinished } from './anime-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
 import { createPlayerMenu } from './player-menu.js';
 import { SyncPlayer, DEVICE } from './player.js';
@@ -201,6 +203,8 @@ function wire() {
   conn.on('observatory', m => { S.observatory = m.observatory || null; renderObservatory(); renderPeopleDrift(); });
   conn.on('chat', m => addChat(m.message, true));
   conn.on('react', scheduleReaction);
+  conn.on('notification', m => notificationCenter.add(m.notification));
+  conn.on('notifications-clear', () => notificationCenter.clear());
   conn.on('bookmarks', m => { S.bookmarks = m.bookmarks || []; renderBookmarks(); });
   conn.on('perms', m => {
     S.perms = m.perms;
@@ -253,6 +257,7 @@ function rememberClientId(you) {
 function onWelcome(m) {
   rememberClientId(m.you);
   S.me = m.you;
+  notificationCenter.load(m.notifications || [], m.notificationSession);
   S.perms = m.you.perms;
   S.settings = m.settings || {};
   S.reactions = m.reactions || [];
@@ -918,6 +923,12 @@ function osd(text) {
   clearTimeout(osdTimer);
   osdTimer = setTimeout(() => { el.classList.add('fade'); osdTimer = setTimeout(() => { el.hidden = true; }, 300); }, 700);
 }
+let pictureBrightness = 1;
+function changeBrightness(delta) {
+  pictureBrightness = Math.round(Math.max(.2, Math.min(1, pictureBrightness + delta)) * 100) / 100;
+  stage.style.setProperty('--picture-brightness', pictureBrightness);
+  osd(`Picture brightness ${Math.round(pictureBrightness * 100)}%`);
+}
 function changeVolume(delta) {
   if (player.autoMuted) unblock();
   let v = Math.round(Math.max(0, Math.min(1, (M.muted ? 0 : M.volume) + delta)) * 100) / 100;
@@ -944,17 +955,18 @@ let swipedAt = 0;
 (() => {
   const onPicture = t => t === video || (t && t.id === 'clickLayer');
 
-  const noSwipe = t => !t || !t.closest || !!t.closest('.controls, button, input, select, textarea, .cams, .chat-float, .quick-chat,  .toasts, .pop, .stage-empty');
+  const noSwipe = t => !t || !t.closest || !!t.closest('.controls, button, input, select, textarea, .cams, .chat-float, .quick-chat, .toasts, .notification-panel, .pop, .stage-empty');
   let sw = null;
-  const begin = (x, y, target, id) => { sw = noSwipe(target) ? null : { id, x, y, at: performance.now(), wasIdle: stage.dataset.idle === 'true', claimed: false, volume: M.muted ? 0 : M.volume }; };
+  const begin = (x, y, target, id) => { sw = noSwipe(target) ? null : { id, x, y, at: performance.now(), wasIdle: stage.dataset.idle === 'true', claimed: false, side: x - stage.getBoundingClientRect().left < stage.clientWidth / 2 ? 'brightness' : 'volume', brightness: pictureBrightness, volume: M.muted ? 0 : M.volume }; };
   const move = (x, y) => {
     if (!sw) return;
     const dx = x - sw.x, dy = y - sw.y;
     if (!sw.axis && Math.max(Math.abs(dx), Math.abs(dy)) > 10) {
-      if (Math.abs(dy) > Math.abs(dx) * 1.3) sw.axis = 'volume';
+      if (Math.abs(dy) > Math.abs(dx) * 1.3) sw.axis = sw.side;
       else if (Math.abs(dx) > Math.abs(dy) * 1.3) sw.axis = 'seek';
     }
     sw.claimed = !!sw.axis;
+    if (sw.axis === 'brightness') changeBrightness(sw.brightness + (sw.y - y) / Math.max(120, stage.clientHeight) - pictureBrightness);
     if (sw.axis === 'volume' && !sw.volumeBlocked) {
       const target = Math.max(0, Math.min(1, sw.volume + (sw.y - y) / Math.max(120, stage.clientHeight)));
       sw.volumeBlocked = changeVolume(target - (M.muted ? 0 : M.volume)) === false;
@@ -965,7 +977,7 @@ let swipedAt = 0;
     if (!st || st.id !== id) return;
     move(x, y); sw = null;
     const dx = x - st.x, dy = y - st.y;
-    if (st.axis !== 'volume') {
+    if (st.axis !== 'volume' && st.axis !== 'brightness') {
       if (Math.abs(dx) < Math.max(40, Math.min(100, stage.clientWidth * 0.08)) || Math.abs(dx) < Math.abs(dy) * 1.3 || performance.now() - st.at > 1200) return;
       seekBy(dx > 0 ? SWIPE_SKIP : -SWIPE_SKIP);
     }
@@ -989,7 +1001,7 @@ let swipedAt = 0;
   let sum = 0, lastWheel = 0, fired = false;
   stage.addEventListener('wheel', e => {
     if (!onPicture(e.target) || e.ctrlKey) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 1.3) { e.preventDefault(); changeVolume(Math.max(-.1, Math.min(.1, -e.deltaY * .002))); return; }
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 1.3) { e.preventDefault(); const delta = Math.max(-.1, Math.min(.1, -e.deltaY * .002)); if (e.clientX - stage.getBoundingClientRect().left < stage.clientWidth / 2) changeBrightness(delta); else changeVolume(delta); return; }
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     e.preventDefault(); // otherwise the browser takes it as "go back a page"
     const now = performance.now();
@@ -1079,7 +1091,7 @@ function poke() {
     const hovered = matchMedia('(hover: hover)').matches
       && stage.querySelector('.controls:hover, .anime-actions:hover:hover');
     const keyboard = stage.querySelector('.controls :focus-visible, .anime-actions :focus-visible :focus-visible');
-    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden
+    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden || !$('#notificationPanel').hidden
       || !$('#playerMorePop').hidden || !$('#quickChat').hidden || hovered || keyboard || dragFrac != null;
     if (S.state && S.state.playing && !busy) setIdle(true); else poke();
   }, 2800);
@@ -1103,8 +1115,9 @@ document.addEventListener('webkitfullscreenchange', () => poke());
 poke();
 
 function closePops(except) {
-  for (const p of ['#reactPop', '#tbReactPop', '#ccPop', '#chatEmojiPop', '#playerMorePop']) if (p !== except) $(p).hidden = true;
+  for (const p of ['#reactPop', '#tbReactPop', '#ccPop', '#chatEmojiPop', '#playerMorePop', '#notificationPanel']) if (p !== except) $(p).hidden = true;
   if (except !== '#playerMorePop') $('#playerMoreBtn').setAttribute('aria-expanded', 'false');
+  if (except !== '#notificationPanel') $('#notificationBtn').setAttribute('aria-expanded', 'false');
   if (except !== '#chatEmojiPop') $('#chatEmojiBtn').setAttribute('aria-expanded', 'false');
 }
 function togglePop(id) {
@@ -1113,7 +1126,7 @@ function togglePop(id) {
     renderMoreControls();
     el.style.maxHeight = Math.max(64, Math.min(480, stage.clientHeight - 96, window.innerHeight * .65)) + 'px';
   }
-  closePops(id); el.hidden = !open; poke();
+  closePops(id); el.hidden = !open; if (id === '#notificationPanel') notificationCenter.render(); poke();
 }
 $('#playerMoreBtn').addEventListener('click', e => {
   e.stopPropagation(); togglePop('#playerMorePop');
@@ -1187,29 +1200,27 @@ $('#ccPop').addEventListener('click', e => {
   closePops();
 });
 
-const CHAT_EMOJIS = ['😀', '😂', '🥰', '😍', '🤩', '😮', '😢', '😭', '😡', '🤔', '👍', '👏', '🔥', '💀', '❤️', '👀', '🍿', '🎉'];
+let emojiCatalogPromise;
+const loadEmojiCatalog = () => emojiCatalogPromise ||= fetch('/data/emoji.json').then(response => { if (!response.ok) throw Error('Emoji catalog unavailable'); return response.json(); }).catch(error => { emojiCatalogPromise = null; throw error; });
+const sendReaction = emoji => { if (isHost || S.perms.react) conn.send({ type: 'react', emoji }); else noPerm('react'); };
 function buildReactions() {
-  const html = S.reactions.map(r => `<button type="button" data-emoji="${r}">${r}</button>`).join('');
+  const html = S.reactions.map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
   $('#reactPop').innerHTML = html;
-  $('#tbReactPop').innerHTML = html; // same reactions in the top bar (shown in the Netflix "watch here" window)
+  $('#tbReactPop').innerHTML = html;
 }
-function onReactClick(e) { const b = e.target.closest('[data-emoji]'); if (b) conn.send({ type: 'react', emoji: b.dataset.emoji }); }
-$('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
-$('#reactPop').addEventListener('click', onReactClick);
-$('#tbReact').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#tbReactPop'); });
-$('#tbReactPop').addEventListener('click', onReactClick);
-$('#chatEmojiPop').innerHTML = CHAT_EMOJIS.map(emoji => `<button type="button" data-chat-emoji="${emoji}" aria-label="Add ${emoji}">${emoji}</button>`).join('');
-$('#chatEmojiBtn').addEventListener('click', e => {
-  e.stopPropagation();
+const chatPicker = WpEmoji.create($('#chatEmojiPop'), { load: loadEmojiCatalog, giphyKey: () => S.settings.giphyKey || '', onPick: emoji => {
   if (!(isHost || S.perms.chat)) return noPerm('chat');
-  togglePop('#chatEmojiPop');
-  $('#chatEmojiBtn').setAttribute('aria-expanded', String(!$('#chatEmojiPop').hidden));
-});
-$('#chatEmojiPop').addEventListener('click', e => {
-  const button = e.target.closest('[data-chat-emoji]'); if (!button) return;
   const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-  input.setRangeText(button.dataset.chatEmoji, start, end, 'end');
-  closePops(); input.focus();
+  input.setRangeText(emoji, start, end, 'end'); closePops(); input.focus();
+} });
+$('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
+$('#tbReact').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#tbReactPop'); });
+function onReactClick(e) { const b = e.target.closest('[data-emoji]'); if (b && S.reactions.includes(b.dataset.emoji)) sendReaction(b.dataset.emoji); }
+$('#reactPop').addEventListener('click', onReactClick);
+$('#tbReactPop').addEventListener('click', onReactClick);
+$('#chatEmojiBtn').addEventListener('click', e => {
+  e.stopPropagation(); if (!(isHost || S.perms.chat)) return noPerm('chat'); togglePop('#chatEmojiPop');
+  $('#chatEmojiBtn').setAttribute('aria-expanded', String(!$('#chatEmojiPop').hidden)); if (!$('#chatEmojiPop').hidden) chatPicker.open();
 });
 function scheduleReaction(m) {
   const delay = Number(m.at) - conn.clock.now();
@@ -1237,10 +1248,16 @@ function floatReaction(emoji, name) {
 
 let theaterToastSeq = 0;
 const theaterToastActions = new Map();
+const notificationCenter = createNotificationCenter($('#notificationPanel'), { send: message => conn?.send(message), host: isHost, id: randId });
+$('#notificationBtn').addEventListener('click', e => { e.stopPropagation(); togglePop('#notificationPanel'); $('#notificationBtn').setAttribute('aria-expanded', String(!$('#notificationPanel').hidden)); });
+$('#notificationClose').addEventListener('click', () => { $('#notificationPanel').hidden = true; $('#notificationBtn').setAttribute('aria-expanded', 'false'); });
 function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
   const box = $('#toasts');
+  notificationCenter.record(text, kind, actions);
+  for (const old of [...box.children]) { clearTimeout(old.timer); theaterToastActions.delete(old.dataset.theaterId); theaterPost({ wpTheater: 'toast-dismiss', id: old.dataset.theaterId }); old.remove(); }
   const el = document.createElement('div');
   const theaterId = `notice-${++theaterToastSeq}`;
+  el.dataset.theaterId = theaterId;
   el.className = `toast ${kind}`;
   el.innerHTML = `<span class="t">${esc(text)}</span>${actions.length ? `<span class="acts">${actions.map((a, i) => `<button type="button" class="btn sm ${a.primary ? 'primary' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}</span>` : ''}`;
   el.addEventListener('click', e => {
@@ -1248,7 +1265,7 @@ function toast(text, { kind = 'info', actions = [], timeout = 4000 } = {}) {
     if (b) { actions[+b.dataset.i].run(); theaterToastActions.delete(theaterId); theaterPost({ wpTheater: 'toast-dismiss', id: theaterId }); el.remove(); }
   });
   box.appendChild(el);
-  while (box.childElementCount > 4) box.firstElementChild.remove();
+
   if (isTheater) {
     if (actions.length) theaterToastActions.set(theaterId, actions);
     theaterPost({ wpTheater: 'toast', id: theaterId, text: String(text || '').slice(0, 500), kind, timeout, actions: actions.map(a => ({ label: String(a.label || '').slice(0, 60), primary: !!a.primary })) });
@@ -1290,7 +1307,7 @@ function addChat(m, live) {
     el.className = 'msg' + (cont ? ' cont' : '');
     const t = new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const moment = Number.isFinite(m.position) ? `<button class="chat-time" type="button" data-chat-position="${m.position}" data-chat-movie="${esc(m.movieId || '')}" title="Jump to this moment">${fmtTime(m.position)}</button>` : '';
-    el.innerHTML = `${avatar(m.name)}<div><div class="who" style="color:hsl(${hue(m.name)} 70% 72%)">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${esc(m.text)}${moment}</div></div>`;
+    el.innerHTML = `${avatar(m.name)}<div><div class="who" style="color:hsl(${hue(m.name)} 70% 72%)">${esc(m.name)}${m.host ? ' <span class="host-tag">HOST</span>' : ''}<time>${t}</time></div><div class="body">${WpEmoji.chatHtml(m.text)}${moment}</div></div>`;
     if (live) floatChat(m);
     if (live && M === remote) remote.overlay({ kind: 'chat', name: m.name, text: m.text });
   }
@@ -1330,7 +1347,7 @@ function floatChat(m) {
   const box = $('#chatFloat');
   const el = document.createElement('div');
   el.className = 'cf';
-  el.innerHTML = `<b>${esc(m.name)}</b>${esc(m.text)}`;
+  el.innerHTML = `<b>${esc(m.name)}</b>${WpEmoji.chatHtml(m.text)}`;
   box.appendChild(el);
   while (box.childElementCount > 5) box.firstElementChild.remove();
   setTimeout(() => el.classList.add('fade'), 7000);
@@ -1387,11 +1404,11 @@ $('#sidebarBtn').addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (app.dataset.screen !== 'room') return;
   // sliders (volume, seek bar) and buttons keep focus after a click; the arrow keys should still work then
-  const field = e.target.closest('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]), textarea, select, [contenteditable]');
+  const field = (e.composedPath?.()[0] || e.target).closest('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]), textarea, select, [contenteditable]');
   if (e.key === 'Escape') { closePops(); $('#quickChat').hidden = true; return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   // in an empty chat box, up/down still change the volume
-  if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && !field.value)) return;
+  if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && ['chatInput', 'quickChatInput'].includes(field.id) && !field.value)) return;
   const k = e.key.toLowerCase();
 
   if (k === ' ' || k === 'k') { e.preventDefault(); togglePlay(); }
@@ -1810,6 +1827,7 @@ function renderSettings() {
   if (S.info && document.activeElement !== up) up.value = S.info.uploadMbps || '';
   const mg = $('#maxGuestsInput');
   if (document.activeElement !== mg) mg.value = s.maxGuests || 8;
+  $('#giphyKeyState').textContent = s.giphyKey ? 'Free GIF search enabled' : 'No key saved';
   const tmdbState = $('#tmdbTokenState');
   $('#wyzieKeyState').textContent = s.subtitlesConfigured ? 'Automatic lookup connected' : 'Not connected';
   if (tmdbState) tmdbState.textContent = S.info?.movieTv?.tmdbConfigured ? `TMDB connected · ${S.info?.movieTv?.sources || 0} authorized source${S.info?.movieTv?.sources === 1 ? '' : 's'}` : 'Optional · free catalog is active';
@@ -1892,6 +1910,12 @@ for (const el of $$('[data-setting]')) el.addEventListener('change', () => conn.
 for (const el of $$('[data-default]')) el.addEventListener('change', () => conn.send({ type: 'settings', settings: { defaults: { [el.dataset.default]: el.checked } } }));
 $('#maxGuestsInput').addEventListener('change', e => conn.send({ type: 'settings', settings: { maxGuests: +e.target.value || 8 } }));
 $('#uploadInput').addEventListener('change', async e => { S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ uploadMbps: +e.target.value || 0 }) }); renderLibrary(); });
+$('#giphyKeySave').addEventListener('click', async () => {
+  const button = $('#giphyKeySave'), input = $('#giphyKey'); button.disabled = true;
+  try { S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ giphyKey: input.value.trim() }) }); S.settings = S.info.settings || S.settings; input.value = ''; renderSettings(); toast(S.settings.giphyKey ? 'Free GIF search enabled.' : 'GIF key removed.'); }
+  catch (error) { toast(error.message, { kind: 'error' }); }
+  finally { button.disabled = false; }
+});
 $('#tmdbTokenSave').addEventListener('click', async () => {
   const button = $('#tmdbTokenSave'), input = $('#tmdbToken');
   const token = input.value.trim();
@@ -2311,7 +2335,7 @@ function popRender(force) {
   if (force || key !== popChatKey) {
     popChatKey = key;
     const list = doc.getElementById('popChat');
-    list.innerHTML = S.chatLog.slice(-60).map(c => c.system ? `<div class="m sys">${esc(c.text)}</div>` : `<div class="m"><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${esc(c.text)}</div>`).join('');
+    list.innerHTML = S.chatLog.slice(-60).map(c => c.system ? `<div class="m sys">${esc(c.text)}</div>` : `<div class="m"><b style="color:hsl(${hue(c.name)} 70% 72%)">${esc(c.name)}</b>${WpEmoji.chatHtml(c.text)}</div>`).join('');
     list.scrollTop = list.scrollHeight;
   }
 }
@@ -2332,6 +2356,7 @@ function dockSnapshot() {
     movie: m ? { title: m.title || '', service: kindOf(m) === 'service' ? serviceName(m) : kindOf(m) === 'youtube' ? 'YouTube' : 'Movie' } : null,
     canControl: canControl(), canChat: isHost || !!S.perms.chat, canReact: isHost || !!S.perms.react, canCam: isHost || !!S.perms.camera,
     reactions: S.reactions || [],
+    giphyKey: isHost || S.perms.chat ? S.settings.giphyKey || '' : '',
     people: peopleHere.map(p => ({ id: p.id, name: p.name, host: p.role === 'host', me: p.id === ownId, cam: !!(p.media && p.media.cam), mic: !!(p.media && p.media.mic) })),
     chat: S.chatLog.slice(-80),
     cams: dock.cams,
@@ -2393,7 +2418,7 @@ function onDockMessage(m) {
       conn.send({ type: 'chat', text });
       break;
     }
-    case 'react': if ((S.reactions || []).includes(a.emoji)) conn.send({ type: 'react', emoji: a.emoji }); break;
+    case 'react': if ((S.reactions || []).includes(a.emoji)) sendReaction(a.emoji); break;
     case 'cam': $('#camBtn').click(); break;
     case 'mic': $('#micBtn').click(); break;
     default:
@@ -3050,7 +3075,7 @@ function renderAnimeHistory() {
     if (!groups.has(entry.anilistId)) groups.set(entry.anilistId, []);
     groups.get(entry.anilistId).push(entry);
   }
-  const visible = [...groups.values()].filter(entries => !S.animeContinueHidden.includes(entries[0].anilistId));
+  const visible = [...groups.values()].filter(entries => !S.animeContinueHidden.includes(entries[0].anilistId) && !animeSeriesFinished(entries));
   const continueBox = $('#animeContinue');
   const scrollLeft = continueBox.querySelector('.anime-resume-grid')?.scrollLeft || 0;
   const homeFocus = document.activeElement?.closest('#animeContinue button');

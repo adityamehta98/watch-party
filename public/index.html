@@ -18,6 +18,7 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-skip" viewBox="0 0 24 24"><path d="M6 5.5v13l9-6.5z" fill="currentColor" stroke="none"/><rect x="16.4" y="5.5" width="2.3" height="13" rx="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
@@ -105,6 +106,7 @@
           <button class="ctrl" id="tbCam" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
           <button class="ctrl" id="tbMic" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
         </span>
+        <button class="icon-btn" id="notificationBtn" type="button" title="Notification history" aria-label="Notification history" aria-expanded="false"><svg><use href="#i-bell"/></svg></button>
         <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
         <button class="btn sm" id="installBtn" type="button" hidden>Install</button>
         <button class="btn primary sm host-only" id="inviteBtn" type="button" aria-label="Invite"><svg><use href="#i-link"/></svg><span>Invite</span></button>
@@ -114,6 +116,7 @@
 
     <main class="stage-wrap">
       <div class="stage" id="stage" data-idle="false">
+        <section class="notification-panel" id="notificationPanel" aria-label="Notification history" hidden><div class="notification-heading"><strong>Notifications</strong><button class="icon-btn" id="notificationClose" type="button" aria-label="Close notifications"><svg><use href="#i-x"/></svg></button></div><button class="btn sm" data-notification-clear type="button" hidden>Clear all notifications</button><p class="fine">Only the host can clear history. It resets when the host app closes.</p><ol data-notification-list></ol></section>
         <video id="video" playsinline webkit-playsinline preload="auto"></video>
         <div class="ambient-light" id="ambientLight" aria-hidden="true"></div>
         <div class="yt-host" id="ytHost"></div>
@@ -347,6 +350,10 @@
           <div class="row"><button class="btn sm primary" id="wyzieKeySave" type="button">Save subtitle key</button><span class="fine" id="wyzieKeyState"></span></div>
           <p class="fine">Automatically finds alternative subtitles when an anime caption source fails, including after Next Episode. Fetches only the episode you watch and shares it with the room. Caption storage is capped at 20 MB; older automatic downloads are removed. The episode index uses about 9 MB. Coverage, wording and timing depend on available releases. <a href="https://store.wyzie.io/redeem" target="_blank" rel="noopener noreferrer">Get a free key</a>. Your key stays on this PC.</p>
 
+          <h3>Chat GIFs</h3>
+          <label class="field"><span>GIPHY API key · optional free GIF search</span><input id="giphyKey" maxlength="128" type="password" autocomplete="off" placeholder="Your free GIPHY beta key" spellcheck="false"></label>
+          <div class="row"><button class="btn sm primary" id="giphyKeySave" type="button">Save GIF key</button><span class="fine" id="giphyKeyState"></span></div>
+          <p class="fine">Only you can change this key. Admitted viewers use it in their browsers for direct GIPHY searches. Free beta keys allow 100 calls/hour across everyone; no paid upgrade is automatic. <a href="https://developers.giphy.com/dashboard/" target="_blank" rel="noopener noreferrer">Get a free beta key</a></p>
           <h3>Movies &amp; TV catalog</h3>
           <label class="field"><span>TMDB API Read Access Token</span><input id="tmdbToken" type="password" autocomplete="off" placeholder="Paste the token from your TMDB API settings" spellcheck="false"></label>
           <div class="row"><button class="btn sm primary" id="tmdbTokenSave" type="button">Save TMDB token</button><span class="fine" id="tmdbTokenState"></span></div>
