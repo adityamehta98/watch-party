@@ -72,7 +72,34 @@ One connected viewer reports progress and drives automatic episode skipping: an
 eligible host first, otherwise the first admitted playback controller by client ID.
 This prevents multiple devices from issuing competing automatic skips. Other
 viewers with playback permission can use manual Skip Intro / Next Episode / Skip
-Credits controls. Next episode is also available in the bottom control bar.
+Credits controls. The bottom skip icon is a shared automatic-skipping toggle on
+every device; changing it never immediately advances the episode. Manual Next
+episode stays at the top. The preference is stored with room settings, and any
+viewer with playback permission can change it for everyone. Only the elected
+viewer executes automatic skips. Streaming-service extension skipping remains a
+separate host preference.
+
+The top previous/next controls are compact arrow buttons. The header episode
+picker lists the known series episodes with watched and resume markers; an
+equivalent picker appears inside the expanded/fullscreen stage. Selecting an
+episode retains the current series and audio language and resolves a fresh stream.
+
+On narrow phone screens, the playback controls remain on one compact row.
+Secondary controls (camera, microphone, lighting, battery saver, chat, and
+10-second jumps) are in More controls. Reactions stay visible as static badges
+when reduced motion or battery saver disables animation. Reaction delivery does
+not rely on a phone clock being synchronized during connection startup.
+Ambient light and Battery saver are the first two More controls entries, with
+their current on/off states. System reduced-motion, data-saving, or low-memory
+policies can pause ambient effects; the menu retains the controls and describes
+the active policy. iPhone browsers may not expose a battery percentage, so the
+manual battery-saver control remains available without automatic battery sensing.
+
+Camera tiles use a common responsive default size and reflow into clear grid
+slots when participants join or the player resizes. Old unmarked layouts are
+ignored. New explicit drag/resize layouts are retained only while they do not
+collide; a collision causes a grid reflow. The app never needs camera permission
+merely to compute or test tile placement.
 
 Intro/outro buttons depend on timing metadata supplied by the provider. Do not
 guess an intro length when metadata is absent. Automatic next episode also runs at

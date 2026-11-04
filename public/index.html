@@ -50,6 +50,7 @@
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.9-2.6L2.8 15a1.5 1.5 0 0 1 2.4-1.8L8 16"/></symbol>
     <symbol id="i-glow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
     <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="6" width="17" height="12" rx="2.5"/><path d="M21.5 10v4M6 9v6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></symbol>
   </defs>
 </svg>
 
@@ -94,6 +95,7 @@
     <header class="topbar">
       <button class="brand" id="homeBtn" type="button" aria-label="Watch Party home" title="Stop playback and return home"><span class="brand-mark" aria-hidden="true"><span></span></span><span class="brand-name">Watch Party</span></button>
       <div class="now-playing" id="nowPlaying"></div>
+      <div class="episode-picker" id="animeEpisodePicker" hidden><select id="animeEpisodeSelect" aria-label="Choose anime episode"></select></div>
       <div class="top-actions">
         <span class="tb-media" id="tbMedia">
           <span class="pop-wrap">
@@ -105,7 +107,7 @@
         </span>
         <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
         <button class="btn sm" id="installBtn" type="button" hidden>Install</button>
-        <button class="btn primary sm host-only" id="inviteBtn" type="button"><svg><use href="#i-link"/></svg><span>Invite</span></button>
+        <button class="btn primary sm host-only" id="inviteBtn" type="button" aria-label="Invite"><svg><use href="#i-link"/></svg><span>Invite</span></button>
         <button class="icon-btn" id="sidebarBtn" type="button" title="Show or hide the side panel" aria-label="Toggle side panel"><svg><use href="#i-panel"/></svg></button>
       </div>
     </header>
@@ -194,7 +196,11 @@
             <button class="l-opt" type="button" data-lang="dub" aria-pressed="false">Dub</button>
             <span class="l-pill" aria-hidden="true"></span>
           </div>
-          <button class="anime-next" id="animeNext" type="button">Next episode</button>
+          <div class="episode-arrows">
+            <button class="anime-next" id="animePrev" type="button" title="Previous episode" aria-label="Previous episode"><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M4 6v12"/></svg></button>
+            <button class="anime-next" id="animeNext" type="button" title="Next episode" aria-label="Next episode"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6M20 6v12"/></svg></button>
+          </div>
+          <select id="animeEpisodeSelectInline" class="episode-select-inline" aria-label="Choose anime episode in fullscreen" hidden></select>
         </div>
 
         <div class="controls" id="controls">
@@ -211,7 +217,6 @@
             <button class="ctrl" id="playBtn" type="button" title="Play / pause (Space)" aria-label="Play"><svg><use href="#i-play"/></svg></button>
             <button class="ctrl hide-sm" id="backBtn" type="button" title="Back 10 seconds (← key)" aria-label="Back 10 seconds"><svg><use href="#i-back10"/></svg></button>
             <button class="ctrl hide-sm" id="fwdBtn" type="button" title="Forward 10 seconds (→ key)" aria-label="Forward 10 seconds"><svg><use href="#i-fwd10"/></svg></button>
-            <button class="ctrl" id="episodeNextBtn" type="button" hidden title="Next episode" aria-label="Next episode"><svg><use href="#i-skip"/></svg></button>
             <button class="ctrl" id="autoSkipBtn" type="button" hidden title="Auto-skip intros & credits" aria-label="Auto-skip intros and credits" aria-pressed="true"><svg><use href="#i-skip"/></svg></button>
             <div class="volume">
               <button class="ctrl" id="muteBtn" type="button" title="Mute (M) · volume: ↑ ↓ keys" aria-label="Mute"><svg><use href="#i-vol"/></svg></button>
@@ -233,6 +238,19 @@
             <button class="ctrl hide-sm" id="ambientBtn" type="button" title="Ambient theater lighting" aria-label="Toggle ambient theater lighting" aria-pressed="true"><svg><use href="#i-glow"/></svg></button>
             <button class="ctrl hide-sm" id="ecoBtn" type="button" title="Battery saver" aria-label="Toggle battery saver" aria-pressed="false"><svg><use href="#i-battery"/></svg></button>
             <button class="ctrl fs-only" id="quickChatBtn" type="button" title="Chat (Enter)" aria-label="Chat"><svg><use href="#i-chat"/></svg></button>
+            <div class="pop-wrap compact-more">
+              <button class="ctrl" id="playerMoreBtn" type="button" title="More controls" aria-label="More controls" aria-expanded="false"><svg><use href="#i-more"/></svg></button>
+              <div class="popover menu" id="playerMorePop" hidden>
+                <button type="button" data-control="ambientBtn">Ambient light</button>
+                <button type="button" data-control="ecoBtn">Battery saver</button>
+                <button type="button" data-control="backBtn">Back 10 seconds</button>
+                <button type="button" data-control="fwdBtn">Forward 10 seconds</button>
+                <button type="button" data-control="camBtn">Toggle camera</button>
+                <button type="button" data-control="micBtn">Toggle microphone</button>
+                <button type="button" data-control="pipBtn">Pop out cameras</button>
+                <button type="button" data-control="quickChatBtn">Chat</button>
+              </div>
+            </div>
             <button class="ctrl" id="fsBtn" type="button" title="Fullscreen (F)" aria-label="Fullscreen"><svg><use href="#i-fs"/></svg></button>
           </div>
         </div>

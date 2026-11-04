@@ -1,5 +1,6 @@
 import { Connection } from './net.js';
 import { animeResumeCard } from './anime-resume.js';
+import { cameraLayout } from './camera-layout.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
@@ -208,7 +209,7 @@ function wire() {
     const names = { playback: 'playback control', chat: 'chat', react: 'reactions', camera: 'camera and mic' };
     toast(`The host ${m.value ? 'gave you' : 'turned off'} ${names[m.changed] || m.changed}`, { timeout: 3500 });
   });
-  conn.on('settings', m => { S.settings = m.settings; renderSettings(); renderPeople(); renderServicePanel(); maybeFindSubtitles(); });
+  conn.on('settings', m => { S.settings = m.settings; renderSettings(); renderPeople(); renderServicePanel(); maybeFindSubtitles(); renderAutoSkipBtn(); updateAnimeSkip(); });
   conn.on('toast', m => {
     if (m.selection === 'anime' && m.kind === 'error') hideTuneIn(true);
     if (m.kind === 'knock') { animateHandoff(m.name); toast(m.text, { kind: 'knock', timeout: 30000, actions: [
@@ -353,6 +354,16 @@ function renderVisualControls() {
   eco.classList.toggle('on', visuals.saver);
   eco.setAttribute('aria-pressed', String(visualPrefs.saver));
   eco.title = visuals.saver ? `Battery saver is on${visuals.reasons.length ? ` (${visuals.reasons.join(', ')})` : ''}` : 'Turn on battery saver';
+  const ambientMenu = $('#playerMorePop [data-control="ambientBtn"]');
+  const saverMenu = $('#playerMorePop [data-control="ecoBtn"]');
+  ambientMenu.textContent = `Ambient light · ${active ? 'On' : 'Off'}`;
+  ambientMenu.setAttribute('aria-label', 'Ambient light');
+  ambientMenu.setAttribute('aria-pressed', String(active));
+  ambientMenu.title = ambient.title;
+  saverMenu.textContent = `Battery saver · ${visuals.saver ? 'On' : 'Off'}`;
+  saverMenu.setAttribute('aria-label', 'Battery saver');
+  saverMenu.setAttribute('aria-pressed', String(visuals.saver));
+  saverMenu.title = eco.title;
   app.classList.toggle('motion-off', !visuals.motion);
 }
 function stopAmbientSampling() {
@@ -1095,7 +1106,7 @@ function poke() {
   if (stage.dataset.idle !== 'false' || controlsEl.classList.contains('gone')) setIdle(false);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden || !$('#quickChat').hidden || stage.querySelector('.controls:hover') || dragFrac != null;
+    const busy = !$('#reactPop').hidden || !$('#ccPop').hidden || !$('#playerMorePop').hidden || !$('#quickChat').hidden || stage.querySelector('.controls:hover') || dragFrac != null;
     if (S.state && S.state.playing && !busy) setIdle(true); else poke();
   }, 2800);
 }
@@ -1118,10 +1129,25 @@ document.addEventListener('webkitfullscreenchange', () => poke());
 poke();
 
 function closePops(except) {
-  for (const p of ['#reactPop', '#tbReactPop', '#animeReactPop', '#ccPop', '#chatEmojiPop']) if (p !== except) $(p).hidden = true;
+  for (const p of ['#reactPop', '#tbReactPop', '#animeReactPop', '#ccPop', '#chatEmojiPop', '#playerMorePop']) if (p !== except) $(p).hidden = true;
+  if (except !== '#playerMorePop') $('#playerMoreBtn').setAttribute('aria-expanded', 'false');
   if (except !== '#chatEmojiPop') $('#chatEmojiBtn').setAttribute('aria-expanded', 'false');
 }
-function togglePop(id) { const el = $(id); const open = el.hidden; closePops(id); el.hidden = !open; poke(); }
+function togglePop(id) {
+  const el = $(id), open = el.hidden;
+  if (id === '#playerMorePop') el.style.maxHeight = `${Math.max(64, Math.min(320, stage.clientHeight - 76))}px`;
+  closePops(id); el.hidden = !open; poke();
+}
+$('#playerMoreBtn').addEventListener('click', e => {
+  e.stopPropagation(); togglePop('#playerMorePop');
+  $('#playerMoreBtn').setAttribute('aria-expanded', String(!$('#playerMorePop').hidden));
+});
+$('#playerMorePop').addEventListener('click', e => {
+  const action = e.target.closest('[data-control]');
+  if (!action) return;
+  closePops();
+  document.getElementById(action.dataset.control)?.click();
+});
 document.addEventListener('click', e => { if (!e.target.closest('.pop-wrap')) closePops(); });
 
 function subtitleTimingKey(movie = S.movie) {
@@ -1203,13 +1229,15 @@ $('#chatEmojiPop').addEventListener('click', e => {
   closePops(); input.focus();
 });
 function scheduleReaction(m) {
+  const delay = Number(m.at) - conn.clock.now();
+  // An unsynced phone clock must not discard live reactions. Judge age on
+  // arrival; a delayed foreground timer should not erase an accepted reaction.
+  if (conn.clock.synced && Number.isFinite(delay) && delay < -10000) return;
   const fire = () => {
     if (m.movieId && m.movieId !== S.movie?.id) return;
-    if (m.at && conn.clock.now() - m.at > 2500) return;
     floatReaction(m.emoji, m.name);
   };
-  const delay = Number(m.at) - conn.clock.now();
-  if (Number.isFinite(delay) && delay > 10) setTimeout(fire, Math.min(delay, 2000)); else fire();
+  if (conn.clock.synced && delay > 10 && delay <= 2000) setTimeout(fire, delay); else fire();
 }
 function floatReaction(emoji, name) {
   if (M === remote) remote.overlay({ kind: 'react', emoji, name });
@@ -1453,38 +1481,20 @@ $('#animeMicBtn').addEventListener('click', () => $('#micBtn').click());
 const tiles = new Map();
 let camLayout = store.get('wp.camLayout', {});
 const layoutKey = id => (id === clientId ? 'self' : id);
-const MARGIN = 12, GAP = 8;
-
-function defaultTileWidth() { return Math.min(stage.clientWidth < 700 ? 116 : 184, Math.max(90, stage.clientWidth * 0.3)); }
 
 function placeTiles() {
   if (pipWin) return; // in the pop-out window they sit in a grid
   const W = stage.clientWidth, H = stage.clientHeight;
   if (!W || !H) return;
-  let slot = 0;
-  for (const [id, t] of tiles) {
-    const saved = camLayout[layoutKey(id)];
-    let w, x, y;
-    if (saved) {
-      w = Math.max(90, Math.min(W * 0.6, saved.w * W));
-      x = saved.x * W; y = saved.y * H;
-    } else {
-      w = defaultTileWidth();
-      const h = w * 9.5 / 16;
-      x = W - w - MARGIN;
-      y = MARGIN + slot * (h + GAP);
-      slot++;
-    }
-    const h = w * 9.5 / 16;
-    x = Math.max(0, Math.min(W - w, x));
-    y = Math.max(0, Math.min(H - h, y));
-    Object.assign(t.el.style, { width: `${w}px`, left: `${x}px`, top: `${y}px` });
+  const saved = Object.fromEntries([...tiles.keys()].map(id => [id, camLayout[layoutKey(id)]]));
+  for (const tile of cameraLayout(W, H, [...tiles.keys()], saved)) {
+    Object.assign(tiles.get(tile.id).el.style, { width: `${tile.width}px`, height: `${tile.height}px`, left: `${tile.x}px`, top: `${tile.y}px` });
   }
 }
 
 function saveTile(id, el) {
   const W = stage.clientWidth, H = stage.clientHeight;
-  camLayout[layoutKey(id)] = { x: el.offsetLeft / W, y: el.offsetTop / H, w: el.offsetWidth / W };
+  camLayout[layoutKey(id)] = { x: el.offsetLeft / W, y: el.offsetTop / H, w: el.offsetWidth / W, manual: true };
   store.set('wp.camLayout', camLayout);
 }
 
@@ -1508,10 +1518,11 @@ function makeDraggable(id, el) {
     } else {
       const w = Math.max(90, Math.min(W * 0.6, W - ox, ow + e.clientX - sx));
       el.style.width = `${w}px`;
+      el.style.height = `${w * 9.5 / 16}px`;
     }
     poke();
   });
-  const end = () => { if (!mode) return; mode = null; el.classList.remove('dragging'); saveTile(id, el); };
+  const end = () => { if (!mode) return; mode = null; el.classList.remove('dragging'); saveTile(id, el); placeTiles(); };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('dblclick', e => { e.stopPropagation(); delete camLayout[layoutKey(id)]; store.set('wp.camLayout', camLayout); placeTiles(); });
@@ -3122,6 +3133,7 @@ function animeEpisodeLabel(id, episode) {
 }
 
 function renderAnimeHistory() {
+  renderAnimeEpisodePicker();
   const groups = new Map();
   for (const entry of S.animeHistory) {
     if (!groups.has(entry.anilistId)) groups.set(entry.anilistId, []);
@@ -3259,17 +3271,59 @@ function hideTuneIn(force = false) {
 video.addEventListener('playing', () => hideTuneIn());
 video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTuneIn(); });
 
+let episodePickerKey = '';
+function renderAnimeEpisodePicker() {
+  const m = S.movie;
+  const show = !!m && ['anime', 'megaplay'].includes(kindOf(m)) && !!m.anilistId;
+  $('#animeEpisodePicker').hidden = !show;
+  $('#animeEpisodeSelectInline').hidden = !show;
+  if (!show) { episodePickerKey = ''; return; }
+  const history = S.animeHistory.filter(entry => entry.anilistId === m.anilistId);
+  const current = Math.max(1, Number(m.episode) || 1);
+  const count = Math.min(100000, Math.max(current, Number(m.episodes) || 0, ...history.map(entry => entry.episode)));
+  const signature = `${m.anilistId}:${current}:${count}:${history.map(entry => `${entry.episode}/${entry.completed}/${Math.floor(entry.position)}`).join(',')}`;
+  if (signature === episodePickerKey) return;
+  const selects = [$('#animeEpisodeSelect'), $('#animeEpisodeSelectInline')];
+  // Progress reports must not rebuild a native picker while someone is choosing.
+  if (episodePickerKey.startsWith(`${m.anilistId}:${current}:${count}:`) && selects.includes(document.activeElement)) return;
+  episodePickerKey = signature;
+  const watched = new Map(history.map(entry => [entry.episode, entry]));
+  const options = Array.from({ length: count }, (_, i) => {
+    const episode = i + 1, saved = watched.get(episode);
+    return `<option value="${episode}">Ep ${episode}${saved?.completed ? ' · Watched' : saved?.position > 0 ? ` · ${fmtTime(saved.position)}` : ''}</option>`;
+  }).join('');
+  for (const select of selects) {
+    select.innerHTML = options;
+    select.value = String(current);
+    select.title = `Episode ${current}${m.episodes ? ` of ${m.episodes}` : ''} · choose an episode`;
+  }
+}
+function chooseAnimeEpisode(episode) {
+  const m = S.movie;
+  if (!m || !['anime', 'megaplay'].includes(kindOf(m)) || !m.anilistId || !Number.isInteger(episode) || episode < 1) return;
+  if (Number(m.episodes) > 0 && episode > Number(m.episodes)) return;
+  if (episode === Number(m.episode)) return;
+  selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode, episodes: m.episodes || 0,
+    lang: m.language, title: m.animeTitle || 'Anime', resume: true });
+}
+for (const id of ['#animeEpisodeSelect', '#animeEpisodeSelectInline']) {
+  $(id).addEventListener('change', event => {
+    chooseAnimeEpisode(Number(event.target.value));
+    event.target.value = String(S.movie?.episode || 1);
+  });
+}
 function renderAnimeOverlay() {
   const button = $('#animeNext');
-  const nextControl = $('#episodeNextBtn');
+  const previous = $('#animePrev');
   const toggle = $('#animeLangToggle');
   const catalogToggle = $('#catalogLangToggle');
   const m = S.movie;
-  const hasNext = !!m && (['anime', 'megaplay'].includes(kindOf(m))
-    ? !m.episodes || Number(m.episode) < Number(m.episodes)
-    : kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv' && m.hasNext);
-  nextControl.hidden = !m || !['anime', 'megaplay', 'catalog'].includes(kindOf(m));
-  nextControl.disabled = !hasNext;
+  renderAnimeEpisodePicker();
+  const series = m && (['anime', 'megaplay'].includes(kindOf(m)) || kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv');
+  button.hidden = previous.hidden = !series;
+  const current = Number(kindOf(m) === 'catalog' ? m?.catalogRef?.episode : m?.episode) || 1;
+  previous.disabled = current <= 1;
+  previous.title = current > 1 ? `Previous episode · ${current - 1}` : 'First episode';
   if (m && kindOf(m) === 'catalog') {
     toggle.hidden = true;
     const languages = Array.isArray(m.languages) ? m.languages : [];
@@ -3278,18 +3332,17 @@ function renderAnimeOverlay() {
     const isSeries = m.catalogRef?.type === 'tv';
     button.hidden = !isSeries;
     button.disabled = !m.hasNext;
-    button.textContent = m.hasNext ? `Next episode · ${Number(m.catalogRef.episode) + 1}` : `Episode ${Number(m.catalogRef?.episode) || 1} · last available`;
+    button.title = m.hasNext ? `Next episode · ${Number(m.catalogRef.episode) + 1}` : 'Last available episode';
     return;
   }
   catalogToggle.hidden = true;
   catalogToggle.innerHTML = '';
-  button.hidden = false;
   const isAnime = m && (kindOf(m) === 'anime' || kindOf(m) === 'megaplay');
-  if (!isAnime) { button.disabled = true; button.textContent = 'Next episode'; toggle.hidden = true; return; }
+  if (!isAnime) { button.disabled = true; toggle.hidden = true; return; }
   const episode = Math.max(1, Number(m.episode) || 1);
   const atEnd = Number(m.episodes) > 0 && episode >= Number(m.episodes);
   button.disabled = atEnd;
-  button.textContent = atEnd ? `Episode ${episode} · last episode` : `Next episode · ${episode + 1}`;
+  button.title = atEnd ? 'Last episode' : `Next episode · ${episode + 1}`;
   const lang = m.language === 'dub' ? 'dub' : 'sub';
   toggle.hidden = false;
   toggle.dataset.lang = lang;
@@ -3304,9 +3357,14 @@ $('#animeNext').addEventListener('click', () => {
   if (!m || !(kindOf(m) === 'anime' || kindOf(m) === 'megaplay') || !m.anilistId) return;
   const episode = Math.max(1, Number(m.episode) || 1);
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
-  selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
+  chooseAnimeEpisode(episode + 1);
 });
-$('#episodeNextBtn').addEventListener('click', () => $('#animeNext').click());
+$('#animePrev').addEventListener('click', () => {
+  const m = S.movie;
+  if (kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv' && Number(m.catalogRef.episode) > 1) {
+    conn.send({ type: 'select-catalog', ref: { ...m.catalogRef, episode: Number(m.catalogRef.episode) - 1 }, language: m.language, title: m.catalogTitle || 'TV series' });
+  } else chooseAnimeEpisode(Number(m?.episode) - 1);
+});
 $('#catalogLangToggle').addEventListener('click', e => {
   const button = e.target.closest('[data-lang]');
   const m = S.movie;
@@ -3366,7 +3424,7 @@ const AUTO_SKIP_DELAY = 3000; // the elected viewer waits before advancing at th
 const skipBtn = $('#animeSkip');
 skipBtn.appendChild(Object.assign(document.createElement('span'), { className: 'count' }));
 const autoSkipBtn = $('#autoSkipBtn');
-const autoSkipOn = () => store.get('wp.autoSkip', true);   // ON by default
+const autoSkipOn = () => S.settings?.animeAutoSkip !== false;
 let skipCtx = null, skipAutoTimer = null;
 
 function animeSkipTarget() {
@@ -3425,7 +3483,7 @@ function updateAnimeSkip() {
     skipAutoTimer = setTimeout(() => {
       skipAutoTimer = null; skipBtn.classList.remove('counting');
       const now = animeSkipTarget();
-      if (now && now.next && animeAutomationLeader() && canControl() && S.state && S.state.playing && !(skipCtx && skipCtx.cancelled)) {
+      if (now && now.next && autoSkipOn() && animeAutomationLeader() && canControl() && S.state && S.state.playing && !(skipCtx && skipCtx.cancelled)) {
         doAnimeSkip(now); toast('Next episode', { timeout: 2500 });
       }
     }, AUTO_SKIP_DELAY);
@@ -3447,25 +3505,22 @@ video.addEventListener('ended', () => {
   if (m.anilistId && (!m.episodes || Number(m.episode) < Number(m.episodes))) $('#animeNext').click();
 });
 
-/* The elected viewer controls automatic skips; other controllers can skip manually. */
+/* All controllers share one toggle; only the elected viewer executes automatic skips. */
 function renderAutoSkipBtn() {
   if (!autoSkipBtn) return;
-  const show = S.movie && kindOf(S.movie) === 'anime' && canControl() && animeAutomationLeader();
+  const show = S.movie && kindOf(S.movie) === 'anime';
   if (autoSkipBtn.hidden !== !show) autoSkipBtn.hidden = !show;
   const on = autoSkipOn();
+  autoSkipBtn.disabled = !canControl();
   autoSkipBtn.classList.toggle('on', on);
   autoSkipBtn.setAttribute('aria-pressed', String(on));
   autoSkipBtn.title = on ? 'Auto-skip intros & credits: on' : 'Auto-skip intros & credits: off';
 }
 if (autoSkipBtn) {
   autoSkipBtn.addEventListener('click', () => {
+    if (!canControl()) return noPerm('playback');
     const on = !autoSkipOn();
-    store.set('wp.autoSkip', on);
-    const cb = $('#svcAutoSkip'); if (cb) cb.checked = on;  // keep Settings checkbox in sync
-    if (!on && skipCtx) { skipCtx.armed = false; stopCount(); }
-    renderAutoSkipBtn();
-    try { dockPush(true); } catch {}
-    toast(on ? 'Auto-skip on' : 'Auto-skip off', { timeout: 1800 });
+    conn.send({ type: 'anime-auto-skip', enabled: on });
   });
   setInterval(renderAutoSkipBtn, 500);
   renderAutoSkipBtn();

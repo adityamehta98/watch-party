@@ -25,7 +25,7 @@ function startup() {
     setInterval: () => ++id, clearInterval() {},
   });
   const app = read('app.js');
-  vm.runInContext(app.slice(app.indexOf('const tuneIn ='), app.indexOf('function renderAnimeOverlay()')), context);
+  vm.runInContext(app.slice(app.indexOf('const tuneIn ='), app.indexOf("let episodePickerKey = ''")), context);
   return { context, overlay, title,
     show(label = 'Episode 1') { context.showTuneIn(label); },
     hide(force = false) { context.hideTuneIn(force); },

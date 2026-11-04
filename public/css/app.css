@@ -116,6 +116,14 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .topbar { grid-area: top; display: flex; align-items: center; gap: 16px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--border); background: var(--bg-2); min-width: 0; }
 .now-playing { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
 .now-playing .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.episode-picker { flex: 0 1 170px; min-width: 110px; }
+.episode-picker select, .episode-select-inline { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
+.episode-picker select:focus-visible, .episode-select-inline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.episode-arrows { display: flex; gap: 5px; }
+.episode-arrows .anime-next { display: grid; place-items: center; flex: none; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 10px; }
+.episode-arrows svg { width: 19px; height: 19px; }
+.episode-select-inline { display: none; width: 118px; height: 36px; }
+.stage.is-fs .episode-select-inline { display: block; }
 .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
 .chip.hdr { color: var(--accent); border-color: rgba(245,181,68,.35); background: var(--accent-soft); }
 .chip.ok { color: var(--ok); border-color: rgba(62,207,142,.35); background: rgba(62,207,142,.1); }
@@ -265,7 +273,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 /* cameras popped out into their own floating window */
 .pip-body { margin: 0; background: #0a0b0e; }
 .pip-body .cams { position: static; inset: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 8px; pointer-events: auto; overflow: auto; height: 100vh; box-sizing: border-box; }
-.pip-body .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; cursor: default; }
+.pip-body .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; cursor: default; }
 .pip-body .tile .grip { display: none; }
 
 /* controls */
@@ -276,6 +284,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .stage:not(.has-movie) .controls { display: none; }
 .stage.service-setup .controls { display: none; }
 .ctrl-row { display: flex; align-items: center; gap: 2px; }
+.compact-more { display: none; }
 .ctrl { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #fff; cursor: pointer; }
 .ctrl:hover { background: rgba(255,255,255,.12); }
 .ctrl svg { width: 22px; height: 22px; }
@@ -585,6 +594,11 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 .motion-off *, .motion-off *::before, .motion-off *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+/* Reactions remain visible when motion or battery-saving policies disable animation. */
+.motion-off .floater { animation: none !important; opacity: 1; transform: translateY(-24px); }
+@media (prefers-reduced-motion: reduce) {
+  .floater { animation: none !important; opacity: 1; transform: translateY(-24px); }
+}
 ::view-transition-old(sidebar-panel) { animation: panel-out .14s ease both; }
 ::view-transition-new(sidebar-panel) { animation: panel-in .18s ease both; }
 @keyframes panel-out { to { opacity: 0; transform: translateX(-8px); } }
@@ -606,7 +620,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 #app.theater-svc .side-cams { display: block; border-bottom: 1px solid var(--border); }
 .side-cams .cams { position: static; inset: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; padding: 8px; pointer-events: auto; overflow: visible; max-height: 42vh; overflow-y: auto; }
 .side-cams .cams:empty { display: none; }
-.side-cams .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; cursor: default; }
+.side-cams .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; cursor: default; }
 .side-cams .tile .grip { display: none; }
 #app.theater-svc .stage > :not(.cams):not(video):not(.toasts) { visibility: hidden; }
 /* the streaming site covers the stage, so pop-up messages ("Priya wants to join") move over the sidebar */
@@ -1345,9 +1359,32 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 @media (pointer: coarse) {
   .anime-actions { gap: 8px; max-width: calc(100% - 24px); flex-wrap: wrap; }
   .anime-next, .anime-lang-toggle .l-opt { min-height: 44px; }
-  .ctrl-row { flex-wrap: wrap; }
+  .ctrl-row { flex-wrap: nowrap; }
   .ctrl { min-width: 44px; min-height: 44px; }
   .anime-skip { min-height: 44px; bottom: 132px; }
+}
+@media (max-width: 700px) {
+  .episode-picker { flex: 0 0 82px; min-width: 82px; }
+  .episode-picker select { padding: 0 4px; font-size: 11px; }
+  .controls { padding: 28px 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+  .ctrl-row { flex-wrap: nowrap; gap: 1px; }
+  .controls .ctrl { flex: 0 0 32px; width: 32px; min-width: 32px; height: 36px; min-height: 36px; border-radius: 7px; }
+  .controls .ctrl svg { width: 19px; height: 19px; }
+  .controls #playBtn svg { width: 22px; height: 22px; }
+  .controls .time { flex: none; padding: 0 3px; font-size: 11px; letter-spacing: -.025em; }
+  .controls .grow { min-width: 0; }
+  .controls .pop-wrap { position: static; flex: none; }
+  .controls .volume { flex: none; }
+  #camBtn, #micBtn, #pipBtn, #ambientBtn, #ecoBtn, #quickChatBtn { display: none; }
+  .compact-more { display: block; }
+  #playerMorePop { right: 0; min-width: 210px; max-height: min(340px, 60dvh); }
+  #playerMorePop button { min-height: 40px; }
+  .controls .reactions-pop { left: 6px; right: 6px; width: auto; flex-wrap: wrap; justify-content: center; }
+  .anime-skip { right: 12px; bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 360px) {
+  .controls .ctrl { flex-basis: 28px; width: 28px; min-width: 28px; }
+  .controls .time { font-size: 10px; padding-inline: 2px; }
 }
 @keyframes skip-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) {

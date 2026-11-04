@@ -49,6 +49,7 @@ class Room {
     const s = config.room || {};
     this.settings = {
       autoWait: s.autoWait !== false,
+      animeAutoSkip: s.animeAutoSkip !== false,
       requireApproval: s.requireApproval !== false, // on by default: you approve each new guest
       maxGuests: Math.max(1, Math.min(20, Number(s.maxGuests) || 8)),
       locked: false,
@@ -208,7 +209,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
+    const s = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }
@@ -704,6 +705,14 @@ class Room {
         if (msg.flush) this.animeHistory.flush();
         return;
       }
+      case 'anime-auto-skip': {
+        if (!this.canControl(client) || typeof msg.enabled !== 'boolean') return;
+        this.settings.animeAutoSkip = msg.enabled;
+        this.config.room = { ...this.config.room, animeAutoSkip: msg.enabled };
+        this.save?.();
+        this.broadcastSettings();
+        return;
+      }
       case 'cmd': return this.command(client, msg);
       case 'status': {
         const st = msg.status || {};
@@ -917,7 +926,7 @@ class Room {
         if ('locked' in s) this.settings.locked = !!s.locked;
         if ('maxGuests' in s) this.settings.maxGuests = Math.max(1, Math.min(20, Number(s.maxGuests) || 8));
         if (s.defaults) for (const p of PERMS) if (p in s.defaults) this.settings.defaults[p] = !!s.defaults[p];
-        this.config.room = { autoWait: this.settings.autoWait, requireApproval: this.settings.requireApproval, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults };
+        this.config.room = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, requireApproval: this.settings.requireApproval, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults };
         this.save();
         this.broadcastSettings();
         return;

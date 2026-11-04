@@ -59,7 +59,7 @@ function skips({ leader = false, control = true, auto = true, position = 50, epi
     classList: { add: name => classes.add(name), remove: name => classes.delete(name) } };
   const video = new EventTarget();
   const state = { movie: { id: 'ep2', kind: 'anime', anilistId: 114121, episode, episodes: 12,
-    intro: { start: 40, end: 130 }, outro: { start: 1320, end: 1420 } }, state: { playing: true } };
+    intro: { start: 40, end: 130 }, outro: { start: 1320, end: 1420 } }, state: { playing: true }, settings: { animeAutoSkip: auto } };
   const context = vm.createContext({
     S: state, video, document: { createElement: () => ({}) },
     $: selector => selector === '#animeSkip' ? button : selector === '#animeNext' ? { click: () => actions.push('next') } : null,
@@ -108,4 +108,17 @@ test('the elected viewer advances at the end even without outro metadata, but ot
   assert.equal(guest.actions.length, 0);
   const last = skips({ leader: true, episode: 12 }); last.video.dispatchEvent(new Event('ended'));
   assert.equal(last.actions.length, 0);
+});
+
+test('a shared toggle change cancels an armed outro before the countdown callback runs', () => {
+  const f = skips({ leader: true, position: 1350 });
+  f.update();
+  const countdown = [...f.timers.values()][0];
+  f.state.settings.animeAutoSkip = false;
+  countdown();
+  assert.equal(f.actions.length, 0, 'a remote disable must be checked again at countdown completion');
+  const off = skips({ leader: true, auto: false });
+  off.update();
+  assert.equal(off.actions.length, 0);
+  assert.equal(off.button.hidden, false, 'manual skipping remains available while automatic skipping is off');
 });
