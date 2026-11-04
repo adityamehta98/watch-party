@@ -698,12 +698,11 @@
     chatEmojiButton.setAttribute('aria-expanded', String(chatEmojiOpen));
     const chatEmoji = root.getElementById('chatEmoji');
     chatEmoji.hidden = !chatOpen || !chatEmojiOpen || !ui.canChat;
-    if (!chatEmoji.hidden) {
-      chatPicker ||= WpEmoji.create(chatEmoji, { load: () => chrome.runtime.sendMessage({ wp: 'emoji-catalog' }), giphyKey: () => ui?.giphyKey || '', request: async url => { const result = await chrome.runtime.sendMessage({ wp: 'giphy-search', url }); if (result?.error) throw Object.assign(Error(result.error), { status: result.status }); return result; }, onPick: emoji => {
+    chatPicker ||= WpEmoji.create(chatEmoji, { load: () => chrome.runtime.sendMessage({ wp: 'emoji-catalog' }), giphyKey: () => ui?.giphyKey || '', request: async url => { const result = await chrome.runtime.sendMessage({ wp: 'giphy-search', url }); if (result?.error) throw Object.assign(Error(result.error), { status: result.status }); return result; }, onPick: emoji => {
         if (!ui?.canChat) return;
         chatDraft.pick(emoji); chatEmojiOpen = false; render();
-      } }); chatPicker.open();
-    }
+      } });
+    if (!chatEmoji.hidden) chatPicker.open();
     if (chatOpen) seenChat = ui.chat.length;
     root.querySelector('.dot').classList.toggle('show', !chatOpen && ui.chat.length > seenChat && ui.chat.slice(seenChat).some(c => !c.system && !c.me));
     const list = root.getElementById('list');

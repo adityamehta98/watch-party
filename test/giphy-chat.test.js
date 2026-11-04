@@ -17,13 +17,13 @@ class Element {
  addEventListener(type,fn){this.listeners[type]=fn;} setAttribute(k,v){this.attrs[k]=v;}
  appendChild(el){this.children.push(el);} replaceChildren(){this.children=[];}
 }
-function fixture({key='exampleGiphyBetaKey',request}={}) {
+function fixture({key='exampleGiphyBetaKey',request,catalogLoad,globals}={}) {
  const nodes=new Map(), tabs=[new Element(),new Element(),new Element()];tabs[0].dataset.mode='emoji';tabs[1].dataset.mode='gif';tabs[2].dataset.mode='sticker';
  for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll','.stickers','.stickers input','.sticker-grid','.sticker-status','.sticker-more'])nodes.set(sel,new Element());
  nodes.get('select').value='default'; nodes.get('.gifs').hidden=true;nodes.get('.stickers').hidden=true;
  const root={querySelector:s=>nodes.get(s),querySelectorAll:()=>tabs}, picked=[];
  const container=new Element(); container.ownerDocument={createElement:()=>new Element()};container.attachShadow=()=>root;
- const api=load().create(container,{load:async()=>({groups:['Faces'],emojis:[['😀','smile',0]],stickers:[['😀','Smile',0,'1f600'],['👋','Wave',1,'1f44b']]}),onPick:v=>picked.push(v),giphyKey:()=>typeof key === 'function' ? key() : key,request});
+ const api=load(globals).create(container,{load:catalogLoad||(async()=>({groups:['Faces'],emojis:[['😀','smile',0]],stickers:[['😀','Smile',0,'1f600'],['👋','Wave',1,'1f44b']]})),onPick:v=>picked.push(v),giphyKey:()=>typeof key === 'function' ? key() : key,request});
  return {api,nodes,tabs,picked};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -145,4 +145,22 @@ test('room, extension sidebar and video overlay clear drafts synchronously in th
    draft.pick(valid);context.isHost=false;context.S.perms.chat=false;context.noPerm=()=>{};handler();assert.equal(input.value,valid,'permission rejection preserves the draft');assert.equal(card.style.display,'flex');
   }
  }
+});
+
+
+test('idle preload prepares emoji before opening, shares in-flight work and never calls GIPHY',async()=>{
+ const idle=[];let loads=0,requests=0,release;
+ const f=fixture({globals:{requestIdleCallback:callback=>idle.push(callback)},catalogLoad:()=>{loads++;return new Promise(resolve=>{release=resolve;});},request:async()=>{requests++;return {data:[]};}});
+ assert.equal(idle.length,1);assert.equal(loads,0,'work waits until idle');
+ const warming=idle[0]();await tick();assert.equal(loads,1);
+ const opening=f.api.open(),preloading=f.api.preload();assert.equal(loads,1,'opening during preload shares the catalog request');
+ release({groups:['Faces'],emojis:[['😀','smile',0]],stickers:[]});await Promise.all([warming,opening,preloading]);
+ const first=f.nodes.get('.grid').children[0];assert.ok(first,'first page is already rendered');
+ await f.api.open();assert.equal(f.nodes.get('.grid').children[0],first,'opening reuses the prepared page');assert.equal(loads,1);assert.equal(requests,0,'background preparation spends no GIF calls');
+});
+
+test('a failed background emoji preload remains retryable on first open',async()=>{
+ let loads=0;const idle=[];const f=fixture({globals:{requestIdleCallback:callback=>idle.push(callback)},catalogLoad:async()=>{if(++loads===1)throw Error('temporary disconnect');return {groups:['Faces'],emojis:[['😀','smile',0]]};}});
+ await idle[0]();assert.match(f.nodes.get('.heading').textContent,/reopen to retry/);
+ await f.api.open();assert.equal(loads,2);assert.equal(f.nodes.get('.grid').children.length,1);
 });

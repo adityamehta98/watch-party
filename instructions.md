@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.17.4 must be reloaded after installing this build.
+release conditions. Extension 1.17.5 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -238,15 +238,20 @@ Unicode text. Native text inputs and other apps depend on their own emoji fonts.
 
 GIF/sticker previews clear immediately after Send in the room, extension sidebar
 and video overlay. Sent media has no text-link caption; provider/license credits
-remain in the image tooltip, optional picker information panel and bundled
-notices. New hand emoji with skin tones use Noto artwork when the base hand is
+remain in the image tooltip, bundled notices. New hand emoji with skin tones use Noto artwork when the base hand is
 missing from the device font.
 
-The picker has no Google credit rows above or below its results. Use the small
-information button for artwork credits. GIPHY’s required badge appears only beside
+The picker has no Google credit rows or information icon. Artwork credits remain
+in tooltips and bundled notices. GIPHY’s required badge appears only beside
 the icon tabs in GIF mode, with no extra header or footer row.
 
 The media picker and attachment previews use icons instead of visible labels,
 headings, hints or placeholders. Search remains available through the magnifier;
 skin tones use hand swatches. Control names and status details remain available
 to screen readers and on hover. The GIPHY badge stays legible at full opacity.
+
+Emoji, GIFs and stickers share one responsive picker size, including loading or
+empty results. The local catalog and first emoji page prepare during browser idle
+time; missing first-page glyph images start loading before opening. No GIPHY
+request is made until its tab is chosen. An immediate click before preparation
+finishes can still wait for the initial local request or artwork download.

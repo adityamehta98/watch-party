@@ -53,8 +53,8 @@ Backgrounds/PoweredBy_200px-Black_HorizLogo.png); GIPHY trademarks remain theirs
 
 Animated Google Noto stickers (881 metadata entries) load unmodified from
 https://fonts.gstatic.com/s/e/notoemoji/latest/ when opened or shared. Copyright
-Google; artwork licensed under CC BY 4.0. The picker’s optional information panel
-links to the source and license; message tooltips identify the provider/license.
+Google; artwork licensed under CC BY 4.0. Artwork tooltips identify the provider/license
+and link to CC BY 4.0; sticker tooltips also identify the source gallery.
 Complete terms are in LICENSES/Google-Noto-CC-BY-4.0.txt in the build
 and public/data/noto.LICENSE.txt in source. Catalog metadata was taken from
 https://googlefonts.github.io/noto-emoji-files/; its source hash is recorded in the
