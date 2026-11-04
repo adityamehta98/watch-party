@@ -31,3 +31,10 @@ test('unknown durations do not claim a percentage and progress stays within the 
   assert.match(animeResumeCard({ ...episode, position: 2000 }), /width:100.000%/);
   assert.match(animeResumeCard({ ...episode, position: -1 }), /width:0.000%/);
 });
+
+test('shared guest cards can resume without exposing the host-only dismiss action', async () => {
+  const { animeResumeCard } = await moduleOf();
+  const card = animeResumeCard({ ...episode, canDismiss: false });
+  assert.match(card, /data-history-play="151801"/);
+  assert.doesNotMatch(card, /data-history-dismiss=/);
+});

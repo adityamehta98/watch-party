@@ -511,6 +511,9 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .movie .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .movie .acts > .chip, .movie .acts > .btn { height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
 .movie .acts { align-items: center; }
+.anime-buffer-prefs { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-2); }
+.anime-buffer-prefs label { display: block; margin-bottom: 6px; font-weight: 600; }
+.anime-buffer-prefs select { width: 100%; min-height: 44px; padding: 0 10px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface); }
 .movie .warnline { font-size: 12.5px; color: var(--warn); margin-top: 8px; }
 .progress { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }
 .progress > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s; }
@@ -1339,6 +1342,13 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .anime-skip.counting .count { animation: skip-count var(--count-dur, 3s) linear forwards; }
 @keyframes skip-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (pointer: coarse) {
+  .anime-actions { gap: 8px; max-width: calc(100% - 24px); flex-wrap: wrap; }
+  .anime-next, .anime-lang-toggle .l-opt { min-height: 44px; }
+  .ctrl-row { flex-wrap: wrap; }
+  .ctrl { min-width: 44px; min-height: 44px; }
+  .anime-skip { min-height: 44px; bottom: 132px; }
+}
 @keyframes skip-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) {
   .anime-skip { animation: none; }

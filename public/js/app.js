@@ -440,6 +440,22 @@ function tryNextFileSource(reason) {
   return true;
 }
 
+function movieSources(movie) {
+  return deliverySources(movie, PLAYBACK, key, clientId, { bufferMode: store.get('wp.animeBufferMode', 'auto') });
+}
+const animeBufferMode = $('#animeBufferMode');
+$('#animeBufferPrefs').hidden = !PLATFORM.appleMobile || !PLAYBACK.mse;
+animeBufferMode.value = store.get('wp.animeBufferMode', 'auto') === 'extended' ? 'extended' : 'auto';
+animeBufferMode.addEventListener('change', () => {
+  store.set('wp.animeBufferMode', animeBufferMode.value);
+  if (S.movie?.kind !== 'anime') return;
+  clearTimeout(fileStartTimer);
+  S.fileSources = movieSources(S.movie);
+  S.fileSourceIndex = 0;
+  if (S.fileSources[0]) openFileSource(S.fileSources[0]);
+  watchFileStart();
+});
+
 function watchFileStart() {
   clearTimeout(fileStartTimer);
   if ((S.fileSources?.length || 0) < 2) return;
@@ -454,7 +470,7 @@ function addSubtitleTracks(movie) {
 }
 
 function refreshFileSources(movie) {
-  const next = deliverySources(movie, PLAYBACK, key, clientId);
+  const next = movieSources(movie);
   const { sources, activate } = reconcileDeliverySources(next, filePlayback.source, !!(S.filePlaybackError || video.error));
   S.fileSources = sources;
   S.fileSourceIndex = 0;
@@ -507,7 +523,7 @@ function loadMovie(movie) {
     try { M.volume = vol; } catch {}
   }
   S.metaSent = null;
-  S.fileSources = isNativeMovie(movie) ? deliverySources(movie, PLAYBACK, key, clientId) : [];
+  S.fileSources = isNativeMovie(movie) ? movieSources(movie) : [];
   S.fileSourceIndex = 0;
   S.filePlaybackError = null;
   filePlayback.close();
@@ -1051,18 +1067,12 @@ const fullscreen = new StageFullscreen(stage, fs => {
   $('#fsBtn').title = label;
   if (kindOf(S.movie) === 'megaplay' && mpMedia) mpMedia.fsState(fs);
   poke();
-}, { onUnavailable: () => toast(
-  PLATFORM.ipad
-    ? 'This browser cannot show Watch Party controls in true fullscreen. Open this party link in Safari on your iPad for fullscreen with controls.'
-    : 'This browser cannot show Watch Party controls in true fullscreen. You can expand the player within this page.',
-  { timeout: 12000, actions: [
-    { label: 'Expand within browser', run: () => fullscreen.expandPage() },
-    { label: 'Copy party link', run: async () => {
-      try { await navigator.clipboard.writeText(location.href); toast('Party link copied. Open it in Safari.'); }
-      catch { prompt('Copy this party link:', location.href); }
-    } },
-  ] },
-) });
+}, { onUnavailable: () => {
+  // Some iPad browsers turn a stage request into video-only fullscreen.
+  // Leave that presentation before expanding the stage with our HTML controls.
+  try { if (video.webkitDisplayingFullscreen) video.webkitExitFullscreen?.(); } catch {}
+  fullscreen.expandPage();
+} });
 function isFs() { return fullscreen.active; }
 function toggleFullscreen() { fullscreen.toggle().catch(() => {}); }
 $('#fsBtn').addEventListener('click', toggleFullscreen);
@@ -3073,8 +3083,12 @@ function showAnimeResults(q, list) {
 }
 $('#animeForm').addEventListener('submit', e => { e.preventDefault(); animeSearch($('#animeQuery').value); });
 
+function animeAutomationLeader() {
+  const leader = S.people.find(person => person.animeLeader);
+  return leader ? leader.id === S.me?.id : isHost;
+}
 function saveAnimeProgress(status = player?.status(), flush = false) {
-  if (!isHost || !conn || !status || !['anime', 'megaplay'].includes(S.movie?.kind)) return;
+  if (!animeAutomationLeader() || !conn || !status || !['anime', 'megaplay'].includes(S.movie?.kind)) return;
   conn.send({ type: 'anime-progress', status, flush });
 }
 function returnHome() {
@@ -3108,7 +3122,6 @@ function animeEpisodeLabel(id, episode) {
 }
 
 function renderAnimeHistory() {
-  if (!isHost) return;
   const groups = new Map();
   for (const entry of S.animeHistory) {
     if (!groups.has(entry.anilistId)) groups.set(entry.anilistId, []);
@@ -3122,7 +3135,7 @@ function renderAnimeHistory() {
   continueBox.hidden = !visible.length;
   $('#stageEmpty').classList.toggle('has-history', !!visible.length);
   stage.classList.toggle('has-history', !!visible.length);
-  continueBox.innerHTML = visible.length ? `<div class="anime-resume-heading"><div><p>Your anime</p><h2>Continue watching</h2></div></div><div class="shelf-frame"><div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg></button><button type="button" data-shelf-page="1" aria-label="Next continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 6 6-6 6M20 12H4"/></svg></button></div><div class="anime-resume-grid" id="animeResumeShelf" tabindex="0" role="region" aria-label="Continue watching titles">${visible.map(entries => animeResumeCard({ ...entries[0], poster: entries.find(entry => entry.poster)?.poster || '' })).join('')}</div></div>` : '';
+  continueBox.innerHTML = visible.length ? `<div class="anime-resume-heading"><div><p>Your anime</p><h2>Continue watching</h2></div></div><div class="shelf-frame"><div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg></button><button type="button" data-shelf-page="1" aria-label="Next continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 6 6-6 6M20 12H4"/></svg></button></div><div class="anime-resume-grid" id="animeResumeShelf" tabindex="0" role="region" aria-label="Continue watching titles">${visible.map(entries => animeResumeCard({ ...entries[0], canDismiss: isHost, poster: entries.find(entry => entry.poster)?.poster || '' })).join('')}</div></div>` : '';
   if (visible.length) continueBox.querySelector('.anime-resume-grid').scrollLeft = scrollLeft;
   if (focusedKey) {
     const replacement = $$('#animeContinue button').find(button => Object.entries(focusedKey).every(([key, value]) => button.dataset[key] === value));
@@ -3136,9 +3149,10 @@ function renderAnimeHistory() {
 
 function onAnimeHistoryClick(event) {
   const button = event.target.closest('[data-history-play], [data-history-dismiss]');
-  if (!button || !isHost) return;
+  if (!button) return;
   const id = Number(button.dataset.historyPlay || button.dataset.historyDismiss);
   if (button.dataset.historyDismiss) {
+    if (!isHost) return;
     conn.send({ type: 'anime-continue-dismiss', anilistId: id });
     return;
   }
@@ -3247,9 +3261,15 @@ video.addEventListener('loadeddata', () => { if (video.readyState >= 3) hideTune
 
 function renderAnimeOverlay() {
   const button = $('#animeNext');
+  const nextControl = $('#episodeNextBtn');
   const toggle = $('#animeLangToggle');
   const catalogToggle = $('#catalogLangToggle');
   const m = S.movie;
+  const hasNext = !!m && (['anime', 'megaplay'].includes(kindOf(m))
+    ? !m.episodes || Number(m.episode) < Number(m.episodes)
+    : kindOf(m) === 'catalog' && m.catalogRef?.type === 'tv' && m.hasNext);
+  nextControl.hidden = !m || !['anime', 'megaplay', 'catalog'].includes(kindOf(m));
+  nextControl.disabled = !hasNext;
   if (m && kindOf(m) === 'catalog') {
     toggle.hidden = true;
     const languages = Array.isArray(m.languages) ? m.languages : [];
@@ -3286,6 +3306,7 @@ $('#animeNext').addEventListener('click', () => {
   if (Number(m.episodes) > 0 && episode >= Number(m.episodes)) return;
   selectAnime({ anilistId: m.anilistId, malId: m.malId || 0, ep: episode + 1, episodes: m.episodes || 0, lang: m.language, title: m.animeTitle || 'Anime' });
 });
+$('#episodeNextBtn').addEventListener('click', () => $('#animeNext').click());
 $('#catalogLangToggle').addEventListener('click', e => {
   const button = e.target.closest('[data-lang]');
   const m = S.movie;
@@ -3340,8 +3361,8 @@ setInterval(() => {
 }, 400);
 
 
-/* ---- Auto-skip intro / outro for the native anime player (host only) ----- */
-const AUTO_SKIP_DELAY = 3000; // host waits this long before auto-advancing at the outro
+/* Manual skips follow playback permissions; one elected viewer drives automation. */
+const AUTO_SKIP_DELAY = 3000; // the elected viewer waits before advancing at the outro
 const skipBtn = $('#animeSkip');
 skipBtn.appendChild(Object.assign(document.createElement('span'), { className: 'count' }));
 const autoSkipBtn = $('#autoSkipBtn');
@@ -3357,8 +3378,8 @@ function animeSkipTarget() {
   if (inRange(m.outro)) {
     const ep = Math.max(1, Number(m.episode) || 1);
     const hasNext = Number(m.episodes) > 0 && ep < Number(m.episodes) && m.anilistId;
-    if (!hasNext) return null;                             // last episode: show nothing at the outro
-    return { kind: 'outro', label: 'Next Episode', next: true };
+    return hasNext ? { kind: 'outro', label: 'Next Episode', next: true }
+      : { kind: 'outro', label: 'Skip Credits', to: m.outro.end };
   }
   return null;
 }
@@ -3376,12 +3397,14 @@ function hideSkip() { if (!skipBtn.hidden) skipBtn.hidden = true; skipBtn.classL
 function stopCount() { if (skipAutoTimer) { clearTimeout(skipAutoTimer); skipAutoTimer = null; } skipBtn.classList.remove('counting'); }
 
 function updateAnimeSkip() {
-  if (!isHost) { hideSkip(); skipCtx = null; return; }     // overlay is host-only; guests follow synced actions
+  if (!canControl()) { stopCount(); hideSkip(); skipCtx = null; return; }
   const t = animeSkipTarget();
-  if (!t) { hideSkip(); skipCtx = null; return; }
+  if (!t) { stopCount(); hideSkip(); skipCtx = null; return; }
   const playing = !!(S.state && S.state.playing);
-  const auto = autoSkipOn();
-  if (!skipCtx || skipCtx.kind !== t.kind) skipCtx = { kind: t.kind, cancelled: false, armed: false, done: false };
+  const auto = autoSkipOn() && animeAutomationLeader();
+  if (!skipCtx || skipCtx.kind !== t.kind || skipCtx.movieId !== S.movie.id) {
+    stopCount(); skipCtx = { movieId: S.movie.id, kind: t.kind, cancelled: false, armed: false, done: false };
+  }
 
   // auto ON + intro + playing -> skip directly, no overlay
   if (t.kind === 'intro' && auto && playing && !skipCtx.cancelled && !skipCtx.done) {
@@ -3394,7 +3417,7 @@ function updateAnimeSkip() {
   skipBtn.querySelector('.lbl').textContent = t.label;
 
   // outro auto-advance countdown: auto ON + playing + not cancelled
-  const wantCount = t.kind === 'outro' && auto && playing && !skipCtx.cancelled;
+  const wantCount = t.kind === 'outro' && t.next && auto && playing && !skipCtx.cancelled;
   if (wantCount && !skipCtx.armed) {
     skipCtx.armed = true;
     skipBtn.style.setProperty('--count-dur', (AUTO_SKIP_DELAY / 1000) + 's');
@@ -3402,7 +3425,7 @@ function updateAnimeSkip() {
     skipAutoTimer = setTimeout(() => {
       skipAutoTimer = null; skipBtn.classList.remove('counting');
       const now = animeSkipTarget();
-      if (now && now.kind === 'outro' && S.state && S.state.playing && !(skipCtx && skipCtx.cancelled)) {
+      if (now && now.next && animeAutomationLeader() && canControl() && S.state && S.state.playing && !(skipCtx && skipCtx.cancelled)) {
         doAnimeSkip(now); toast('Next episode', { timeout: 2500 });
       }
     }, AUTO_SKIP_DELAY);
@@ -3418,11 +3441,16 @@ skipBtn.addEventListener('click', e => {
   doAnimeSkip(t);
 });
 setInterval(updateAnimeSkip, 400);
+video.addEventListener('ended', () => {
+  const m = S.movie;
+  if (kindOf(m) !== 'anime' || !animeAutomationLeader() || !canControl() || !autoSkipOn()) return;
+  if (m.anilistId && (!m.episodes || Number(m.episode) < Number(m.episodes))) $('#animeNext').click();
+});
 
-/* control-bar auto-skip toggle (host only, shown for native anime) */
+/* The elected viewer controls automatic skips; other controllers can skip manually. */
 function renderAutoSkipBtn() {
   if (!autoSkipBtn) return;
-  const show = S.movie && kindOf(S.movie) === 'anime';
+  const show = S.movie && kindOf(S.movie) === 'anime' && canControl() && animeAutomationLeader();
   if (autoSkipBtn.hidden !== !show) autoSkipBtn.hidden = !show;
   const on = autoSkipOn();
   autoSkipBtn.classList.toggle('on', on);

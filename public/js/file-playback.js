@@ -87,6 +87,13 @@ export class FilePlayback {
       maxBufferHole: 0.5,
       backBufferLength: 90,
       enableWorker: true,
+      ...(source.bufferMode === 'extended' ? {
+        preferManagedMediaSource: false,
+        maxBufferLength: 90,
+        maxMaxBufferLength: 180,
+        maxBufferSize: 64 * 1000 * 1000,
+        backBufferLength: 30,
+      } : {}),
     });
     this.hls = hls;
     let manifestParsed = false;

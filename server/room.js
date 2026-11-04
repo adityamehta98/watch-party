@@ -139,7 +139,7 @@ class Room {
       state: this.state, movie: this.publicMovie(), chat: this.chat.slice(-60), bookmarks: this.bookmarks,
       peers: this.admitted().filter(c => c !== client).map(c => ({ id: c.id, name: c.name, media: c.media })),
       settings: this.publicSettings(client.role === 'host'),
-      ...(client.role === 'host' && this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden() } : {}),
+      ...(this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden() } : {}),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
     });
     if (client.role === 'host') this.fillAnimePosters();
@@ -186,6 +186,10 @@ class Room {
 
   canControl(client) { return !!client && (client.role === 'host' || (client.admitted && !!client.perms.playback && !this.customOn())); }
   canChoose(client) { return !!client && !!client.admitted; }
+  animeLeader() {
+    return this.admitted().filter(c => this.canControl(c)).sort((a, b) =>
+      Number(b.role === 'host') - Number(a.role === 'host') || a.id.localeCompare(b.id))[0] || null;
+  }
   customOn() { return !!(this.movie && this.movie.service === 'custom'); }
   // what a guest may see of the library: no folder names or paths on the host's PC
   guestLibrary() {
@@ -291,11 +295,12 @@ class Room {
 
   people(forHost) {
     const list = [];
+    const animeLeaderId = this.animeLeader()?.id;
     for (const c of this.clients.values()) {
       if (!c.admitted && !forHost) continue;
       const st = c.status || {};
       list.push({
-        id: c.id, name: c.name, role: c.role, admitted: c.admitted, perms: c.perms, media: c.media, ip: forHost && c.role !== 'host' ? c.ip : undefined,
+        id: c.id, name: c.name, role: c.role, admitted: c.admitted, perms: c.perms, media: c.media, animeLeader: c.id === animeLeaderId, ip: forHost && c.role !== 'host' ? c.ip : undefined,
         status: forHost ? {
           buffering: !!st.buffering, blocked: !!st.blocked, ahead: st.ahead == null ? null : Math.round(st.ahead),
           loaded: !!st.loaded, error: st.error || 0, stale: Date.now() - (st.at || 0) > 6000,
@@ -516,11 +521,11 @@ class Room {
     if (!sources.length) { this.toast(client, "That anime episode can't be played.", 'error'); return; }
     const id = 'a' + crypto.createHash('sha1').update(sources[0]).digest('hex').slice(0, 11);
     if (this.movie && this.movie.id === id && this.movie.kind === 'anime') {
-      if (client.role === 'host' && this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
-      if (client.role === 'host' && msg.restart) {
+      if (this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
+      if (msg.restart) {
         this.setState({ playing: true, position: 0, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
         if (this.animeHistory?.record(this.movie, 0, this.animeHistory.get(anilistId, episode)?.duration || 0)) this.sendAnimeHistory();
-      } else if (client.role === 'host' && msg.resume) {
+      } else if (msg.resume) {
         const saved = this.animeHistory?.get(anilistId, episode);
         const position = saved?.completed ? 0 : this.state.playing ? this.currentPosition() : saved?.position || this.state.position;
         this.setState({ playing: true, position, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
@@ -559,12 +564,12 @@ class Room {
       browsing: false, by: client.name, strict: false, ...meta };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
 
-    const saved = client.role === 'host' ? this.animeHistory?.get(anilistId, episode) : null;
-    if (client.role === 'host' && this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
+    const saved = this.animeHistory?.get(anilistId, episode);
+    if (this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
     const position = !msg.restart && saved && !saved.completed ? saved.position : 0;
     this.setState({ movieId: id, playing: false, position, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
-    if (client.role === 'host' && this.animeHistory?.record(meta, position, saved?.duration || 0)) this.sendAnimeHistory();
-    if (client.role === 'host') this.fillAnimePosters();
+    if (this.animeHistory?.record(meta, position, saved?.duration || 0)) this.sendAnimeHistory();
+    this.fillAnimePosters();
     this.system(`Now showing "${title}" (Anime)`);
   }
 
@@ -689,7 +694,8 @@ class Room {
         return;
       }
       case 'anime-progress': {
-        if (!isHost || !this.animeHistory || !['anime', 'megaplay'].includes(this.movie?.kind)) return;
+        const leader = this.animeLeader();
+        if ((leader ? leader.id !== client.id : !isHost) || !this.animeHistory || !['anime', 'megaplay'].includes(this.movie?.kind)) return;
         const st = msg.status || {};
         // Reject old-episode / pre-seek reports, including a new stream's initial 0:00 metadata.
         if (st.movieId !== this.movie.id || st.seq !== this.state.seq || !st.loaded || st.seeking || st.error
@@ -953,7 +959,7 @@ class Room {
   }
 
   sendAnimeHistory() {
-    this.broadcastHosts({ type: 'anime-history', episodes: this.animeHistory.list(), hidden: this.animeHistory.hidden() });
+    this.broadcast({ type: 'anime-history', episodes: this.animeHistory.list(), hidden: this.animeHistory.hidden() });
   }
 
   async fillAnimePosters() {

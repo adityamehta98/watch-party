@@ -10,7 +10,7 @@ export function playbackCapabilities(video, env = globalThis, platform = {}) {
   };
 }
 
-export function deliverySources(movie, capabilities, key, clientId) {
+export function deliverySources(movie, capabilities, key, clientId, { bufferMode = 'auto' } = {}) {
   if (!movie) return [];
   const auth = new URLSearchParams({ k: key });
   if (clientId) auth.set('c', clientId);
@@ -22,10 +22,11 @@ export function deliverySources(movie, capabilities, key, clientId) {
     const appleNative = capabilities?.hls && capabilities.nativeHlsPreferred;
 
     let types;
-    if (appleNative) types = ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])];
+    if (movie.kind === 'anime' && bufferMode === 'extended' && capabilities?.mse) types = ['hls-js', ...(appleNative ? ['native-hls'] : [])];
+    else if (appleNative) types = ['native-hls', ...(capabilities.mse ? ['hls-js'] : [])];
     else if (capabilities?.mse) types = ['hls-js', ...(appleNative ? ['native-hls'] : [])];
     else types = capabilities?.hls ? ['native-hls'] : [];
-    const hls = types.map(type => ({ type, url: signed(movie.hls) }));
+    const hls = types.map(type => ({ type, url: signed(movie.hls), ...(movie.kind === 'anime' && bufferMode === 'extended' && type === 'hls-js' ? { bufferMode: 'extended' } : {}) }));
     // Completed movies keep the faster ranged MP4 first; HLS-only (growing or anime) leads.
     if (!movie.url || movie.progressive) sources.unshift(...hls);
     else sources.push(...hls);

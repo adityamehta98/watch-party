@@ -28,6 +28,6 @@ export function animeResumeCard(entry) {
     </span>
     <span class="anime-resume-progress" role="progressbar" aria-label="Episode ${entry.episode} progress" aria-valuemin="0" aria-valuemax="100" ${duration ? `aria-valuenow="${percent.toFixed(1)}"` : ''} aria-valuetext="${esc(stamp)}"><span style="width:${percent.toFixed(3)}%"></span></span>
     </button>
-    <button type="button" class="anime-resume-dismiss" data-history-dismiss="${Number(entry.anilistId)}" aria-label="Remove ${esc(entry.animeTitle)} from Continue watching" title="Remove from Continue watching"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
+    ${entry.canDismiss === false ? '' : `<button type="button" class="anime-resume-dismiss" data-history-dismiss="${Number(entry.anilistId)}" aria-label="Remove ${esc(entry.animeTitle)} from Continue watching" title="Remove from Continue watching"><svg aria-hidden="true"><use href="#i-x"/></svg></button>`}
   </article>`;
 }

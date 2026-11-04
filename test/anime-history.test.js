@@ -135,7 +135,7 @@ test('native playback retains episode progress across audio languages and failed
   assert.equal(new AnimeHistory(f.file).get(151801, 3).position, 400);
 });
 
-test('history is host-only in welcome messages, broadcasts, and manual changes', async t => {
+test('admitted viewers share history while manual history edits remain host-only', async t => {
   const f = fixture(t), host = f.client('host'), guest = f.client('guest'), room = f.makeRoom();
   room.clients.set(host.id, host);
   room.clients.set(guest.id, guest);
@@ -144,10 +144,38 @@ test('history is host-only in welcome messages, broadcasts, and manual changes',
   room.admit(host, true);
   room.admit(guest, true);
   assert.equal(host.messages.find(m => m.type === 'welcome').animeHistory[0].position, 360);
-  assert.equal('animeHistory' in guest.messages.find(m => m.type === 'welcome'), false);
-  assert.equal(guest.messages.some(m => m.type === 'anime-history'), false);
+  assert.equal(guest.messages.find(m => m.type === 'welcome').animeHistory[0].position, 360);
+  assert.equal(guest.messages.some(m => m.type === 'anime-history'), true);
+  const pending = { ...f.client('guest'), id: 'pending01', admitted: false, messages: [] };
+  pending.ws = { readyState: 1, send: raw => pending.messages.push(JSON.parse(raw)) };
+  room.clients.set(pending.id, pending);
+  room.sendAnimeHistory();
+  assert.equal(pending.messages.length, 0, 'unapproved viewers receive no shared history');
   room.onMessage(guest, { type: 'anime-history-mark', anilistId: 151801, episode: 3, completed: true });
   assert.equal(f.history.get(151801, 3).completed, false);
+});
+
+test('a guest resumes shared history and records progress only when elected without a host', async t => {
+  const f = fixture(t), host = f.client('host'), guest = f.client('guest'), other = { ...f.client('guest'), id: 'guest02' };
+  const room = f.makeRoom();
+  room.clients.set(host.id, host);
+  room.clients.set(guest.id, guest);
+  room.clients.set(other.id, other);
+  await f.pick(room, host);
+  f.progress(room, host);
+  room.selectMovie(host, null);
+  await f.pick(room, guest, { resume: true });
+  assert.equal(room.state.position, 360, 'the guest resolves a fresh stream at the shared saved position');
+  f.progress(room, guest, { position: 400 });
+  assert.equal(f.history.get(151801, 3).position, 360, 'host reports take priority while connected');
+  room.clients.delete(host.id);
+  assert.equal(room.people(false).find(person => person.animeLeader).id, guest.id);
+  f.progress(room, other, { position: 500 });
+  assert.equal(f.history.get(151801, 3).position, 360, 'another guest cannot race the elected reporter');
+  f.progress(room, guest, { position: 420 }, true);
+  assert.equal(new AnimeHistory(f.file).get(151801, 3).position, 420);
+  guest.perms.playback = false;
+  assert.equal(room.animeLeader().id, other.id, 'revoking playback transfers automation to an eligible viewer');
 });
 
 test('history retains previous episodes and clamps malformed disk records', t => {

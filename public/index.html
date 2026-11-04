@@ -135,7 +135,7 @@
             <svg class="empty-icon"><use href="#i-film"/></svg>
             <h2 id="emptyTitle">Nothing is playing yet</h2>
             <p class="muted" id="emptyText">The host will pick a movie.</p>
-            <div id="animeContinue" class="anime-continue host-only" hidden></div>
+            <div id="animeContinue" class="anime-continue" hidden></div>
             <div class="empty-actions">
               <button class="btn primary" type="button" data-open-tab="library"><svg><use href="#i-film"/></svg>Open library</button>
               <button class="btn host-only" type="button" id="emptyInvite"><svg><use href="#i-link"/></svg>Invite people</button>
@@ -211,7 +211,8 @@
             <button class="ctrl" id="playBtn" type="button" title="Play / pause (Space)" aria-label="Play"><svg><use href="#i-play"/></svg></button>
             <button class="ctrl hide-sm" id="backBtn" type="button" title="Back 10 seconds (← key)" aria-label="Back 10 seconds"><svg><use href="#i-back10"/></svg></button>
             <button class="ctrl hide-sm" id="fwdBtn" type="button" title="Forward 10 seconds (→ key)" aria-label="Forward 10 seconds"><svg><use href="#i-fwd10"/></svg></button>
-            <button class="ctrl host-only" id="autoSkipBtn" type="button" hidden title="Auto-skip intros & credits" aria-label="Auto-skip intros and credits" aria-pressed="true"><svg><use href="#i-skip"/></svg></button>
+            <button class="ctrl" id="episodeNextBtn" type="button" hidden title="Next episode" aria-label="Next episode"><svg><use href="#i-skip"/></svg></button>
+            <button class="ctrl" id="autoSkipBtn" type="button" hidden title="Auto-skip intros & credits" aria-label="Auto-skip intros and credits" aria-pressed="true"><svg><use href="#i-skip"/></svg></button>
             <div class="volume">
               <button class="ctrl" id="muteBtn" type="button" title="Mute (M) · volume: ↑ ↓ keys" aria-label="Mute"><svg><use href="#i-vol"/></svg></button>
               <input type="range" id="volume" min="0" max="1" step="0.01" value="1" aria-label="Volume">
@@ -276,6 +277,11 @@
             <button class="icon-btn host-only" id="libRescan" type="button" title="Rescan folders" aria-label="Rescan"><svg><use href="#i-refresh"/></svg></button>
           </div>
           <p class="fine" id="libGuestNote" hidden>You can pick what everyone watches: a movie from the host's PC, or a streaming service. On a service, press play on anything in your window and the room (the host too) follows you.</p>
+          <div id="animeBufferPrefs" class="anime-buffer-prefs" hidden>
+            <label for="animeBufferMode">Anime buffering on this device</label>
+            <select id="animeBufferMode"><option value="auto">Automatic</option><option value="extended">More ahead</option></select>
+            <p class="fine">More ahead uses extra memory and may limit AirPlay. If playback becomes unreliable, use Automatic. iPadOS may still limit the buffer.</p>
+          </div>
           <details class="svc-pick" id="svcPick">
             <summary class="section-label">Watch together on a streaming service</summary>
             <p class="fine">Pick a service. It opens right here in the Watch Party window; sign in with your own account and press play on anything. Everyone else is brought to the same title and signs in with <b>their own</b> account. Needs the free <b>Watch Party Sync</b> extension (you and each guest).</p>
