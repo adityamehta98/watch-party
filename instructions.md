@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.17.3 must be reloaded after installing this build.
+release conditions. Extension 1.17.4 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -243,5 +243,10 @@ notices. New hand emoji with skin tones use Noto artwork when the base hand is
 missing from the device font.
 
 The picker has no Google credit rows above or below its results. Use the small
-information button for artwork credits. GIPHY’s required badge appears only in
-the compact GIF search header, with no footer.
+information button for artwork credits. GIPHY’s required badge appears only beside
+the icon tabs in GIF mode, with no extra header or footer row.
+
+The media picker and attachment previews use icons instead of visible labels,
+headings, hints or placeholders. Search remains available through the magnifier;
+skin tones use hand swatches. Control names and status details remain available
+to screen readers and on hover. The GIPHY badge stays legible at full opacity.

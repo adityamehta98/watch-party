@@ -696,7 +696,7 @@ See [Safari extension removal, unused-code results and FFmpeg compatibility chec
 
 Only one popup is shown at a time. The silent bell has no badge/count and opens your own received notifications with timestamps. Only the host can clear every viewer's history. Closing the panel keeps it; closing the host executable erases the in-memory history. Storage is bounded to 1,000 recent notices across the room.
 
-The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Supported emoji use the device font; missing color glyphs use static Google Noto artwork in the picker and rendered chat, without search analytics or GIPHY calls. Reload extension 1.17.3 after updating.
+The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Supported emoji use the device font; missing color glyphs use static Google Noto artwork in the picker and rendered chat, without search analytics or GIPHY calls. Reload extension 1.17.4 after updating.
 
 Continue Watching hides a series when its most recently watched episode is the known final episode with at most five minutes remaining. For short episodes, at least half must be watched. Saved progress remains available from the library and episode picker. Unknown episode totals are retained.
 
@@ -720,5 +720,10 @@ notices. New hand emoji with skin tones use Noto artwork when the base hand is
 missing from the device font.
 
 The picker has no Google credit rows above or below its results. Use the small
-information button for artwork credits. GIPHY’s required badge appears only in
-the compact GIF search header, with no footer.
+information button for artwork credits. GIPHY’s required badge appears only beside
+the icon tabs in GIF mode, with no extra header or footer row.
+
+The media picker and attachment previews use icons instead of visible labels,
+headings, hints or placeholders. Search remains available through the magnifier;
+skin tones use hand swatches. Control names and status details remain available
+to screen readers and on hover. The GIPHY badge stays legible at full opacity.
