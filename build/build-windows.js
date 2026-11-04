@@ -97,9 +97,13 @@ for (const f of fs.readdirSync(ffmpegBin)) {
 }
 const ffmpegVersion = execFileSync(path.join(ffmpegBin, 'ffmpeg.exe'), ['-version'], { encoding: 'utf8', windowsHide: true }).trim();
 packageNotices(ROOT, OUT, winNode, ffmpegBin, Object.keys(bundle.metafile.inputs), ffmpegVersion);
-for (const file of ['README.md', 'instructions.md', 'PRIVACY.md', 'SECURITY_AUDIT.md', 'DEAD_CODE_AND_FFMPEG.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
-fs.mkdirSync(path.join(OUT, 'docs'), { recursive: true });
-fs.copyFileSync(path.join(ROOT, 'docs', 'AUDIT_COVERAGE.md'), path.join(OUT, 'docs', 'AUDIT_COVERAGE.md'));
+for (const file of ['README.md', 'instructions.md', 'PRIVACY.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
+// Review reports are optional; required licenses are enforced by packageNotices above.
+for (const file of ['SECURITY_AUDIT.md', 'DEAD_CODE_AND_FFMPEG.md', 'docs/AUDIT_COVERAGE.md']) {
+  if (!fs.existsSync(path.join(ROOT, file))) continue;
+  fs.mkdirSync(path.dirname(path.join(OUT, file)), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
+}
 fs.copyFileSync(path.join(ROOT, 'refresh.bat'), path.join(OUT, 'refresh.bat'));
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log('built', OUT);
