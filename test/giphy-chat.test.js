@@ -19,7 +19,7 @@ class Element {
 }
 function fixture({key='exampleGiphyBetaKey',request}={}) {
  const nodes=new Map(), tabs=[new Element(),new Element(),new Element()];tabs[0].dataset.mode='emoji';tabs[1].dataset.mode='gif';tabs[2].dataset.mode='sticker';
- for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll','.stickers','.stickers input','.sticker-grid','.sticker-status','.sticker-more','.emoji-credit'])nodes.set(sel,new Element());
+ for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll','.stickers','.stickers input','.sticker-grid','.sticker-status','.sticker-more'])nodes.set(sel,new Element());
  nodes.get('select').value='default'; nodes.get('.gifs').hidden=true;nodes.get('.stickers').hidden=true;
  const root={querySelector:s=>nodes.get(s),querySelectorAll:()=>tabs}, picked=[];
  const container=new Element(); container.ownerDocument={createElement:()=>new Element()};container.attachShadow=()=>root;
