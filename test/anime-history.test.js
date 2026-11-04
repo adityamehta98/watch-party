@@ -274,3 +274,22 @@ test('removing Continue watching preserves episode history and stays removed acr
   assert.deepEqual(f.history.hidden(), [], 'explicit episode selection returns the card');
   assert.equal(f.history.get(151801, 1).completed, true);
 });
+
+for (const watchedBefore of [false, true]) test('Next then Previous preserves six minutes of ' + (watchedBefore ? 'a rewatch' : 'a first viewing'), async t => {
+  const f = fixture(t), host = f.client('host'), room = f.makeRoom();
+  if (watchedBefore) f.history.record({ ...mashle, episode: 4 }, 1400, 1440);
+  await f.pick(room, host, { ep: 4 });
+  f.progress(room, host, { position: 360 }, true);
+  const oldReport = { movieId: room.movie.id, seq: room.state.seq };
+  await f.pick(room, host, { ep: 5, resume: true });
+  f.progress(room, host, { position: 15 }, true);
+  f.progress(room, host, { ...oldReport, position: 1440, ended: true });
+  await f.pick(room, host, { ep: 4, resume: true });
+  assert.equal(room.state.position, 360, 'return to the saved six-minute position');
+  assert.equal(f.history.get(151801, 4).completed, watchedBefore, 'navigation cannot mark an unfinished episode watched');
+  assert.equal(new AnimeHistory(f.file).get(151801, 4).position, 360);
+  await f.pick(room, host, { ep: 4, resume: true });
+  assert.equal(room.state.position, 360, 'resuming the already selected episode also preserves progress');
+  await f.pick(room, host, { ep: 4, restart: true });
+  assert.equal(room.state.position, 0, 'an explicit restart still starts at the beginning');
+});

@@ -528,7 +528,7 @@ class Room {
         if (this.animeHistory?.record(this.movie, 0, this.animeHistory.get(anilistId, episode)?.duration || 0)) this.sendAnimeHistory();
       } else if (msg.resume) {
         const saved = this.animeHistory?.get(anilistId, episode);
-        const position = saved?.completed ? 0 : this.state.playing ? this.currentPosition() : saved?.position || this.state.position;
+        const position = saved?.completed && saved.position >= saved.duration * .9 ? 0 : this.state.playing ? this.currentPosition() : saved?.position || this.state.position;
         this.setState({ playing: true, position, anchor: Date.now() + START_DELAY_MS, waiting: false, waitingFor: [] }, { by: client.name, action: 'play' });
       }
       return;
@@ -567,7 +567,7 @@ class Room {
 
     const saved = this.animeHistory?.get(anilistId, episode);
     if (this.animeHistory?.restore(anilistId)) this.sendAnimeHistory();
-    const position = !msg.restart && saved && !saved.completed ? saved.position : 0;
+    const position = !msg.restart && saved && (!saved.completed || saved.position < saved.duration * .9) ? saved.position : 0;
     this.setState({ movieId: id, playing: false, position, anchor: Date.now(), waiting: true, waitingFor: [] }, { by: client.name, action: 'load' });
     if (this.animeHistory?.record(meta, position, saved?.duration || 0)) this.sendAnimeHistory();
     this.fillAnimePosters();
