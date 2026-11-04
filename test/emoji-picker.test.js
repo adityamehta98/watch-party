@@ -55,3 +55,18 @@ test('bundled animated sticker metadata references only official Google assets',
  for(const row of catalog.stickers){assert.equal(typeof row[1],'string');assert.match(row[3],/^[a-f0-9]{4,6}(?:_[a-f0-9]{4,6})*$/);}
  assert.match(read('public/data/noto.LICENSE.txt'),/Attribution 4.0 International/);assert.equal(read('extension/noto.LICENSE.txt'),read('public/data/noto.LICENSE.txt'));
 });
+
+test('missing glyphs use genuine Noto artwork in the picker and chat',()=>{
+ const context=vm.createContext({});vm.runInContext(read('public/js/emoji-picker.js'),context);
+ const emoji='\u{1faeb}',html=context.WpEmoji.emojiHtml(emoji,'cracking face',28);
+ assert.match(html,/\/1faeb\/128\.png/);assert.match(html,/cracking face/);assert.match(html,/referrerpolicy="no-referrer"/);assert.ok(html.includes(`alt="${emoji}"`));
+ assert.match(context.WpEmoji.chatHtml('Hello '+emoji),/\/1faeb\/128\.png/);assert.match(context.WpEmoji.chatHtml('<script>'+emoji),/&lt;script&gt;/);
+ assert.equal(catalog.emojis.find(row=>row[0]===emoji)[1],'cracking face');
+});
+test('glyph detection keeps native color emoji and falls back for boxes or split sequences',()=>{
+ let painted='',reads=0;const ctx={canvas:{},measureText:text=>({width:text.includes('\u200d')?64:32}),fillText:text=>{painted=text;},getImageData:()=>{reads++;return {data:painted==='😀'?new Uint8ClampedArray([255,180,0,255]):new Uint8ClampedArray([80,80,80,255])};}};
+ const context=vm.createContext({document:{createElement:()=>({getContext:()=>ctx})}});vm.runInContext(read('public/js/emoji-picker.js'),context);
+ assert.equal(context.WpEmoji.emojiHtml('😀','grinning face'),'😀');const before=reads;assert.equal(context.WpEmoji.emojiHtml('😀'),'😀');assert.equal(reads,before,'glyph checks are cached');
+ assert.match(context.WpEmoji.emojiHtml('\u{1faeb}','cracking face'),/128\.png/);
+ assert.match(context.WpEmoji.emojiHtml('👩\u200d🚒','woman firefighter'),/128\.png/);
+});

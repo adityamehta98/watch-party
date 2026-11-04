@@ -696,7 +696,7 @@ See [Safari extension removal, unused-code results and FFmpeg compatibility chec
 
 Only one popup is shown at a time. The silent bell has no badge/count and opens your own received notifications with timestamps. Only the host can clear every viewer's history. Closing the panel keeps it; closing the host executable erases the in-memory history. Storage is bounded to 1,000 recent notices across the room.
 
-The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Appearance depends on the device's emoji font; no third-party emoji CDN or analytics is used. Reload extension 1.17.0 after updating.
+The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Supported emoji use the device font; missing color glyphs use static Google Noto artwork in the picker and rendered chat, without search analytics or GIPHY calls. Reload extension 1.17.1 after updating.
 
 Continue Watching hides a series when its most recently watched episode is the known final episode with at most five minutes remaining. For short episodes, at least half must be watched. Saved progress remains available from the library and episode picker. Unknown episode totals are retained.
 

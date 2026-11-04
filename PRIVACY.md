@@ -70,7 +70,7 @@ and [Chrome Web Store user-data requirements](https://developer.chrome.com/docs/
 describe relevant disclosure obligations. Jurisdiction, audience and distribution
 model still require assessment before a public launch.
 
-Notification histories are private to the viewer's server-bound session and live only in host-process memory (at most 1,000 recent notices across the room). The host-only clear command clears every viewer's notification history. Closing the panel does not clear it; stopping the host process does. No unread badge or notification count is generated. Picture brightness is local and does not change device hardware settings. Standard Unicode emoji use the local host/extension catalog and device font; no emoji CDN or analytics service is contacted for those.
+Notification histories are private to the viewer's server-bound session and live only in host-process memory (at most 1,000 recent notices across the room). The host-only clear command clears every viewer's notification history. Closing the panel does not clear it; stopping the host process does. No unread badge or notification count is generated. Picture brightness is local and does not change device hardware settings. Standard Unicode emoji use the local catalog and device font where available. When a device lacks a usable color glyph, the picker/chat loads a static Google Noto image from fonts.gstatic.com; Google receives your IP and asset path. No search text or optional analytics is sent to Google.
 
 GIF search is optional and uses the host's GIPHY beta API key. Only the host can
 change it; GIPHY requires direct browser requests, so this public client key is

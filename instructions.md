@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.17.0 must be reloaded after installing this build.
+release conditions. Extension 1.17.1 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -230,3 +230,8 @@ from Google when displayed. An internet connection is still needed. The fallback
 is an animated sticker catalog; arbitrary GIF searches still use GIPHY. Choosing
 a GIF/sticker displays a removable preview before Send. Skin tone applies to
 hands and people; Unicode smileys remain yellow. Emoji-only chat is shown larger.
+
+If the device font cannot draw a color emoji (for example Unicode 18 cracking
+face), the picker and received chat use a static Google Noto image. This requires
+an internet connection and does not use GIPHY calls. The emoji still sends as
+Unicode text. Native text inputs and other apps depend on their own emoji fonts.

@@ -58,3 +58,8 @@ and license. Complete terms are in LICENSES/Google-Noto-CC-BY-4.0.txt in the bui
 and public/data/noto.LICENSE.txt in source. Catalog metadata was taken from
 https://googlefonts.github.io/noto-emoji-files/; its source hash is recorded in the
 local emoji catalog. No image collection is bundled.
+
+Unsupported native color emoji also use unmodified static Noto artwork from
+https://fonts.gstatic.com/s/e/notoemoji/latest/<codepoints>/128.png, credited as
+Google Noto (CC BY 4.0). The same bundled license applies; no emoji font or image
+collection is included in the executable.
