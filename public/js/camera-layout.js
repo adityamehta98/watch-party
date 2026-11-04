@@ -1,39 +1,40 @@
 const RATIO = 9.5 / 16;
-const overlaps = (a, b) => a.x < b.x + b.width + 4 && a.x + a.width + 4 > b.x
-  && a.y < b.y + b.height + 4 && a.y + a.height + 4 > b.y;
+export const CAMERA_LIMIT = 4;
 
-export function cameraLayout(width, height, ids, saved = {}) {
-  if (!(width > 0 && height > 0) || !ids.length) return [];
-  const margin = Math.min(12, width / 12, height / 12), gap = 8;
-  const top = height > 180 ? 64 : margin;
-  const bottom = height > 180 ? 86 : margin;
-  const availableW = width - margin * 2, availableH = height - top - bottom;
-  const target = width < 700 ? 116 : 184;
-  let best = { width: 0, columns: 1, rows: ids.length };
-  for (let columns = 1; columns <= ids.length; columns++) {
-    const rows = Math.ceil(ids.length / columns);
-    const fit = Math.min(target, (availableW - gap * (columns - 1)) / columns,
-      (availableH - gap * (rows - 1)) / rows / RATIO);
-    if (fit > best.width) best = { width: fit, columns, rows };
-  }
-  // Extremely small viewports still keep a valid, non-overlapping grid.
-  if (best.width <= 0) {
-    return ids.map((id, index) => ({ id, x: index * width / ids.length, y: 0,
-      width: width / ids.length, height: Math.min(height, width / ids.length * RATIO) }));
-  }
-  const grid = ids.map((id, index) => ({ id,
-    width: best.width, height: best.width * RATIO,
-    x: width - margin - best.width - Math.floor(index / best.rows) * (best.width + gap),
-    y: top + (index % best.rows) * (best.width * RATIO + gap) }));
-  const placed = grid.map(tile => {
-    const value = saved[tile.id];
-    // Legacy layouts can contain overlapping positions or unequal stale sizes.
-    if (!value?.manual || ![value.x, value.y, value.w].every(Number.isFinite)) return tile;
-    const w = Math.max(24, Math.min(width * .6, height / RATIO, value.w * width));
-    return { ...tile, width: w, height: w * RATIO,
-      x: Math.max(0, Math.min(width - w, value.x * width)),
-      y: Math.max(0, Math.min(height - w * RATIO, value.y * height)) };
+// Pins own slots, rather than positions in the paged list.
+export function cameraPage(ids, savedPins = [], requestedPage = 0) {
+  ids = [...new Set(ids)];
+  const slots = Math.min(CAMERA_LIMIT, ids.length);
+  const pins = Array(CAMERA_LIMIT).fill(null), deferred = [];
+  const seen = new Set();
+  savedPins.slice(0, CAMERA_LIMIT).forEach((id, slot) => {
+    if (!ids.includes(id) || seen.has(id)) return;
+    seen.add(id);
+    if (slot < slots) pins[slot] = id;
+    else deferred.push(id);
   });
-  // A new participant or resize must not inherit a collision with a saved tile.
-  return placed.some((tile, i) => placed.slice(i + 1).some(other => overlaps(tile, other))) ? grid : placed;
+  for (const id of deferred) pins[pins.indexOf(null)] = id;
+  const remaining = ids.filter(id => !seen.has(id));
+  const open = Array.from({ length: slots }, (_, slot) => slot).filter(slot => !pins[slot]);
+  const pages = open.length ? Math.max(1, Math.ceil(remaining.length / open.length)) : 1;
+  const page = Math.max(0, Math.min(pages - 1, Math.floor(requestedPage) || 0));
+  const entries = pins.flatMap((id, slot) => id ? [{ id, slot, pinned: true }] : []);
+  remaining.slice(page * open.length, (page + 1) * open.length).forEach((id, index) => {
+    entries.push({ id, slot: open[index], pinned: false });
+  });
+  return { entries: entries.sort((a, b) => a.slot - b.slot), pins, page, pages, slots,
+    total: ids.length, locked: !open.length && remaining.length > 0 };
+}
+
+export function cameraLayout(width, height, entries, slots = entries.length) {
+  if (!(width > 0 && height > 0) || !slots) return [];
+  const margin = Math.min(12, width / 12, height / 12);
+  const gap = Math.min(8, width / (slots * 4));
+  // Keep the anime controls clear on both narrow and wide screens.
+  const top = width < 700 && height > 180 ? 60 : margin;
+  const availableW = width - margin * 2 - (width >= 700 ? 300 : 0);
+  const tileWidth = Math.max(1, Math.min(width < 700 ? 116 : 184,
+    (availableW - gap * (slots - 1)) / slots, (height - top - margin) / RATIO));
+  return entries.map(entry => ({ ...entry, width: tileWidth, height: tileWidth * RATIO,
+    x: width - margin - tileWidth - entry.slot * (tileWidth + gap), y: top }));
 }

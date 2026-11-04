@@ -1,6 +1,6 @@
 import { Connection } from './net.js';
 import { animeResumeCard } from './anime-resume.js';
-import { cameraLayout } from './camera-layout.js';
+import { createCameraGallery } from './camera-gallery.js';
 import { SyncPlayer, DEVICE } from './player.js';
 import { PLATFORM, installTarget } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
@@ -1479,54 +1479,11 @@ $('#animeCamBtn').addEventListener('click', () => $('#camBtn').click());
 $('#animeMicBtn').addEventListener('click', () => $('#micBtn').click());
 
 const tiles = new Map();
-let camLayout = store.get('wp.camLayout', {});
-const layoutKey = id => (id === clientId ? 'self' : id);
+const cameraGallery = createCameraGallery($('#cams'));
 
 function placeTiles() {
-  if (pipWin) return; // in the pop-out window they sit in a grid
-  const W = stage.clientWidth, H = stage.clientHeight;
-  if (!W || !H) return;
-  const saved = Object.fromEntries([...tiles.keys()].map(id => [id, camLayout[layoutKey(id)]]));
-  for (const tile of cameraLayout(W, H, [...tiles.keys()], saved)) {
-    Object.assign(tiles.get(tile.id).el.style, { width: `${tile.width}px`, height: `${tile.height}px`, left: `${tile.x}px`, top: `${tile.y}px` });
-  }
-}
-
-function saveTile(id, el) {
-  const W = stage.clientWidth, H = stage.clientHeight;
-  camLayout[layoutKey(id)] = { x: el.offsetLeft / W, y: el.offsetTop / H, w: el.offsetWidth / W, manual: true };
-  store.set('wp.camLayout', camLayout);
-}
-
-function makeDraggable(id, el) {
-  let mode = null, sx = 0, sy = 0, ox = 0, oy = 0, ow = 0;
-  el.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || inPip()) return;
-    mode = e.target.closest('.grip') ? 'resize' : 'move';
-    sx = e.clientX; sy = e.clientY; ox = el.offsetLeft; oy = el.offsetTop; ow = el.offsetWidth;
-    el.setPointerCapture(e.pointerId);
-    el.classList.add('dragging');
-    e.preventDefault(); e.stopPropagation();
-  });
-  el.addEventListener('pointermove', e => {
-    if (!mode) return;
-    const W = stage.clientWidth, H = stage.clientHeight;
-    if (mode === 'move') {
-      const w = el.offsetWidth, h = el.offsetHeight;
-      el.style.left = `${Math.max(0, Math.min(W - w, ox + e.clientX - sx))}px`;
-      el.style.top = `${Math.max(0, Math.min(H - h, oy + e.clientY - sy))}px`;
-    } else {
-      const w = Math.max(90, Math.min(W * 0.6, W - ox, ow + e.clientX - sx));
-      el.style.width = `${w}px`;
-      el.style.height = `${w * 9.5 / 16}px`;
-    }
-    poke();
-  });
-  const end = () => { if (!mode) return; mode = null; el.classList.remove('dragging'); saveTile(id, el); placeTiles(); };
-  el.addEventListener('pointerup', end);
-  el.addEventListener('pointercancel', end);
-  el.addEventListener('dblclick', e => { e.stopPropagation(); delete camLayout[layoutKey(id)]; store.set('wp.camLayout', camLayout); placeTiles(); });
-  el.addEventListener('click', e => e.stopPropagation());
+  cameraGallery.sync(tiles);
+  cameraGallery.layout(stage.clientWidth, stage.clientHeight);
 }
 
 function renderCams() {
@@ -1537,21 +1494,18 @@ function renderCams() {
   if (S.cam) want.push({ id: clientId, name: S.me?.name || S.name, self: true, media: { cam: S.cam, mic: S.mic } });
   for (const [id, p] of S.peers) if (p.media && p.media.cam) want.push({ id, name: p.name, self: false, media: p.media });
   const keep = new Set(want.map(w => w.id));
-  let changed = false;
-  for (const [id, t] of tiles) if (!keep.has(id)) { t.el.remove(); tiles.delete(id); changed = true; }
+  for (const [id, t] of tiles) if (!keep.has(id)) { t.el.remove(); tiles.delete(id); }
   for (const w of want) {
     let t = tiles.get(w.id);
     if (!t) {
       const el = document.createElement('div');
       el.className = 'tile' + (w.self ? ' self' : '');
-      el.title = 'Drag to move · drag the corner to resize · double-click to reset';
-      el.innerHTML = `<video autoplay playsinline ${w.self ? 'muted' : ''}></video><div class="avatar">${avatar(w.name, '')}</div><div class="label"></div><div class="grip" aria-hidden="true"></div>`;
+      el.innerHTML = `<video autoplay playsinline ${w.self ? 'muted' : ''}></video><div class="avatar">${avatar(w.name, '')}</div><div class="label"></div>`;
       box.appendChild(el);
       t = { el, v: el.querySelector('video') };
       tiles.set(w.id, t);
-      makeDraggable(w.id, el);
-      changed = true;
     }
+    t.name = w.self ? 'your' : w.name;
     const stream = w.self ? localPreview : S.remoteStreams.get(w.id);
     if (w.self) {
       for (const tr of localPreview.getTracks()) localPreview.removeTrack(tr);
@@ -1562,7 +1516,7 @@ function renderCams() {
     t.v.style.visibility = w.media.cam ? 'visible' : 'hidden';
     t.el.querySelector('.label').innerHTML = `${icon(w.media.mic ? 'mic' : 'mic-off')}<span>${esc(w.self ? 'You' : w.name)}</span>`;
   }
-  if (changed) placeTiles();
+  placeTiles();
 }
 if (window.ResizeObserver) new ResizeObserver(() => placeTiles()).observe(stage);
 
@@ -2330,6 +2284,7 @@ async function togglePip(opts = {}) {
   doc.title = 'Watch Party';
   const cams = $('#cams');
   doc.body.appendChild(cams);
+  placeTiles();
   cams.querySelectorAll('video').forEach(v => v.play().catch(() => {}));
   doc.body.insertAdjacentHTML('beforeend', `
     <div class="pop-note" id="popNote" hidden></div>

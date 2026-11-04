@@ -95,11 +95,14 @@ policies can pause ambient effects; the menu retains the controls and describes
 the active policy. iPhone browsers may not expose a battery percentage, so the
 manual battery-saver control remains available without automatic battery sensing.
 
-Camera tiles use a common responsive default size and reflow into clear grid
-slots when participants join or the player resizes. Old unmarked layouts are
-ignored. New explicit drag/resize layouts are retained only while they do not
-collide; a collision causes a grid reflow. The app never needs camera permission
-merely to compute or test tile placement.
+Camera tiles form a horizontal strip at the top right of the player, with up to
+four equally sized cameras visible. Left/right arrows appear with more than four
+active cameras. Pin a camera to keep its exact slot while paging through the
+others; pins apply only to your view and last while that camera remains connected.
+If all four slots are pinned, unpin one to browse the remaining cameras. The strip
+replaces old free-floating saved positions. On narrow screens it sits below the
+anime controls. Layout tests and the local preview use synthetic participants and
+never request camera or microphone access.
 
 Intro/outro buttons depend on timing metadata supplied by the provider. Do not
 guess an intro length when metadata is absent. Automatic next episode also runs at

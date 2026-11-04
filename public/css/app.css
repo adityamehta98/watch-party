@@ -274,7 +274,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .pip-body { margin: 0; background: #0a0b0e; }
 .pip-body .cams { position: static; inset: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 8px; pointer-events: auto; overflow: auto; height: 100vh; box-sizing: border-box; }
 .pip-body .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; cursor: default; }
-.pip-body .tile .grip { display: none; }
 
 /* controls */
 .controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 36px 14px 10px; z-index: 5;
@@ -352,11 +351,10 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .toast .acts { display: flex; gap: 6px; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } }
 
-/* cams: free-floating, draggable, resizable */
+/* Camera video tiles */
 .cams { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
 .tile { position: absolute; width: 184px; aspect-ratio: 16 / 9.5; border-radius: 12px; overflow: hidden; background: #16181d; border: 1px solid rgba(255,255,255,.1);
-  box-shadow: 0 10px 28px rgba(0,0,0,.45); pointer-events: auto; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
-.tile.dragging { cursor: grabbing; box-shadow: 0 16px 40px rgba(0,0,0,.6); border-color: rgba(245,181,68,.6); }
+  box-shadow: 0 10px 28px rgba(0,0,0,.45); pointer-events: auto; touch-action: auto; cursor: default; user-select: none; -webkit-user-select: none; }
 .tile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 .tile.self video { transform: scaleX(-1); }
 .tile .avatar { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
@@ -364,10 +362,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .tile .label { position: absolute; left: 6px; bottom: 6px; display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,.6); padding: 2px 7px; border-radius: 99px; font-size: 11.5px; font-weight: 600; max-width: calc(100% - 30px); pointer-events: none; }
 .tile .label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tile .label svg { width: 13px; height: 13px; }
-.tile .grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; opacity: 0; transition: opacity .15s;
-  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.55) 50%, rgba(255,255,255,.55) 58%, transparent 58%, transparent 70%, rgba(255,255,255,.55) 70%, rgba(255,255,255,.55) 78%, transparent 78%); }
-.tile:hover .grip, .tile.dragging .grip { opacity: 1; }
-@media (hover: none) { .tile .grip { opacity: .8; } }
 
 /* chat float in fullscreen */
 .chat-float { position: absolute; left: 16px; bottom: 96px; width: min(380px, 60%); display: flex; flex-direction: column; gap: 6px; pointer-events: none; z-index: 4; }
@@ -619,9 +613,8 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .side-cams { display: none; }
 #app.theater-svc .side-cams { display: block; border-bottom: 1px solid var(--border); }
 .side-cams .cams { position: static; inset: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; padding: 8px; pointer-events: auto; overflow: visible; max-height: 42vh; overflow-y: auto; }
-.side-cams .cams:empty { display: none; }
+.side-cams .cams:not(.has-cameras) { display: none; }
 .side-cams .tile { position: relative; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; cursor: default; }
-.side-cams .tile .grip { display: none; }
 #app.theater-svc .stage > :not(.cams):not(video):not(.toasts) { visibility: hidden; }
 /* the streaming site covers the stage, so pop-up messages ("Priya wants to join") move over the sidebar */
 #app.theater-svc .toasts { display: none; } /* mirrored by the theater wrapper above Netflix */
@@ -1399,3 +1392,26 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .btn.sm.watch-svc { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-2); background: rgba(255,255,255,.03); color: var(--text); font-weight: 600; transition: border-color .15s, background .15s, transform .12s; }
 .btn.sm.watch-svc::before { content: ''; width: 9px; height: 9px; border-radius: 3px; background: var(--svc, var(--accent)); flex: none; }
 .btn.sm.watch-svc:hover { border-color: rgba(245,181,68,.5); background: rgba(245,181,68,.08); transform: translateY(-1px); color: #fff; }
+/* Horizontal camera strip. Pins keep their slot while the other cameras page. */
+.cams:not(.has-cameras), .cams [hidden] { display: none !important; }
+.tile { cursor: default; touch-action: auto; transition: border-color .18s, box-shadow .18s; }
+.tile.pinned { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(245,181,68,.18), 0 8px 24px rgba(0,0,0,.4); }
+.camera-pin, .camera-page { display: grid; place-items: center; padding: 0; color: #fff; background: rgba(15,17,22,.88); border: 1px solid rgba(255,255,255,.2); border-radius: 50%; cursor: pointer; pointer-events: auto; }
+.camera-pin { position: absolute; right: 5px; top: 5px; width: 28px; height: 28px; }
+.camera-pin[aria-pressed="true"] { color: #15120b; background: var(--accent); border-color: var(--accent); }
+.camera-pin svg, .camera-page svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.camera-pin:hover, .camera-page:not(:disabled):hover { border-color: var(--accent); transform: scale(1.06); }
+.camera-pin:focus-visible, .camera-page:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.camera-pages { position: absolute; display: flex; align-items: center; gap: 10px; pointer-events: auto; padding: 4px; border-radius: 24px; background: rgba(10,11,14,.85); border: 1px solid rgba(255,255,255,.12); }
+.camera-page { width: 30px; height: 30px; transition: transform .15s, border-color .15s; }
+.camera-page:disabled { opacity: .35; cursor: default; }
+.camera-pages span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pip-body .cams, .side-cams .cams { grid-template-columns: repeat(var(--camera-slots, 1), minmax(0, 1fr)); }
+.pip-body .camera-pages, .side-cams .camera-pages { position: static; grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+.pip-body .tile, .side-cams .tile { min-width: 0; }
+@media (max-width: 450px) {
+  .tile { border-radius: 9px; }
+  .tile .label { left: 3px; bottom: 3px; padding: 2px 4px; gap: 2px; font-size: 10px; max-width: calc(100% - 6px); }
+  .tile .label svg { width: 10px; height: 10px; flex-shrink: 0; }
+  .camera-pin { top: 2px; right: 2px; width: 26px; height: 26px; }
+}
