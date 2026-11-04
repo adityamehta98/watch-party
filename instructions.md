@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.16.0 must be reloaded after installing this build.
+release conditions. Extension 1.16.1 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -211,3 +211,7 @@ the host can change the key, but it is browser-visible to admitted viewers becau
 GIPHY prohibits server proxies. Clearing the field and saving removes the key.
 Some streaming-service pages restrict external image previews; their GIF link
 remains clickable. Google's Tenor API closed on June 30, 2026.
+
+Skin tone is a preference: neutral emoji stay visible, while hands/people use the
+chosen tone where supported. GIF trending loads when its tab opens and recovers
+if the host adds or changes the key while the picker is already on that tab.

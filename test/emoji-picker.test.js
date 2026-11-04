@@ -34,3 +34,18 @@ test('room keeps reactions compact while chat preserves complete emoji sequences
   room.onMessage(guest, { type: 'chat', text: `Hello ${longest} 🇮🇳 👍🏽` });
   assert.equal(messages.at(-1).message.text, `Hello ${longest} 🇮🇳 👍🏽`);
 });
+
+test('skin tones keep neutral emoji visible and select matching variants in every category',()=>{
+ const context=vm.createContext({});vm.runInContext(read('public/js/emoji-picker.js'),context);const search=context.WpEmoji.search;
+ for(const tone of ['🏻','🏼','🏽','🏾','🏿']){
+  assert.ok(search(catalog,'',0,tone).some(([emoji])=>emoji==='😀'),'faces remain visible for '+tone);
+  assert.ok(search(catalog,'',catalog.groups.indexOf('Animals & Nature'),tone).some(([emoji])=>emoji==='🦒'));
+  const thumbs=search(catalog,'thumbs up',-1,tone).map(([emoji])=>emoji);
+  assert.ok(thumbs.includes('👍'+tone));assert.ok(!thumbs.includes('👍'));
+  assert.ok(thumbs.every(emoji=>(emoji.match(/[\u{1f3fb}-\u{1f3ff}]/gu)||[]).every(value=>value===tone)));
+  const hands=search(catalog,'',catalog.groups.indexOf('People & Body'),tone).map(([emoji])=>emoji);
+  assert.ok(hands.includes('☝'+tone));assert.ok(!hands.includes('☝️'),'variation selectors do not duplicate the neutral hand');
+ }
+ assert.ok(search(catalog,'',-1,'all').some(([emoji])=>emoji==='👍🏿'));
+ assert.ok(search(catalog,'',-1,'default').every(([emoji])=>!/[\u{1f3fb}-\u{1f3ff}]/u.test(emoji)));
+});

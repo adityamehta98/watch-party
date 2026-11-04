@@ -20,10 +20,10 @@ class Element {
 function fixture({key='exampleGiphyBetaKey',request}={}) {
  const nodes=new Map(), tabs=[new Element(),new Element()];tabs[0].dataset.mode='emoji';tabs[1].dataset.mode='gif';
  for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll'])nodes.set(sel,new Element());
- nodes.get('select').value='default';
+ nodes.get('select').value='default'; nodes.get('.gifs').hidden=true;
  const root={querySelector:s=>nodes.get(s),querySelectorAll:()=>tabs}, picked=[];
  const container=new Element(); container.ownerDocument={createElement:()=>new Element()};container.attachShadow=()=>root;
- const api=load().create(container,{load:async()=>({groups:['Faces'],emojis:[['😀','smile',0]]}),onPick:v=>picked.push(v),giphyKey:()=>key,request});
+ const api=load().create(container,{load:async()=>({groups:['Faces'],emojis:[['😀','smile',0]]}),onPick:v=>picked.push(v),giphyKey:()=>typeof key === 'function' ? key() : key,request});
  return {api,nodes,tabs,picked};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -60,4 +60,18 @@ test('GIF key editing requires local host authentication and validates before sa
  assert.equal((await call(true,'host-only-secret','invalid<script>')).status,400);assert.equal(saves,0);
  assert.equal((await call(true,'host-only-secret','examplePublicKey123')).status,200);assert.equal(config.giphyKey,'examplePublicKey123');assert.equal(broadcasts,1);
  assert.equal((await call(true,'host-only-secret','')).status,200);assert.equal(config.giphyKey,'');assert.equal(saves,2);
+});
+
+test('an open GIF tab automatically loads trending after a key arrives or changes',async()=>{
+ let key='',calls=[];const f=fixture({key:()=>key,request:async url=>{calls.push(new URL(url));return {data:[]};}});
+ await f.api.open();f.tabs[1].listeners.click();await tick();assert.equal(calls.length,0);
+ key='firstPublicGiphyKey';await f.api.open();await tick();assert.equal(calls.length,1);assert.equal(calls[0].pathname,'/v1/gifs/trending');
+ await f.api.open();await f.api.open();assert.equal(calls.length,1,'extension refreshes do not consume more quota');
+ f.nodes.get('.gifs input').value='old search';key='replacementPublicKey';await f.api.open();await tick();assert.equal(calls.length,2);assert.equal(calls[1].pathname,'/v1/gifs/trending');assert.equal(f.nodes.get('.gifs input').value,'');
+});
+test('extension refreshes do not repeatedly retry a failed automatic trending load',async()=>{
+ let key='',calls=0;const f=fixture({key:()=>key,request:async()=>{calls++;throw Error('Free GIF search limit reached. Try again later.');}});
+ f.tabs[1].listeners.click();key='publicGiphyBetaKey';await f.api.open();await tick();assert.equal(calls,1);
+ await f.api.open();await f.api.open();await tick();assert.equal(calls,1);
+ f.tabs[1].listeners.click();await tick();assert.equal(calls,2,'an explicit user click can retry');
 });
