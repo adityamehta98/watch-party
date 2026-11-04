@@ -184,7 +184,7 @@ export class RemoteMedia extends AdapterBase {
   onMessage(e) {
     if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
-    if (m.type === 'hello') { this.present = true; this.version = m.version; this.platform = m.platform || 'chromium'; this.onInfo(); }
+    if (m.type === 'hello') { this.present = true; this.version = m.version; this.onInfo(); }
     else if (m.type === 'catalog-launch-result') { if (this.movie?.launchId === m.id) this.onLaunchResult?.(m); }
     else if (m.type === 'ext-problem') { this.onProblem && this.onProblem(m); }
     else if (m.type === 'linked') {
@@ -333,9 +333,9 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.15.1';
+export const REQUIRED_EXT_VERSION = '1.15.2';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
-export const SERVICE_HOSTS = {
+const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],
   crunchyroll: ['crunchyroll.com'], paramount: ['paramountplus.com'], max: ['max.com', 'hbomax.com'], disney: ['disneyplus.com'], appletv: ['tv.apple.com'],
 };

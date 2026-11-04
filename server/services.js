@@ -67,4 +67,4 @@ function identify(raw, opts = {}) {
   return out;
 }
 
-module.exports = { SERVICES, identify };
+module.exports = { identify };

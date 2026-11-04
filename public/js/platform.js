@@ -13,11 +13,4 @@ export function detectPlatform(nav = globalThis.navigator || {}) {
   };
 }
 
-export function installTarget(platform, appleUrl = '') {
-  if (platform.appleMobile) return platform.safari ? (appleUrl ? 'apple-mobile' : 'apple-mobile-unpublished') : 'apple-mobile-browser';
-  if (platform.android) return 'android';
-  if (platform.safari) return appleUrl ? 'mac-safari' : 'mac-safari-source';
-  return 'chromium';
-}
-
 export const PLATFORM = detectPlatform();

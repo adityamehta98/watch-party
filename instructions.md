@@ -182,4 +182,9 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.15.1 must be reloaded after installing this build.
+release conditions. Extension 1.15.2 must be reloaded after installing this build.
+
+Safari extension/native companion support has been removed. iPad/iPhone/Safari
+web playback for anime, local movies and YouTube remains available. External
+streaming-service sync uses the Chromium extension on computers; Safari/mobile
+users can open the service separately and follow the room clock.

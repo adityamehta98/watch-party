@@ -10,8 +10,6 @@
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square"/>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A518.17-339933?style=flat-square&logo=node.js&logoColor=white"/>
   <img alt="Chromium extension" src="https://img.shields.io/badge/Chromium-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white"/>
-  <img alt="Safari extension" src="https://img.shields.io/badge/Safari-Web%20Extension-006CFF?style=flat-square&logo=safari&logoColor=white"/>
-  <img alt="Apple companion" src="https://img.shields.io/badge/Apple-Swift%20Package-000000?style=flat-square&logo=swift&logoColor=white"/>
   <a href="benchmark/README.md"><img alt="Sync benchmark" src=".github/badges/sync.svg"/></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square"/>
 </p>
@@ -83,8 +81,7 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
 - **Anime watch history.** Admitted viewers share Continue watching cover cards with a gold progress bar. Hover or keyboard focus reveals Play, episode details, and an X to hide the card without deleting history. Hidden cards stay hidden until you select an episode again. Saved timestamps and watched indicators appear in the search result's episode dropdown. Resume resolves a fresh stream and starts at the saved position, even after restarting Watch Party. Episodes become watched at 90%. Progress uses the host player's actual position, saves to `watch-history.json` beside the app about every five seconds (and on pause, leaving the page, or shutdown), and is shared across sub/dub versions. History is stored on the host PC and shared with admitted room members. The host reports progress while connected; an eligible guest takes over when no host viewer is connected. Only the host can hide cards or manually change watched markers. Keep this file when moving or updating the app; it is separate from disposable media caches. Tracking starts with this version; earlier viewing cannot be recovered.
 - **Webcams and mic.** A built-in TURN relay runs on the host PC. Relay mode hides peer addresses; direct peer-to-peer mode exposes them to participants. Camera tiles can be moved and resized over the movie.
 - **Works with awkward networks.** Automatic UPnP port opening, Tailscale (private sharing, real HTTPS certificates, or a public Funnel link), or a Cloudflare tunnel as a last resort.
-- **Phones and tablets supported** for your own movies and YouTube; the signed Safari Web Extension also supports streaming-service sync on iPhone and iPad.
-- **Native Apple companion.** The optional Swift package adds AVPlayer HLS playback, Picture in Picture, AirPlay and SharePlay handoff while retaining Safari for DRM services.
+- **Phones and tablets supported** for anime, local movies and YouTube. Streaming-service extension sync requires a Chromium browser on a computer; Safari/mobile users can follow the live clock manually.
 
 ---
 
@@ -121,8 +118,7 @@ Watch Party runs in the background with no window. Closing the host page stops i
 | [Node.js](https://nodejs.org/) | 18.17 or newer (22 LTS recommended) | Runs the server |
 | [ffmpeg + ffprobe](https://ffmpeg.org/download.html) | Recent build | Needed to read and prepare movies |
 | Chrome / Edge / Brave | Recent | Host page and the optional extension |
-| Safari | 15+ | Web app; signed Safari Web Extension required for streaming services |
-| Xcode on macOS | Recent | Optional: local Safari simulator/device development; App Store Connect can package the ZIP |
+| Safari | 15+ | Web app for anime/local movies/YouTube; manual clock for external streaming services |
 | Tailscale | Optional | Only for apartments, CGNAT or trusted HTTPS |
 
 ### Steps
@@ -179,8 +175,8 @@ node build/build-windows.js /path/to/windows/node.exe /path/to/ffmpeg/bin
 (you can also run that line directly if you already have both.) The output goes to `dist/WatchParty/`. What the script does:
 
 1. **Bundles** `server/index.js` and its dependencies into one CommonJS file with esbuild.
-2. **Checks** that the Chromium and Safari manifests match `REQUIRED_EXT_VERSION` in `public/js/media.js`, and fails if they differ.
-3. **Packages both extensions** to `public/ext/watch-party-sync.zip` and `public/ext/watch-party-safari-source.zip`, then copies the Chromium folder to `dist/WatchParty/extension/`.
+2. **Checks** that the Chromium manifest matches `REQUIRED_EXT_VERSION` in `public/js/media.js`, and fails if it differs.
+3. **Packages the Chromium extension** to `public/ext/watch-party-sync.zip`, then copies its folder to `dist/WatchParty/extension/`.
 4. **Embeds** every file under `public/` as a SEA asset, plus the hls.js player from `node_modules` (served as `/vendor/hls.min.js`).
 5. **Injects** the blob into a copy of `node.exe` with `postject`.
 6. **Switches the PE subsystem** from console to GUI so the app runs without a console window.
@@ -369,7 +365,6 @@ flowchart TD
   custom -->|"no"| skip
 ```
 - `sidebar.*` and `theater.*` show the party (chat, cameras, controls) in Chrome's side panel or in a combined "watch here" window.
-- `apple/SafariWebExtension/` overlays a Safari popup manifest on the same extension code. Safari uses a normal top-level player tab, avoiding embedded-player sandbox detection on iPhone and iPad.
 - On the web page, `public/js/media.js` wraps the remote player (and the YouTube IFrame player) in an adapter that behaves like a `<video>` element, so the same sync engine drives all of them.
 
 **YouTube** needs no extension: `server/youtube.js` searches youtube.com without an API key, and the video plays in the embedded YouTube player for everyone, phones included.
@@ -446,11 +441,7 @@ In **Library → Watch together on a streaming service**, click a service.
   3. Click **Load unpacked** and choose the folder.
   4. Reload the Watch Party page and click a service tile.
 
-Safari installation is selected automatically by device:
-
-- **iPhone/iPad:** the host adds the signed TestFlight or App Store link under **Room → Apple devices**. Guests install it, enable **Settings → Apps → Safari → Extensions → Watch Party Sync**, grant site access, and reload the party in Safari.
-- **Mac Safari:** install the signed app, or download the Safari source and package it as documented in [`apple/README.md`](apple/README.md).
-- Apple does not allow an installable iPad extension ZIP. Use Apple's App Store Connect web packager (no Mac required) or Xcode, then distribute the containing app through TestFlight/App Store.
+Safari extension/native companion packaging has been retired. Safari and iPhone/iPad web playback remain supported.
 
 How it behaves:
 
@@ -461,9 +452,8 @@ How it behaves:
 - Playback is confirmed from the player, rather than assumed after clicking. If autoplay or Netflix's player API prevents playback/seeking, the party shows a message to use the service's controls; it never repeatedly presses Play or overwrites a saved timestamp with an unsuccessful restore. Reload the updated extension and restart the app to use this flow. Service markup and regional availability can require manual selection.
 - **Skip Intro / Skip Recap / Skip Credits / Next Episode** are pressed automatically in the host's window, and everyone follows. You can turn this off under the service tiles.
 - **Ads:** when one person gets an ad, the room waits for them.
-- **Android:** streaming services use the live manual-sync clock because Android browsers do not support this Safari/Chromium extension.
-- **iPhone/iPad:** Safari uses the signed Web Extension. Until it is published, the party shows installation/publishing guidance instead of handing the streaming URL to a native app.
-- **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; DRM playback still opens in the streaming service's Safari tab.
+- **Safari, iPhone/iPad and Android:** open the streaming service separately and follow the live clock. Chat and reactions remain in the party page.
+- **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; external service playback opens separately.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
 - **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
 - The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It synchronizes playback metadata and does not intentionally read login cookies or passwords. Its broad permissions still grant access to controlled page content; use trusted sites and see PRIVACY.md.
@@ -472,13 +462,13 @@ How it behaves:
 
 In **Library → Watch together on a streaming service → Custom site**, the host pastes the link of any page with a video and clicks **Open for everyone**.
 
-- Chromium opens the page inside the Watch Party theater window. Safari opens it as a normal top-level tab, which avoids iframe/sandbox checks on iPhone and iPad.
+- Chromium opens the page inside the Watch Party theater window. Safari/mobile users can open the site separately and follow the clock.
 - **Only the host controls it.** When the host presses play, pause or skips in the site's own player, everyone follows. A guest's clicks are undone and their player follows the host. Guests with playback control lose it while a custom site is on.
 - When the host moves to another page on the site (the next episode, say) and plays it, everyone's window follows.
 - Players that sit in a frame inside the page (common on video sites) work too.
 - **Ad pop-ups and pop-unders are blocked (on by default):** cross-site tabs opened by the custom site or its player frames are closed at once and focus returns to the Watch Party. Same-site buttons and navigation still work. This does not add an iframe sandbox, so players cannot reject playback with a “Sandbox detected” error.
 - **Built-in ad blocker (always on for custom sites, nowhere else):** ad and pop-up networks are blocked (`extension/ad-domains.js`), pop-up and pop-under tabs are closed the moment they open, invisible click-catching layers over the video and the page are removed, and links that would take over the whole window stay inside the site's box. The video and the site's own buttons keep working.
-- Everyone watching needs the extension. If a video doesn't start by itself, click play once inside it. On Chromium, a site may still refuse the combined theater layout; Safari's top-level-tab path avoids that limitation.
+- Everyone watching needs the extension. If a video doesn't start by itself, click play once inside it. A site may still refuse the combined theater layout; use its own tab when needed.
 
 ---
 
@@ -586,7 +576,6 @@ Created automatically on first run, next to `WatchParty.exe` (or in the repo roo
 | `folders` | `[]` | Movie folders to scan |
 | `cacheDir` | `"cache"` | Where prepared copies, certs and logs go. Point it at a big drive if needed. |
 | `keepPrepared` | `false` | Keep prepared copies after the app stops |
-| `safariExtensionUrl` | `""` | Signed `apps.apple.com` or `testflight.apple.com` install link shown to Safari guests |
 | `tmdbToken` | `""` | TMDB API Read Access Token used server-side for Movies & TV search and episode metadata |
 | `freeMedia` | `true` | Search explicitly licensed Public Domain/Creative Commons video from curated Internet Archive collections |
 | `movieTvSources` | `[]` | Authorized HLS/direct movie and TV episode sources; see [Movies & TV](#movies--tv-no-extension) |
@@ -647,7 +636,6 @@ watch-party/
 │   ├── js/rtc.js           WebRTC webcam/mic mesh
 │   └── ext/                built extension zip for guests (generated)
 ├── extension/              shared "Watch Party Sync" Web Extension source (MV3)
-├── apple/                  Safari overlay, secure release guide and native WatchPartyKit
 ├── build/build-windows.js  builds dist/WatchParty/WatchParty.exe (Node SEA)
 ├── bin/                    ffmpeg/ffprobe binaries (not committed; see bin/README.txt)
 ├── refresh.bat             Windows launcher: installs a waiting update (from _update\), then starts Watch Party
@@ -684,7 +672,7 @@ Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocke
 - The webcam mesh is designed for **a handful of people** (default `maxGuests: 4`).
 - Blu-ray **PGS image subtitles** aren't supported in browsers.
 - **Firefox** may not play HEVC/4K files.
-- Streaming-service sync depends on each site's player and **can break when a site changes**. iPhone/iPad require a signed Safari build distributed through TestFlight or the App Store; Android uses manual sync.
+- Streaming-service sync depends on each site's player and **can break when a site changes**. Safari/mobile browsers use manual sync for external streaming services; native web playback remains available.
 - Watch Party doesn't and can't re-stream DRM content. Every viewer needs their own subscription.
 
 ---
@@ -701,3 +689,5 @@ Please only share content you have the right to share.
 ## Audit and privacy
 
 See [security and size audit](SECURITY_AUDIT.md), [privacy/storage inventory](PRIVACY.md), and [third-party notices](THIRD_PARTY_NOTICES.md). Binary redistribution still requires matching FFmpeg/linked-library source and license compliance; no media rights are granted by the app.
+
+See [Safari extension removal, unused-code results and FFmpeg compatibility checks](DEAD_CODE_AND_FFMPEG.md). Run `npm run audit:unused` for the pinned Knip analysis, and `npm run test:ffmpeg` for local-media/fixture validation. The latter reads configured movies and writes only under `cache/`; reports contain private paths and must not be published.

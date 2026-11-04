@@ -1,5 +1,5 @@
 const RATIO = 9.5 / 16;
-export const CAMERA_LIMIT = 4;
+const CAMERA_LIMIT = 4;
 
 // Pins own slots, rather than positions in the paged list.
 export function cameraPage(ids, savedPins = [], requestedPage = 0) {

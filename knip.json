@@ -1,0 +1,37 @@
+{
+  "entry": [
+    "server/index.js",
+    "public/js/app.js",
+    "public/sw.js",
+    "extension/background.js",
+    "extension/party.js",
+    "extension/sidebar.js",
+    "extension/theater.js",
+    "extension/service.js",
+    "extension/netflix-main.js",
+    "extension/catalog-launch.js",
+    "extension/custom-clean.js",
+    "extension/services.js",
+    "extension/ad-domains.js",
+    "extension/playback-history.js",
+    "build/build-windows.js",
+    "build/build-extensions.js",
+    "benchmark/sync-benchmark.js",
+    "test/**/*.test.js",
+    "benchmark/ffmpeg-compatibility.js"
+  ],
+  "project": [
+    "server/**/*.js",
+    "public/js/**/*.js",
+    "public/sw.js",
+    "extension/**/*.js",
+    "build/*.js",
+    "benchmark/**/*.js",
+    "test/**/*.js"
+  ],
+  "ignoreDependencies": [
+    "hls.js",
+    "postject",
+    "esbuild"
+  ]
+}

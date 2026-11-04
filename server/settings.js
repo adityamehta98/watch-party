@@ -1,12 +1,5 @@
 'use strict';
 
-function cleanAppleExtensionUrl(value) {
-  try {
-    const url = new URL(String(value || '').trim());
-    return url.protocol === 'https:' && ['apps.apple.com', 'testflight.apple.com'].includes(url.hostname.toLowerCase()) ? url.href : '';
-  } catch { return ''; }
-}
-
 function migrateConfig(value) {
   const c = value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
   // Version-one defaults could silently force a local bind or Cloudflare tunnel after upgrading.
@@ -15,9 +8,9 @@ function migrateConfig(value) {
     if (c.tunnel === 'cloudflare') delete c.tunnel;
   }
   delete c.iceServers;
-  c.safariExtensionUrl = cleanAppleExtensionUrl(c.safariExtensionUrl);
+  delete c.safariExtensionUrl; // retired extension install setting
   c.version = 2;
   return c;
 }
 
-module.exports = { cleanAppleExtensionUrl, migrateConfig };
+module.exports = { migrateConfig };

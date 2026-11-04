@@ -167,4 +167,4 @@ class FreeMedia {
   }
 }
 
-module.exports = { FreeMedia, licenseInfo, playableFiles };
+module.exports = { FreeMedia, licenseInfo };

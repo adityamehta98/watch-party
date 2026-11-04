@@ -3,7 +3,6 @@
 // It never sees or touches the video stream itself, only play / pause / seek / volume.
 importScripts('services.js', 'ad-domains.js');
 
-const IS_SAFARI = !!self.WP_SAFARI;
 const parties = new Set(); // one entry per open Watch Party page
 const docks = new Set();   // one entry per open side panel
 const theaterTabs = new Set(); // tabs showing the "watch here" window (party + streaming site side by side)
@@ -244,29 +243,8 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     return true;
   }
   if (m.wp === 'theater-open' && sender.tab && partyPageUrl(sender.url)) {
-    // Safari on iPhone/iPad cannot use Chrome's side panel or a dependable two-frame theater.
-    // Keep the party in its own tab and open the player as a normal top-level Safari tab instead.
     const url = String(m.url || '');
     if (!partyPageUrl(url) || originOf(url) !== originOf(sender.url) || new URL(url).pathname !== new URL(sender.url).pathname) { reply({ ok: false, error: 'not this Watch Party page' }); return; }
-    if (IS_SAFARI) {
-      const party = [...parties].find(p => p.tabId === sender.tab.id);
-      const custom = party && party.watch && party.watch.service === 'custom';
-      const site = custom && customSite(party.watch.url, originOf(url), party.watch.blockPopups);
-      if (!party || !party.watch || (!custom && !allowedUrl(party.watch.url)) || (custom && !site)) { reply({ ok: false, error: 'nothing to open' }); return; }
-      chrome.tabs.create({ url: site ? 'about:blank' : party.watch.url, active: true, windowId: party.windowId }).then(async t => {
-        party.pendingTab = t.id;
-        if (party.link && party.link.tabId !== t.id) unlink(party);
-        if (site) {
-          theaterTabs.add(t.id);
-          theaterParty.set(t.id, originOf(url));
-          customHosts.set(t.id, site);
-          await updateFrameRules();
-          await chrome.tabs.update(t.id, { url: party.watch.url });
-        }
-        reply({ ok: true, safari: true });
-      }, e => reply({ ok: false, error: String(e && e.message || e) }));
-      return true;
-    }
     // Chromium "Watch here": turn this Watch Party tab into the window with the party and service side by side.
     theaterTabs.add(sender.tab.id);
     theaterParty.set(sender.tab.id, originOf(url));
@@ -368,12 +346,11 @@ function releaseTheaterTab(tabId) {
   if (changed) updateFrameRules().catch(e => console.warn('frame rules', e));
 }
 if (chrome.webNavigation?.onBeforeNavigate) chrome.webNavigation.onBeforeNavigate.addListener(d => {
-  if (!IS_SAFARI && d.frameId === 0 && theaterTabs.has(d.tabId) && !extensionPage(d.url, 'theater.html')) releaseTheaterTab(d.tabId);
+  if (d.frameId === 0 && theaterTabs.has(d.tabId) && !extensionPage(d.url, 'theater.html')) releaseTheaterTab(d.tabId);
 });
 if (chrome.webNavigation?.onCommitted) chrome.webNavigation.onCommitted.addListener(d => {
   if (d.frameId !== 0 || !theaterTabs.has(d.tabId)) return;
-  const manual = ['typed', 'auto_bookmark', 'generated', 'keyword', 'keyword_generated'].includes(d.transitionType) || d.transitionQualifiers?.includes('from_address_bar');
-  if ((!IS_SAFARI && !extensionPage(d.url, 'theater.html')) || (IS_SAFARI && manual)) releaseTheaterTab(d.tabId);
+  if (!extensionPage(d.url, 'theater.html')) releaseTheaterTab(d.tabId);
 });
 
 // ---- content-script injection ------------------------------------------------------------------
@@ -473,7 +450,7 @@ async function installFrameRules() {
   for (const t of [...theaterTabs]) {
     try {
       const tab = await chrome.tabs.get(t);
-      if (!IS_SAFARI && !extensionPage(tab.url || tab.pendingUrl, 'theater.html')) {
+      if (!extensionPage(tab.url || tab.pendingUrl, 'theater.html')) {
         theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t);
       }
     } catch { theaterTabs.delete(t); customHosts.delete(t); theaterParty.delete(t); }

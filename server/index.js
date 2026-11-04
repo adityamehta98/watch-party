@@ -27,7 +27,7 @@ const youtube = require('./youtube');
 const anime = require('./anime');
 const remoteMedia = require('./remote-media');
 const { Catalog } = require('./catalog');
-const { cleanAppleExtensionUrl, migrateConfig } = require('./settings');
+const { migrateConfig } = require('./settings');
 const pwa = require('./pwa');
 const { createSessions } = require('./sessions');
 
@@ -83,7 +83,6 @@ const DEFAULT_CONFIG = {
 
   cloudflareTurn: null,     // optional { keyId, token } from Cloudflare Realtime TURN: a relay for when direct webcams can't connect
   keepPrepared: false,      // false: prepared copies of movies are deleted when Watch Party stops (they're big)
-  safariExtensionUrl: '',   // optional App Store or TestFlight link shown to Apple-device guests
   tmdbToken: '',            // TMDB API Read Access Token; never sent to guests
   wyzieKey: '',             // Subtitle provider key; host only
   freeMedia: true,           // public-domain / permissively licensed Internet Archive titles
@@ -474,13 +473,6 @@ async function api(req, res, p) {
       printInvite();
     }
     if ('publicHost' in body) { config.publicHost = String(body.publicHost || '').trim().replace(/^https?:\/\//, '').replace(/[:/].*$/, '').replace(/[^A-Za-z0-9.-]/g, ''); delete cliOriginal.publicHost; }
-    if ('safariExtensionUrl' in body) {
-      const raw = String(body.safariExtensionUrl || '').trim();
-      const clean = cleanAppleExtensionUrl(raw);
-      if (raw && !clean) return sendJson(res, 400, { error: 'Use an apps.apple.com or testflight.apple.com HTTPS link.' });
-      config.safariExtensionUrl = clean;
-      room.broadcastSettings();
-    }
     if ('tmdbToken' in body) {
       config.tmdbToken = String(body.tmdbToken || '').trim().replace(/[\r\n\s]/g, '').slice(0, 1024);
       room.broadcastSettings();

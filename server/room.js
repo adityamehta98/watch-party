@@ -240,7 +240,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, safariExtensionUrl: this.config.safariExtensionUrl || '', movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
+    const s = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }

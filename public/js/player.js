@@ -3,7 +3,7 @@
 import { PLATFORM } from './platform.js';
 import { syncTuning, APPLE_PROFILE } from './sync.js';
 
-export const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
+const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
 export const DEVICE = PLATFORM.device;
 
 export class SyncPlayer {

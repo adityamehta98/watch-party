@@ -107,4 +107,4 @@ async function fetchPublic(raw, { headers = {}, lookup, request, timeout = 20000
   throw new Error('too many redirects');
 }
 
-module.exports = { fetchPublic, isPublicIp, publicAddresses, boundedText };
+module.exports = { fetchPublic, isPublicIp, boundedText };

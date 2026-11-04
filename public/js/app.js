@@ -3,7 +3,7 @@ import { animeResumeCard } from './anime-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
 import { createPlayerMenu } from './player-menu.js';
 import { SyncPlayer, DEVICE } from './player.js';
-import { PLATFORM, installTarget } from './platform.js';
+import { PLATFORM } from './platform.js';
 import { playbackCapabilities, deliverySources, reconcileDeliverySources } from './capabilities.js';
 import { FilePlayback } from './file-playback.js';
 import { StageFullscreen } from './fullscreen.js';
@@ -137,9 +137,7 @@ function start(name) {
     finishCatalogServiceLaunch();
     if (remote.present && extOutdated(remote.version) && !S.extWarned) {
       S.extWarned = true;
-      const fix = remote.platform === 'safari'
-        ? 'Update its containing app, make sure it is enabled in Safari Settings, then reload this page.'
-        : `Open ${/Edg\//.test(navigator.userAgent) ? 'edge' : 'brave or chrome'}://extensions and click its reload arrow, then reload this page.`;
+      const fix = `Open ${/Edg\//.test(navigator.userAgent) ? 'edge' : 'brave or chrome'}://extensions and click its reload arrow, then reload this page.`;
       toast(`Your Watch Party Sync extension is out of date (${remote.version || '?'}). ${fix}`, { kind: 'error', timeout: 20000 });
     }
   } });
@@ -574,39 +572,11 @@ function renderServicePanel() {
   const name = serviceName(m);
   const st = remote && remote.st;
   let status, button = '', help = '';
-  const appleUrl = S.settings.safariExtensionUrl || S.info?.settings?.safariExtensionUrl || '';
-  const target = installTarget(PLATFORM, appleUrl);
-  const safariRuntime = remote && remote.platform === 'safari';
-  if (!remote.present && target === 'android') {
+  if (!remote.present && (PLATFORM.mobile || PLATFORM.safari)) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
     status = `<div class="follow-clock"><span id="followState"></span><b id="followTime"></b></div>${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}.`;
-    button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">${isCustom() ? `Open ${esc(name)}` : `Open it in the ${esc(name)} app`}</a>`;
-    help = `<p class="fine">Android browsers do not support this Safari/Chromium extension. Follow the live clock by hand; chat and reactions still work here.</p>`;
-  } else if (!remote.present && PLATFORM.appleMobile) {
-    if (target === 'apple-mobile-browser') {
-      status = `<b>Finish setup in Safari</b> to watch ${esc(name)} with Watch Party on this ${esc(DEVICE)}.`;
-      button = `${appleUrl ? `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install Watch Party Sync</a>` : ''}<button class="btn${appleUrl ? '' : ' primary'}" type="button" data-copy="${esc(location.href)}">Copy this party link</button>`;
-      help = appleUrl
-        ? `<ol class="svc-steps"><li>Install <b>Watch Party Sync</b> from TestFlight or the App Store.</li><li>Open <b>Settings → Apps → Safari → Extensions → Watch Party Sync</b>, turn it on, and allow the streaming sites you use.</li><li>Copy this party link, open it in Safari, then reload it. Tap <b>Watch ${esc(name)} with Watch Party</b>; controls, chat and reactions appear over the normal Safari player.</li></ol><p class="fine">Apple only enables Safari Web Extensions inside Safari.</p>`
-        : `<p class="fine">The extension source is ready, but the host has not published its signed TestFlight or App Store build yet. Apple does not allow an extension ZIP to be installed directly on iPad or iPhone.</p>`;
-    } else if (target === 'apple-mobile') {
-      status = `<b>Install Watch Party Sync for Safari</b> to watch ${esc(name)} together on this ${esc(DEVICE)}.`;
-      button = `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install Watch Party Sync</a>`;
-      help = `<ol class="svc-steps"><li>Install the signed app from TestFlight or the App Store.</li><li>Open <b>Settings → Apps → Safari → Extensions → Watch Party Sync</b>, turn it on, and allow the streaming sites you use.</li><li>Return to this party in Safari and reload it. Tap <b>Watch ${esc(name)} with Watch Party</b>; controls, chat and reactions appear over the normal Safari player.</li></ol>`;
-    } else {
-      status = `<b>Watch Party Sync for Safari is not published yet.</b>`;
-      button = `<button class="btn primary" type="button" data-copy="${esc(location.href)}">Copy this party link</button>`;
-      help = `<p class="fine">The extension source is ready, but the host must publish its signed TestFlight or App Store build and add the install link in Room settings. Apple does not allow an extension ZIP to be installed directly on ${esc(DEVICE)}.</p>`;
-    }
-  } else if (!remote.present && PLATFORM.safari) {
-    status = `To watch together on ${esc(name)}, install <b>Watch Party Sync for Safari</b>. Everyone uses their own ${esc(name)} account.`;
-    if (target === 'mac-safari') {
-      button = `<a class="btn primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Install for Safari</a>`;
-      help = `<ol class="svc-steps"><li>Install the app and enable <b>Watch Party Sync</b> in Safari → Settings → Extensions.</li><li>Allow access to this party and the streaming sites you use.</li><li>Reload this page.</li></ol>`;
-    } else {
-      button = `<a class="btn primary" href="/ext/watch-party-safari-source.zip" download>Download Safari extension source</a>`;
-      help = `<ol class="svc-steps"><li>On a Mac with Xcode, extract the source ZIP.</li><li>Run <code>xcrun safari-web-extension-converter watch-party-safari</code>.</li><li>Open the generated project, choose your Apple signing team, and run its macOS app.</li><li>Enable Watch Party Sync in Safari → Settings → Extensions, then reload this page.</li></ol><p class="fine">The host can publish the signed build through TestFlight or the App Store to replace these developer steps.</p>`;
-    }
+    button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">Open ${esc(name)}</a>`;
+    help = '<p class="fine">Streaming-service sync requires Chrome, Edge or Brave on a computer. On this browser, open the service separately and follow the live clock; chat and reactions remain available here. Anime and local movies play directly in Watch Party.</p>';
   } else if (!remote.present) {
     const copy = (text, label) => `<button class="btn sm" type="button" data-copy="${esc(text)}">${esc(label || 'Copy')}</button>`;
     const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : 'chrome://extensions';
@@ -635,9 +605,7 @@ function renderServicePanel() {
     }
   } else if (extOutdated(remote.version)) {
     status = `Your <b>Watch Party Sync</b> extension is out of date (${esc(remote.version || '?')}). This party needs the newer one.`;
-    help = safariRuntime
-      ? (appleUrl ? `<p><a class="btn sm primary" href="${esc(appleUrl)}" target="_blank" rel="noopener">Update the Safari extension</a></p><p class="fine">After updating, reload this page.</p>` : `<p class="fine">Ask the host for the latest signed Safari build, then reload this page.</p>`)
-      : isHost
+    help = isHost
       ? `<ol class="svc-steps"><li>Open <code>chrome://extensions</code> (Brave: <code>brave://extensions</code>).</li><li>Click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol>`
       : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder (replace the files).</li><li>Open <code>chrome://extensions</code> and click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol>`;
   } else if (!remote.linked || !st) {
@@ -645,33 +613,23 @@ function renderServicePanel() {
     status = isHost || m.browsing
       ? `Open ${esc(name)} and sign in with <b>your own</b> account if it asks. Press play on anything: the whole room follows what you're watching${isHost ? '' : `, ${esc(hostName)} included`}, and the party (chat, cameras, controls) sits in a panel next to it.`
       : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
-    button = isTheater ? '' : safariRuntime
-      ? `<button class="btn primary" type="button" data-svc="theater">Watch ${esc(name)} with Watch Party</button>`
-      : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
-    help = safariRuntime
-      ? `<p class="fine">The video opens as a normal Safari page so ${esc(name)} and its protected player work normally. Watch Party controls, chat and reactions appear over the player; the party tab stays connected in the background.</p>`
-      : `<p class="fine">Already have it open in another tab? Just press play there and it links up.</p>`;
+    button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
+    help = `<p class="fine">Already have it open in another tab? Just press play there and it links up.</p>`;
     if (isCustom()) {
       // any website the host opened: it plays inside the Watch Party window, and only the host drives it
       status = isHost
         ? `<b>${esc(name)}</b> opens right here for everyone. Pick a video and press play: it plays for the whole room, in sync. Only you control it.`
         : `${esc(hostName)} opened <b>${esc(name)}</b>. Click <b>Watch here</b>: it opens in this window and plays along with ${esc(hostName)}. Only the host controls it.`;
-      button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">${safariRuntime ? `Open ${esc(name)} in Safari` : 'Watch here, in this window'}</button>`;
-      help = safariRuntime
-        ? `<p class="fine">This opens as a normal Safari tab. Ad and pop-up blocking stays scoped to this host-selected site, while its own player scripts and buttons remain available.</p>`
-        : `<p class="fine">If the video doesn't start by itself, click play once inside it. The browser sometimes needs one click there.</p>`;
+      button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button>`;
+      help = `<p class="fine">If the video doesn't start by itself, click play once inside it. The browser sometimes needs one click there.</p>`;
     }
   } else {
     status = `<span class="svc-ok">Synced with your ${esc(name)} tab</span> · <span id="svcTime"></span>`;
     if (m.browsing) status = `<span class="svc-ok">${esc(name)} is open</span> · press play on anything and everyone follows.`;
     if (st.ad) status += `<br>An ad is playing in your tab. The room waits until it's over.`;
     if (st.blocked) status += `<br>Click play once inside the ${esc(name)} tab. The browser needs one click there.`;
-    button = safariRuntime
-      ? `<button class="btn primary" type="button" data-svc="show">Watch ${esc(name)} with Watch Party</button>`
-      : `<button class="btn primary" type="button" data-svc="panel">Show the party next to ${esc(name)}</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} again</button>`;
-    help = safariRuntime
-      ? `<p class="fine">The protected video stays on its normal Safari page while Watch Party controls, chat and reactions sit over the player. The party tab remains connected in the background.</p>`
-      : `<p class="fine">Watch in the ${esc(name)} tab. The party (chat, cameras, people and the play controls) sits in the panel on the right side of Chrome, next to the video. Closed it? Click the Watch Party icon in Chrome's toolbar, or the button above. Keep this tab open in the background: it's what keeps everyone connected.</p>`;
+    button = `<button class="btn primary" type="button" data-svc="panel">Show the party next to ${esc(name)}</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} again</button>`;
+    help = `<p class="fine">Watch in the ${esc(name)} tab. The party (chat, cameras, people and the play controls) sits in the panel on the right side of Chrome, next to the video. Closed it? Click the Watch Party icon in Chrome's toolbar, or the button above. Keep this tab open in the background: it's what keeps everyone connected.</p>`;
   }
   const html = `<div class="svc-card"><div class="svc-name">${esc(name)}</div><h2>${esc(m.title && m.title !== name ? m.title : `Watching on ${name}`)}</h2><p>${status}</p>${button ? `<div class="row" style="justify-content:center">${button}</div>` : ''}${help}</div>`;
   if (panel.innerHTML !== html) panel.innerHTML = html;
@@ -1852,8 +1810,6 @@ function renderSettings() {
   if (S.info && document.activeElement !== up) up.value = S.info.uploadMbps || '';
   const mg = $('#maxGuestsInput');
   if (document.activeElement !== mg) mg.value = s.maxGuests || 8;
-  const safariUrl = $('#safariExtensionUrl');
-  if (document.activeElement !== safariUrl) safariUrl.value = s.safariExtensionUrl || S.info?.settings?.safariExtensionUrl || '';
   const tmdbState = $('#tmdbTokenState');
   $('#wyzieKeyState').textContent = s.subtitlesConfigured ? 'Automatic lookup connected' : 'Not connected';
   if (tmdbState) tmdbState.textContent = S.info?.movieTv?.tmdbConfigured ? `TMDB connected · ${S.info?.movieTv?.sources || 0} authorized source${S.info?.movieTv?.sources === 1 ? '' : 's'}` : 'Optional · free catalog is active';
@@ -1936,16 +1892,6 @@ for (const el of $$('[data-setting]')) el.addEventListener('change', () => conn.
 for (const el of $$('[data-default]')) el.addEventListener('change', () => conn.send({ type: 'settings', settings: { defaults: { [el.dataset.default]: el.checked } } }));
 $('#maxGuestsInput').addEventListener('change', e => conn.send({ type: 'settings', settings: { maxGuests: +e.target.value || 8 } }));
 $('#uploadInput').addEventListener('change', async e => { S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ uploadMbps: +e.target.value || 0 }) }); renderLibrary(); });
-$('#safariExtensionSave').addEventListener('click', async () => {
-  const button = $('#safariExtensionSave');
-  button.disabled = true;
-  try {
-    S.info = await api('/api/settings', { method: 'POST', body: JSON.stringify({ safariExtensionUrl: $('#safariExtensionUrl').value }) });
-    S.settings = S.info.settings || S.settings;
-    toast(S.settings.safariExtensionUrl ? 'Apple install link saved.' : 'Apple install link removed.', { timeout: 2500 });
-    renderSettings(); renderServicePanel();
-  } catch (e) { toast(e.message, { kind: 'error', timeout: 5000 }); button.disabled = false; }
-});
 $('#tmdbTokenSave').addEventListener('click', async () => {
   const button = $('#tmdbTokenSave'), input = $('#tmdbToken');
   const token = input.value.trim();
@@ -2517,12 +2463,6 @@ function enterTheater() {
 }
 // The extension is installed but isn't answering: say what to do instead of silently doing nothing.
 function extProblem(p) {
-  if (remote && remote.platform === 'safari') {
-    clearTimeout(enterTheater.timer);
-    toast(`Watch Party Sync isn't responding${p.error && p.error !== 'stale' ? ` (${p.error})` : ''}. Make sure it is enabled and allowed for this site in Safari Settings, then reload this page.`,
-      { kind: 'error', timeout: 30000, actions: [{ label: 'Reload this page', primary: true, run: () => location.reload() }] });
-    return;
-  }
   const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : /Brave/.test(navigator.userAgent) || navigator.brave ? 'brave://extensions' : 'chrome://extensions';
   if (p.kind === 'stale') {
     // the extension was reloaded after this page opened: reload the page once to reconnect
@@ -2861,7 +2801,7 @@ function finishCatalogServiceLaunch() {
   if (!remote?.present || extOutdated(remote.version)) return; // The service panel provides setup or update steps.
   pendingCatalogService = null;
   if (isTheater) theaterPost({ wpTheater: 'goto', url: movie.url });
-  else if (pending.newTab || remote.platform === 'safari') remote.post({ type: 'open', service: movie.service, url: movie.url });
+  else if (pending.newTab) remote.post({ type: 'open', service: movie.service, url: movie.url });
   else enterTheater();
 }
 

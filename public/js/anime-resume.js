@@ -4,7 +4,7 @@ const time = value => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
-export function animeResumeAction(entry) {
+function animeResumeAction(entry) {
   const next = entry.completed && entry.episodes > entry.episode;
   return { episode: entry.episode + (next ? 1 : 0), label: next ? `Play episode ${entry.episode + 1}` : entry.completed ? `Replay episode ${entry.episode}` : `Resume episode ${entry.episode} · ${time(entry.position)}` };
 }

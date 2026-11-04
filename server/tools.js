@@ -131,4 +131,4 @@ function encoderLabel(enc) {
   return 'CPU (slow)';
 }
 
-module.exports = { findBin, run, detectEncoders, hasDoviStrip, encoderLabel, ROOT, IS_WIN, IS_SEA };
+module.exports = { findBin, run, detectEncoders, hasDoviStrip, encoderLabel, ROOT };

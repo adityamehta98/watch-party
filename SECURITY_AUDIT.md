@@ -1,6 +1,6 @@
-# Security, size and rights audit
+# Security, size and rights audit (baseline bc49c3d)
 
-Scope: first-party server, browser player, extensions, Apple companion, build
+Historical scope at bc49c3d: first-party server, browser player, extensions, Apple companion, build
 scripts, locked dependencies, generated extension archives and the Windows package.
 Baseline: `009b04c`. See [coverage inventory](docs/AUDIT_COVERAGE.md),
 [privacy/storage details](PRIVACY.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
@@ -26,6 +26,8 @@ demuxers/decoders, H.264/AAC encoding, scaling, captions and HLS needed by the a
 or an optional FFmpeg download. Both require compatibility/license work; simply
 deleting DLLs or stripping arbitrary codecs is not a verified optimization.
 No automatic media cache was deleted from the user's machine.
+
+The Safari extension/native companion was subsequently retired; see [removal and compatibility review](DEAD_CODE_AND_FFMPEG.md). iPad web playback remains supported.
 
 ## Findings and changes
 
@@ -100,7 +102,7 @@ binary/license packaging, offline cache boundaries and gesture directions.
 The final test/build counts and package hashes are recorded with the delivered
 commit and BUILD-MANIFEST.json. A clean test run does not close the residuals above.
 
-## Final measurements
+## Measurements at bc49c3d
 
 The rebuilt executable is 84.55 MiB; the complete Windows folder is approximately 271.14 MiB, including 186.19 MiB of FFmpeg tools/libraries. Added license texts account for some package growth.
 

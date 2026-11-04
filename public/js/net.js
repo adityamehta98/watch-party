@@ -1,6 +1,6 @@
 // WebSocket connection with auto-reconnect, plus a clock synced to the server's clock.
 
-export class Clock {
+class Clock {
   constructor() { this.offset = 0; this.samples = []; this.synced = false; }
   static local() { return performance.timeOrigin + performance.now(); }
   sample(t0, ts, t1) {

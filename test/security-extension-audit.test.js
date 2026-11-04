@@ -18,7 +18,7 @@ function event() {
   return { addListener(fn) { listeners.push(fn); }, fire(...args) { for (const fn of listeners) fn(...args); }, listeners };
 }
 
-async function background({ recovered = [], safari = false, tabUrl = 'chrome-extension://audit/theater.html' } = {}) {
+async function background({ recovered = [], tabUrl = 'chrome-extension://audit/theater.html' } = {}) {
   let rules = recovered;
   const runtimeMessage = event(), connect = event(), before = event(), committed = event();
   const chrome = {
@@ -31,7 +31,7 @@ async function background({ recovered = [], safari = false, tabUrl = 'chrome-ext
     declarativeNetRequest: { getSessionRules: async () => recovered,
       updateSessionRules: async ({ removeRuleIds, addRules }) => { rules = [...rules.filter(r => !removeRuleIds.includes(r.id)), ...addRules]; } },
   };
-  const context = vm.createContext({ chrome, URL, URLSearchParams, console, setTimeout() {}, self: { WP_SAFARI: safari } });
+  const context = vm.createContext({ chrome, URL, URLSearchParams, console, setTimeout() {}, self: {} });
   context.importScripts = (...files) => { for (const file of files) vm.runInContext(read('extension/' + file), context); };
   vm.runInContext(read('extension/background.js'), context);
   await tick(); await tick();
@@ -102,17 +102,6 @@ test('top-level navigation revokes theater rules and script ownership', async ()
 
 test('worker recovery drops stale frame rules for a tab that left the theater', async () => {
   const f = await background({ recovered: [{ id: 1, condition: { tabIds: [7] } }], tabUrl: 'https://unrelated.example/' });
-  assert.equal(f.controlled(), false);
-  assert.equal(f.rules().length, 0);
-});
-
-test('Safari custom playback keeps link navigation but revokes typed addresses', async () => {
-  const f = await background({ safari: true, recovered: [{ id: 1, condition: { tabIds: [7] } }, { id: 2, condition: { tabIds: [7] } }], tabUrl: 'https://custom.example/watch' });
-  assert.equal(f.controlled(), true);
-  f.committed.fire({ tabId: 7, frameId: 0, url: 'https://custom.example/episode2', transitionType: 'link' });
-  assert.equal(f.controlled(), true);
-  f.committed.fire({ tabId: 7, frameId: 0, url: 'https://unrelated.example/', transitionType: 'typed' });
-  await tick();
   assert.equal(f.controlled(), false);
   assert.equal(f.rules().length, 0);
 });

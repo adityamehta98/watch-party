@@ -191,7 +191,7 @@ function buildHlsArgs({ source, info, options, videoCodec, stripDv, copyAudio = 
 
   if (sourceStreams && !videoArgs?.length && videoCodec === 'hevc') videoFilters.push('hevc_mp4toannexb', 'extract_extradata');
   if (videoFilters.length) args.push('-bsf:v', videoFilters.join(','));
-  if (copyAudio) args.push('-c:a', 'copy');
+  if (copyAudio) args.push('-c:a', 'copy', '-bsf:a', 'aac_adtstoasc');
   else {
     const channels = o.audio?.channels || 2;
     const outChannels = o.audioMode === 'stereo' || channels < 6 ? 2 : 6;

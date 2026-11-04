@@ -202,4 +202,4 @@ class PortMapper extends EventEmitter {
   }
 }
 
-module.exports = { PortMapper, discover, localIPv4s, isPrivate };
+module.exports = { PortMapper, localIPv4s, isPrivate };

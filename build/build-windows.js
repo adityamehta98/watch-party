@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { buildChromium, buildSafari } = require('./build-safari-extension');
+const { buildChromium } = require('./build-extensions');
 const { packageNotices, supportedNode } = require('./package-notices');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -36,12 +36,11 @@ const bundle = esbuild.buildSync({
   legalComments: 'eof', metafile: true,
 });
 
-// 1a) browser extensions: downloadable Chromium/Safari packages, plus the host's Chromium folder
+// 1a) browser extensions: downloadable Chromium package, plus the host's extension folder
 fs.mkdirSync(path.join(ROOT, 'public', 'ext'), { recursive: true });
 buildChromium();
 fs.cpSync(path.join(ROOT, 'extension'), path.join(OUT, 'extension'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(OUT, 'extension', 'LICENSE'));
-buildSafari();
 
 // 2) embed the web page files
 const assets = {};
@@ -98,7 +97,7 @@ for (const f of fs.readdirSync(ffmpegBin)) {
 }
 const ffmpegVersion = execFileSync(path.join(ffmpegBin, 'ffmpeg.exe'), ['-version'], { encoding: 'utf8', windowsHide: true }).trim();
 packageNotices(ROOT, OUT, winNode, ffmpegBin, Object.keys(bundle.metafile.inputs), ffmpegVersion);
-for (const file of ['README.md', 'instructions.md', 'PRIVACY.md', 'SECURITY_AUDIT.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
+for (const file of ['README.md', 'instructions.md', 'PRIVACY.md', 'SECURITY_AUDIT.md', 'DEAD_CODE_AND_FFMPEG.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
 fs.mkdirSync(path.join(OUT, 'docs'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'docs', 'AUDIT_COVERAGE.md'), path.join(OUT, 'docs', 'AUDIT_COVERAGE.md'));
 fs.copyFileSync(path.join(ROOT, 'refresh.bat'), path.join(OUT, 'refresh.bat'));

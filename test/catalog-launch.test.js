@@ -12,7 +12,7 @@ const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8')
 const launchSource = app.slice(app.indexOf('function launchCatalogService('), app.indexOf('\nfunction onCatalogResponse('));
 const mediaModule = () => import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync(path.join(__dirname, '../public/js/media.js'), 'utf8')).toString('base64')}`);
 
-async function fixture(t, { newTab = false, isTheater = false, installed = true, platform = 'chromium' } = {}) {
+async function fixture(t, { newTab = false, isTheater = false, installed = true } = {}) {
   const { SERVICE_SEARCH, SERVICE_HOMES, extOutdated, REQUIRED_EXT_VERSION } = await mediaModule();
   const sent = [], opened = [], hidden = [];
   const room = new Room({ config: { adminKey: 'admin-secret-key', roomKey: 'guestsecretkey1234', room: {} }, library: {} });
@@ -22,7 +22,7 @@ async function fixture(t, { newTab = false, isTheater = false, installed = true,
     kindOf: movie => movie?.kind || 'file',
     $: () => ({ checked: newTab }), hideTuneIn: force => hidden.push(force),
     conn: { send: message => sent.push(message) },
-    remote: { present: installed, platform, version: REQUIRED_EXT_VERSION,
+    remote: { present: installed, version: REQUIRED_EXT_VERSION,
       post: message => opened.push(JSON.parse(JSON.stringify(message))), openPanel: () => opened.push({ type: 'panel' }) },
     togglePip: () => opened.push({ type: 'pip' }), enterTheater: () => opened.push({ type: 'theater' }),
     theaterPost: message => opened.push(JSON.parse(JSON.stringify(message))),
@@ -77,8 +77,8 @@ test('a service selected inside the theater navigates the service frame directly
   assert.equal(new URL(f.opened[0].url).searchParams.get('q'), 'Another title');
 });
 
-test('separate-tab preference and Safari launch the service using the requested search', async t => {
-  for (const options of [{ newTab: true }, { platform: 'safari' }]) {
+test('separate-tab preference launches the service using the requested search', async t => {
+  for (const options of [{ newTab: true }]) {
     const f = await fixture(t, options);
     f.context.launchCatalogService('prime', { title: 'A movie & friends' });
     f.acknowledge();

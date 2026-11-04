@@ -7,10 +7,10 @@
   "scripts": {
     "start": "node server/index.js",
     "build:extensions": "node build/build-extensions.js",
-    "build:safari": "node build/build-safari-extension.js",
-    "build:safari:xcode": "node build/build-safari-xcode.js",
     "benchmark:sync": "node benchmark/sync-benchmark.js --write",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "audit:unused": "npx --yes knip@6.44.1 --config knip.json",
+    "test:ffmpeg": "node benchmark/ffmpeg-compatibility.js"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
