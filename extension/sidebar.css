@@ -75,7 +75,7 @@ svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none
 .msg .who time { color: var(--faint); font-weight: 500; margin-left: 6px; }
 .msg .body { overflow-wrap: anywhere; }
 .msg.system { color: var(--faint); font-size: 12.5px; text-align: center; }
-.chat-form { position: relative; display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.chat-form { position: relative; display: flex; align-items: center; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
 .chat-form input { flex: 1; min-width: 0; height: 36px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--panel); color: var(--text); padding: 0 10px; font: inherit; }
 .chat-form input:focus { outline: 2px solid rgba(245,181,68,.5); border-color: transparent; }
 .emoji-btn { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }

@@ -18,12 +18,12 @@ class Element {
  appendChild(el){this.children.push(el);} replaceChildren(){this.children=[];}
 }
 function fixture({key='exampleGiphyBetaKey',request}={}) {
- const nodes=new Map(), tabs=[new Element(),new Element()];tabs[0].dataset.mode='emoji';tabs[1].dataset.mode='gif';
- for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll'])nodes.set(sel,new Element());
- nodes.get('select').value='default'; nodes.get('.gifs').hidden=true;
+ const nodes=new Map(), tabs=[new Element(),new Element(),new Element()];tabs[0].dataset.mode='emoji';tabs[1].dataset.mode='gif';tabs[2].dataset.mode='sticker';
+ for(const sel of ['.picker input','select','nav','.grid','.heading','.more','.gifs','.gifs input','.gif-grid','.status','.find','.picker','.scroll','.stickers','.stickers input','.sticker-grid','.sticker-status','.sticker-more'])nodes.set(sel,new Element());
+ nodes.get('select').value='default'; nodes.get('.gifs').hidden=true;nodes.get('.stickers').hidden=true;
  const root={querySelector:s=>nodes.get(s),querySelectorAll:()=>tabs}, picked=[];
  const container=new Element(); container.ownerDocument={createElement:()=>new Element()};container.attachShadow=()=>root;
- const api=load().create(container,{load:async()=>({groups:['Faces'],emojis:[['😀','smile',0]]}),onPick:v=>picked.push(v),giphyKey:()=>typeof key === 'function' ? key() : key,request});
+ const api=load().create(container,{load:async()=>({groups:['Faces'],emojis:[['😀','smile',0]],stickers:[['😀','Smile',0,'1f600'],['👋','Wave',1,'1f44b']]}),onPick:v=>picked.push(v),giphyKey:()=>typeof key === 'function' ? key() : key,request});
  return {api,nodes,tabs,picked};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -74,4 +74,32 @@ test('extension refreshes do not repeatedly retry a failed automatic trending lo
  f.tabs[1].listeners.click();key='publicGiphyBetaKey';await f.api.open();await tick();assert.equal(calls,1);
  await f.api.open();await f.api.open();await tick();assert.equal(calls,1);
  f.tabs[1].listeners.click();await tick();assert.equal(calls,2,'an explicit user click can retry');
+});
+
+test('Google sticker fallback uses no search API and stops repeated quota requests',async()=>{
+ let calls=0;const f=fixture({request:async()=>{calls++;throw Object.assign(Error('Free GIF search limit reached.'),{status:429});}});
+ await f.api.open();f.tabs[1].listeners.click();await tick();assert.equal(calls,1);
+ assert.equal(f.nodes.get('.gifs').hidden,true);assert.equal(f.nodes.get('.stickers').hidden,false);assert.equal(f.nodes.get('.sticker-grid').children.length,2);
+ f.tabs[1].listeners.click();await tick();assert.equal(calls,1,'quota cooldown does not keep spending failed requests');
+ f.nodes.get('.stickers input').value='wave';f.nodes.get('.stickers input').listeners.input();assert.equal(f.nodes.get('.sticker-grid').children.length,1);assert.equal(calls,1,'sticker search is local');
+ f.nodes.get('.sticker-grid').children[0].listeners.click();assert.equal(f.picked[0],'https://fonts.gstatic.com/s/e/notoemoji/latest/1f44b/512.webp');
+});
+test('Google stickers work without a key and their messages retain safe attribution',async()=>{
+ let calls=0;const f=fixture({key:'',request:async()=>{calls++;}});await f.api.open();f.tabs[2].listeners.click();assert.equal(calls,0);assert.equal(f.nodes.get('.sticker-grid').children.length,2);
+ const picker=load(),url='https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/512.webp';assert.equal(picker.mediaUrl(url),url);assert.match(picker.chatHtml(url),/Google Noto/);assert.match(picker.chatHtml(url),/CC BY 4.0/);
+ for(const bad of ['https://fonts.gstatic.com/evil.svg','https://fonts.gstatic.com/s/e/notoemoji/latest/evil/512.webp','https://fonts.gstatic.com.evil.test/s/e/notoemoji/latest/1f600/512.webp'])assert.equal(picker.mediaUrl(bad),null);
+ assert.match(picker.chatHtml('😀'),/font-size:32px/);assert.doesNotMatch(picker.chatHtml('hello 😀'),/font-size:32px/);assert.doesNotMatch(picker.chatHtml('123'),/font-size:32px/);
+});
+test('media drafts show a removable preview, restore typed text and clear after sending',async()=>{
+ class DraftElement extends Element {
+  constructor(){super();this.style={};this.value='';this.selectionStart=0;this.selectionEnd=0;}
+  append(...children){this.children.push(...children);} removeAttribute(name){delete this[name];} focus(){this.focused=true;}
+  setRangeText(value,start,end){this.value=this.value.slice(0,start)+value+this.value.slice(end);this.selectionStart=this.selectionEnd=start+value.length;}
+ }
+ const input=new DraftElement(),holder=new DraftElement();holder.insertBefore=child=>holder.children.push(child);input.parentNode=holder;input.ownerDocument={createElement:()=>new DraftElement()};input.form=new DraftElement();const submit=new DraftElement();input.form.querySelector=()=>submit;
+ const api=load({queueMicrotask}),draft=api.createDraft(input);input.value='Unsent text';draft.pick(valid);
+ const card=holder.children[0];assert.equal(input.hidden,true);assert.equal(submit.focused,true);assert.equal(card.children[0].src,valid);assert.equal(card.children[1].textContent,'GIF ready to send');
+ card.children[2].listeners.click();assert.equal(input.value,'Unsent text');assert.equal(input.hidden,false);
+ draft.pick(valid);input.value='';input.form.listeners.submit();await tick();assert.equal(input.hidden,false);assert.equal(card.style.display,'none');
+ draft.pick('https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/512.webp');assert.equal(card.children[1].textContent,'Sticker ready to send');
 });

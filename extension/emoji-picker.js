@@ -14,14 +14,42 @@
   function mediaUrl(value) {
     try {
       const u = new URL(value);
-      return u.protocol === 'https:' && !u.username && !u.password && !u.port && /^(?:media[0-4]?|i)\.giphy\.com$/.test(u.hostname) && /^\/media\/(?:[A-Za-z0-9._-]+\/){1,3}[A-Za-z0-9._-]+\.(?:gif|webp)$/.test(u.pathname) ? u.href : null;
+      const giphy = /^(?:media[0-4]?|i)\.giphy\.com$/.test(u.hostname) && /^\/media\/(?:[A-Za-z0-9._-]+\/){1,3}[A-Za-z0-9._-]+\.(?:gif|webp)$/.test(u.pathname);
+      const noto = u.hostname === 'fonts.gstatic.com' && /^\/s\/e\/notoemoji\/latest\/[a-f0-9]{4,6}(?:_[a-f0-9]{4,6})*\/512\.(?:webp|gif)$/.test(u.pathname);
+      return u.protocol === 'https:' && !u.username && !u.password && !u.port && (giphy || noto) ? u.href : null;
     } catch { return null; }
   }
   function chatHtml(text) {
     const url = mediaUrl(String(text || '').trim());
-    return url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="GIF from GIPHY" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:160px;width:auto;border-radius:10px;margin:6px 0"><small>GIPHY · open GIF</small></a>` : esc(text);
+    if (url) {
+      const google = url.startsWith('https://fonts.gstatic.com/');
+      return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="${google ? 'Animated sticker by Google Noto' : 'GIF from GIPHY'}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:160px;width:auto;border-radius:10px;margin:6px 0"><small>${google ? 'Google Noto' : 'GIPHY'} · open ${google ? 'sticker' : 'GIF'}</small></a>${google ? ' <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer"><small>CC BY 4.0</small></a>' : ''}`;
+    }
+    const value = String(text || '').trim();
+    const onlyEmoji = value && Array.from(value).length <= 40 && !value.replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0F\u200D\u20E3\u{e0020}-\u{e007f}\s]/gu, '');
+    return onlyEmoji ? `<span style="font-size:32px;line-height:1.3">${esc(text)}</span>` : esc(text);
   }
-  function create(container, { load, onPick, giphyKey = () => '', request = url => fetch(url, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', signal: globalThis.AbortSignal?.timeout?.(10000) }).then(async response => { if (!response.ok) throw Error(response.status === 429 ? 'Free GIF search limit reached. Try again later.' : 'GIPHY is unavailable. Check the key or try again later.'); return response.json(); }) }) {
+  function createDraft(input) {
+    const doc = input.ownerDocument, card = doc.createElement('div'), image = doc.createElement('img'), label = doc.createElement('span'), remove = doc.createElement('button');
+    card.setAttribute('aria-label', 'Attachment preview'); card.style.cssText = 'flex:1;min-width:0;align-items:center;gap:10px;padding:6px 8px;border:1px solid #9b742a;border-radius:10px;background:#1c1b17;color:#eef0f4;';
+    image.style.cssText = 'width:54px;height:54px;object-fit:contain;border-radius:6px;'; image.referrerPolicy = 'no-referrer';
+    label.style.cssText = 'flex:1;font:12px/1.4 system-ui,sans-serif;';
+    remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', 'Remove attachment'); remove.style.cssText = 'flex:none;width:28px;height:28px;border:0;border-radius:50%;background:#ffffff15;color:#fff;cursor:pointer;font-size:20px;';
+    card.append(image, label, remove); input.parentNode.insertBefore(card, input);
+    let active = null, previousText = '';
+    const sync = () => {
+      const url = mediaUrl(input.value.trim()); input.hidden = !!url; card.style.display = url ? 'flex' : 'none';
+      if (url) { if (active !== url) image.src = url; active = url; const sticker = url.startsWith('https://fonts.gstatic.com/'); image.alt = sticker ? 'Sticker draft' : 'GIF draft'; label.textContent = (sticker ? 'Sticker' : 'GIF') + ' ready to send'; }
+      else { active = null; previousText = ''; image.removeAttribute('src'); }
+    };
+    remove.addEventListener('click', () => { input.value = previousText; sync(); input.focus(); });
+    input.addEventListener('input', sync); input.form?.addEventListener('submit', () => queueMicrotask(sync)); sync();
+    return { sync, pick(value) {
+      if (mediaUrl(value)) { if (!active) previousText = input.value; input.value = value; sync(); input.form?.querySelector?.('[type=submit]')?.focus(); }
+      else { if (active) input.value = previousText; const start = input.selectionStart ?? input.value.length; input.setRangeText(value, start, input.selectionEnd ?? start, 'end'); sync(); input.focus(); }
+    } };
+  }
+  function create(container, { load, onPick, giphyKey = () => '', request = url => fetch(url, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', signal: globalThis.AbortSignal?.timeout?.(10000) }).then(async response => { if (!response.ok) throw Object.assign(Error(response.status === 429 ? 'Free GIF search limit reached. Try again later.' : 'GIPHY is unavailable. Check the key or try again later.'), { status: response.status }); return response.json(); }) }) {
     const doc = container.ownerDocument, root = container.shadowRoot || container.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>
       :host{display:block;color:#eef0f4;font:13px/1.35 system-ui,sans-serif;text-align:left;min-width:0}
@@ -37,14 +65,36 @@
       .emoji:hover,.emoji:focus-visible{background:#ffffff16;transform:scale(1.08);outline:1px solid #f5b544}
       .more{width:100%;border:1px solid #393d48;border-radius:8px;background:#ffffff08;padding:7px;margin-top:8px}.empty{color:#b4b9c4;padding:16px;text-align:center}
       @media(prefers-reduced-motion:reduce){.emoji{transition:none}.emoji:hover{transform:none}}
-     .tabs{display:flex;gap:6px;margin-bottom:8px}.tabs button,.gif-search button{border:1px solid #393d48;border-radius:8px;background:#ffffff08;padding:7px 12px}.tabs button[aria-pressed=true]{background:#49391e;color:#ffc44f;border-color:#9b742a}.gif-search{display:flex;gap:6px}.gif-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px;max-height:min(240px,36dvh);overflow:auto}.gif-grid button{border:1px solid #393d48;background:#101217;border-radius:8px;padding:3px;min-width:0}.gif-grid img{display:block;width:100%;height:100px;object-fit:contain}.credit{font-size:11px;color:#b4b9c4;margin:8px 0 0}.credit a{color:#e8bf6a}.credit img{display:block;width:140px;height:auto;margin-bottom:5px}.status{font-size:12px;color:#b4b9c4;margin-top:8px}
-    </style><div class="tabs" aria-label="Chat media"><button type="button" data-mode="emoji" aria-pressed="true">😀 Emoji</button><button type="button" data-mode="gif" aria-pressed="false">GIFs</button></div><section class="gifs" hidden><div class="gif-search"><input type="search" maxlength="50" placeholder="Search GIPHY" aria-label="Search GIPHY"><button type="button" class="find">Search</button></div><div class="status" role="status"></div><div class="gif-grid"></div><p class="credit"><a href="https://giphy.com/" target="_blank" rel="noopener noreferrer"><img src="data:image/png;base64,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" alt="Powered by GIPHY"></a> · free key: 100 calls/hour</p></section><div class="picker"><div class="search"><input type="search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off"><select aria-label="Emoji skin tone"><option value="default">Default tone</option><option value="all">All tones</option><option value="🏻">Light</option><option value="🏼">Medium-light</option><option value="🏽">Medium</option><option value="🏾">Medium-dark</option><option value="🏿">Dark</option></select></div><nav aria-label="Emoji categories"></nav><div class="heading"></div><div class="scroll"><div class="grid"></div><button class="more" type="button" hidden>Show more</button></div></div>`;
+     .tabs{display:flex;gap:6px;margin-bottom:8px}.tabs button,.gif-search button{border:1px solid #393d48;border-radius:8px;background:#ffffff08;padding:7px 12px}.tabs button[aria-pressed=true]{background:#49391e;color:#ffc44f;border-color:#9b742a}.gif-search{display:flex;gap:6px}.gif-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px;max-height:min(240px,36dvh);overflow:auto}.gif-grid button{border:1px solid #393d48;background:#101217;border-radius:8px;padding:3px;min-width:0}.gif-grid img{display:block;width:100%;height:100px;object-fit:contain}.credit{font-size:11px;color:#b4b9c4;margin:8px 0 0}.credit a{color:#e8bf6a}.credit img{display:block;width:120px;height:auto}.status{font-size:12px;color:#b4b9c4;margin-top:8px}
+    .tone-hint{font-size:11px;color:#b4b9c4;margin:0 0 8px}.sticker-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-height:min(230px,36dvh);overflow:auto;margin-top:8px}.sticker-grid button{min-width:0;border:0;background:#ffffff08;border-radius:8px;padding:5px}.sticker-grid img{display:block;width:100%;height:72px;object-fit:contain}.sticker-status{font-size:12px;color:#b4b9c4;margin:7px 0}
+    </style><div class="tabs" aria-label="Chat media"><button type="button" data-mode="emoji" aria-pressed="true">😀 Emoji</button><button type="button" data-mode="gif" aria-pressed="false">GIFs</button><button type="button" data-mode="sticker" aria-pressed="false">✨ Stickers</button></div><section class="gifs" hidden><div class="gif-search"><input type="search" maxlength="50" placeholder="Search GIPHY" aria-label="Search GIPHY"><button type="button" class="find">Search</button></div><div class="status" role="status"></div><div class="gif-grid"></div><p class="credit"><a href="https://giphy.com/" target="_blank" rel="noopener noreferrer"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAAAaCAYAAADyrhO6AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABXlJREFUeNrsXDGMG0UUnUsCOBHgpUFGSNh029mIApMmi5QiFWe6dGcoclTcUSDR5agpzhESilM5HR2+zl32umsi7XVGOok9UbAFxR5KyEIUzE54Cz+fv95de33nmHnSyN6ZnZ3Zmf/+f3/OydpkMlEGBgYyLpglOC3ccQvdfvTgZfX1Dw9wta36fc+soSHIKuNKobv/fCayW2b5DEFWGp8pdaw/ryoVfhiXzA6PnmhSNHHVVZubTvzpxpHENatpCLJy+EapOj4HE3VjJ7PDt08JcQ9XG6TFEMQQxCAFDUSSsGBO0o1LJy7rQtteXHoC8booFE4Bouooqec4xGfWs7dz3udgvi1WP0S9yvEMD+MZgqwYNlD2mbGmQRvRgEg1Cesod2E04T9knJ435cmp9HNvgoTdjGdbokOQx9Fk2BLmo+t91l+Tpsru7eVd8HPG5lYWLXj5ZgHy9RY0l3UYb1lwQTqOgUCEqhAxc8/FRJDlhfaEX9GKL/bf3/zl98iyXrz09m52/4FgHBonkBgt1n6YV3bMiCuIIoOSntfFGlXZGB0QQJKUJ4LcMgR5LtHv681/Jpn/+a3+1snjoPL4yRuv5jCepmAcHZY7OCRqOCrP6Vo67jLj3xYMtFMiQUK85/dC1PCm5CPhoghyLS41VncQlzHRe/SeMTYjiMt1TGzEJusSzdhC0exvC2MF6C95gGQeNcxBCUlZILT5Kcmm9K4+ntNh/Srk/YaL5MwrL7z+8MK5l6yL56sPM27tCHWOkAS7WHNrTnJIa5nsbT0jz5gHQ0gmSsQ6xq7PI61mIUiNLISGDcO4DSPpwgiHuG6jTrdHuHbx3QahWowgyUbxsRRL8HyUZJwkGavgu8c2PBTaajCahuDVaphLYlDJGAGKA0ImpGvgPReKd1776Cj+eDMuRxm3OoJxeFNOdbJOk+bx8vWc9/YEkjZy9NvG+1YZSeaSVrNKLOoltNf+EsZu4+VuM6+dTP4ABLBRbxOSKWK8bg7vzttCGCklm8fIRRebtrVJtAiEzeVypII6G156RJLhYIkEWlWIoFknQ2V6eStF5k1Dc8axEim6myE5w9MgiLSQEQyMG3OEyVswnpARxMdm2TA8vpEt5kECJtEST98m7VQiReR6lPIOB7jXFgy8hoWt4LtP5jcknjhQ5o93GjdRsiTRItCDw5KIvzfPuEUJQo22ASP0UnR/QhJq/A6eUYHRXicECQqw3GEywofkaZS46BGRcRZIUiH1HsmZlh2NJZjDYYkJelqU+JHVHc8qrWYlSEjkyRhGEsG4W/DIEZFNNkniPWLYIfqMGWG4LEjzzB4hpu77HWsfTZFYFG3yLmqKxPJB5g4ZKxQi17LgkEmWDsnvdtjpmKuK/pBytvlknZJ9ruS/pG8UkFpSXXiaBEnLC0ZEcoxJtFEsVwjgiUfE0NuCvEoM2mEG6zGiamP9VP33fJ3LM19oszEXL8XILZJ3tJaYDBJcRpAq6riRWiWeLB0LRprYS57IITlE56wXsghBpkkgH4tApU9yzBuyjWsTEgUkCkVsrJqQg3CvEGLca+S5vrDxCTlpWwSiHqS8K406geAcwhSvtQzQmnxLSIJ9SMIQ+9QsccwBi0wrgSIEGeWILlmeYizImWHBsQaCMQ+mtKucbUXelcq8ZYQPybIrnG5t5OhrAJjfYq0udBS5VbDPx4YghiD/J+i/Q32g/v717zTs4b6BWbL5knSD5w9Jcm6pf3/OY5FDDy8lt9zJyCnW5phT1rOL3lfGnAxBzhQ/XX76T25VZLXWfp0tmX3vE1W59Js6vvhI/XGjePfk2No1m1GAcea//Tmlhb6vylzo/cm7Z38EanIQAwMTQUwEMTBIw18CDAAYmZzcjwTs3QAAAABJRU5ErkJggg==" alt="Powered by GIPHY"></a></p></section><section class="stickers" hidden><input type="search" placeholder="Search free stickers" aria-label="Search free stickers"><div class="sticker-status" role="status"></div><div class="sticker-grid"></div><button type="button" class="sticker-more more" hidden>Show more stickers</button><p class="credit"><a href="https://googlefonts.github.io/noto-emoji-files/" target="_blank" rel="noopener noreferrer">Google Noto</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></p></section><div class="picker"><div class="search"><input type="search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off"><select aria-label="Emoji skin tone" title="Skin tone applies to hands and people; smileys stay yellow"><option value="default">Default tone</option><option value="all">All tones</option><option value="🏻">Light</option><option value="🏼">Medium-light</option><option value="🏽">Medium</option><option value="🏾">Medium-dark</option><option value="🏿">Dark</option></select></div><p class="tone-hint">Skin tone changes hands and people; smileys stay yellow.</p><nav aria-label="Emoji categories"></nav><div class="heading"></div><div class="scroll"><div class="grid"></div><button class="more" type="button" hidden>Show more</button></div></div>`;
     const input = root.querySelector('.picker input'), tone = root.querySelector('select'), nav = root.querySelector('nav'), grid = root.querySelector('.grid'), heading = root.querySelector('.heading'), more = root.querySelector('.more');
-    let catalog = null, group = 0, limit = 140, loading = null, gifBusy = false, gifLoaded = false, gifAttemptKey = null;
+    let catalog = null, group = 0, limit = 140, loading = null, gifBusy = false, gifLoaded = false, gifAttemptKey = null, gifBlockedUntil = 0, stickerLimit = 12;
     const gifPanel = root.querySelector('.gifs'), gifInput = root.querySelector('.gifs input'), gifGrid = root.querySelector('.gif-grid'), gifStatus = root.querySelector('.status'), gifFind = root.querySelector('.find');
+    const stickerPanel = root.querySelector('.stickers'), stickerInput = root.querySelector('.stickers input'), stickerGrid = root.querySelector('.sticker-grid'), stickerStatus = root.querySelector('.sticker-status'), stickerMore = root.querySelector('.sticker-more');
+    function drawStickers() {
+      if (!catalog || stickerPanel.hidden) return;
+      const rows = search({ emojis: catalog.stickers || [] }, stickerInput.value, -1, 'all'); stickerGrid.replaceChildren();
+      for (const [emoji, name, , id] of rows.slice(0, stickerLimit)) {
+        const button = doc.createElement('button'), image = doc.createElement('img'), url = 'https://fonts.gstatic.com/s/e/notoemoji/latest/' + id + '/512.webp';
+        button.type = 'button'; button.title = name; button.setAttribute('aria-label', name); image.src = url; image.alt = emoji; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; button.appendChild(image); button.addEventListener('click', () => onPick(url)); stickerGrid.appendChild(button);
+      }
+      stickerMore.hidden = rows.length <= stickerLimit;
+      if (!rows.length) stickerStatus.textContent = 'No matching stickers.';
+    }
+    function activate(mode, message = '') {
+      gifPanel.hidden = mode !== 'gif'; root.querySelector('.picker').hidden = mode !== 'emoji'; stickerPanel.hidden = mode !== 'sticker';
+      for (const tab of root.querySelectorAll('[data-mode]')) tab.setAttribute('aria-pressed', String(tab.dataset.mode === mode));
+      if (mode === 'sticker') { stickerStatus.textContent = message || 'Free animated stickers · no GIF search calls'; drawStickers(); }
+    }
+    stickerInput.addEventListener('input', () => { stickerLimit = 12; stickerStatus.textContent = ''; drawStickers(); });
+    stickerMore.addEventListener('click', () => { stickerLimit += 12; drawStickers(); });
     async function findGifs() {
       if (gifBusy) return;
-      const key = String(giphyKey() || ''); gifAttemptKey = key;
+      const key = String(giphyKey() || '');
+      if (gifAttemptKey !== key) gifBlockedUntil = 0;
+      if (gifAttemptKey === key && Date.now() < gifBlockedUntil) { activate('sticker', 'GIPHY search is at its limit. Free stickers are available below.'); return; }
+      gifAttemptKey = key;
       if (!key) { gifStatus.textContent = 'The host can add a free GIPHY API key in Room settings.'; return; }
       gifBusy = true; gifLoaded = false; gifFind.disabled = true; gifStatus.textContent = gifInput.value.trim() ? 'Searching GIPHY…' : 'Loading trending GIFs…'; gifGrid.replaceChildren();
       const query = gifInput.value.trim(), url = new URL('https://api.giphy.com/v1/gifs/' + (query ? 'search' : 'trending'));
@@ -60,15 +110,14 @@
           button.addEventListener('click', () => onPick(full)); gifGrid.appendChild(button);
         }
         gifStatus.textContent = gifGrid.children.length ? (query ? 'Choose a GIF' : 'Trending GIFs') + ' · choose one, then press Send.' : 'No GIFs found. Try another search.';
-      } catch (error) { gifStatus.textContent = error.message || 'GIPHY is unavailable. Try again later.'; }
+      } catch (error) { gifStatus.textContent = error.message || 'GIPHY is unavailable. Try again later.'; if (error.status === 429) { gifBlockedUntil = Date.now() + 3600000; activate('sticker', 'GIPHY search is at its limit. Free stickers are available below.'); } }
       finally { gifBusy = false; gifFind.disabled = false; }
     }
     gifFind.addEventListener('click', findGifs);
     gifInput.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); findGifs(); } });
     for (const button of root.querySelectorAll('[data-mode]')) button.addEventListener('click', () => {
-      const gifs = button.dataset.mode === 'gif'; gifPanel.hidden = !gifs; root.querySelector('.picker').hidden = gifs;
-      for (const tab of root.querySelectorAll('[data-mode]')) tab.setAttribute('aria-pressed', String(tab === button));
-      if (gifs && (!gifLoaded || gifAttemptKey !== String(giphyKey() || ''))) findGifs();
+      const mode = button.dataset.mode; activate(mode);
+      if (mode === 'gif' && (!gifLoaded || gifAttemptKey !== String(giphyKey() || ''))) findGifs();
     });
     const draw = () => {
       if (!catalog) return;
@@ -103,10 +152,10 @@
           const button = doc.createElement('button'); button.type = 'button'; button.dataset.group = String(index);
           button.textContent = symbols[index] || '☺'; button.title = label; button.setAttribute('aria-label', label);
           button.addEventListener('click', () => { group = index; input.value = ''; reset(); }); nav.appendChild(button);
-        }); draw();
+        }); draw(); drawStickers();
       }).catch(() => { heading.textContent = 'Could not load emoji. Close and reopen to retry.'; }).finally(() => { loading = null; });
       return loading;
     } };
   }
-  globalThis.WpEmoji = { create, search, mediaUrl, chatHtml };
+  globalThis.WpEmoji = { create, search, mediaUrl, chatHtml, createDraft };
 })();

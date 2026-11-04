@@ -178,10 +178,10 @@ $('#seek').addEventListener('click', e => {
 $('#camBtn').addEventListener('click', () => act({ op: 'cam' }));
 $('#micBtn').addEventListener('click', () => act({ op: 'mic' }));
 $('#reacts').addEventListener('click', e => { const b = e.target.closest('[data-emoji]'); if (b && ui?.canReact) act({ op: 'react', emoji: b.dataset.emoji }); });
+const chatDraft = WpEmoji.createDraft($('#chatInput'));
 const emojiPicker = WpEmoji.create($('#emojiPicker'), { load: () => fetch(chrome.runtime.getURL('emoji-data.json')).then(response => response.json()), giphyKey: () => ui?.giphyKey || '', onPick: emoji => {
   if (!ui?.canChat) return;
-  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-  input.setRangeText(emoji, start, end, 'end'); $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false'); input.focus();
+  chatDraft.pick(emoji); $('#emojiPicker').hidden = true; $('#emojiBtn').classList.remove('on'); $('#emojiBtn').setAttribute('aria-expanded', 'false');
 } });
 $('#emojiBtn').addEventListener('click', () => {
   const picker = $('#emojiPicker'), open = picker.hidden;

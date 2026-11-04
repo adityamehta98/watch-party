@@ -70,7 +70,7 @@ and [Chrome Web Store user-data requirements](https://developer.chrome.com/docs/
 describe relevant disclosure obligations. Jurisdiction, audience and distribution
 model still require assessment before a public launch.
 
-Notification histories are private to the viewer's server-bound session and live only in host-process memory (at most 1,000 recent notices across the room). The host-only clear command clears every viewer's notification history. Closing the panel does not clear it; stopping the host process does. No unread badge or notification count is generated. Picture brightness is local and does not change device hardware settings. The bundled Unicode picker loads from the host/extension; no emoji CDN or analytics service is contacted.
+Notification histories are private to the viewer's server-bound session and live only in host-process memory (at most 1,000 recent notices across the room). The host-only clear command clears every viewer's notification history. Closing the panel does not clear it; stopping the host process does. No unread badge or notification count is generated. Picture brightness is local and does not change device hardware settings. Standard Unicode emoji use the local host/extension catalog and device font; no emoji CDN or analytics service is contacted for those.
 
 GIF search is optional and uses the host's GIPHY beta API key. Only the host can
 change it; GIPHY requires direct browser requests, so this public client key is
@@ -81,3 +81,11 @@ images load directly from GIPHY's media hosts (including when receiving a GIF).
 No GIPHY response, GIF image, search term or key is added to offline shell caches.
 The key is saved in the host's config.json; sent GIF URLs stay in live room chat
 only, and no optional GIPHY analytics calls or persistent GIF favorites are added.
+
+The separate Google Noto Stickers tab searches bundled metadata locally. Opening
+it loads visible sticker images directly from fonts.gstatic.com; Google receives
+your IP and requested asset paths. It needs an internet connection, but no API key
+or GIPHY quota. GIPHY HTTP 429 automatically selects this tab and suppresses new
+GIPHY attempts for up to one hour in that picker (a changed key can be used sooner).
+The app does not send sticker search words or optional analytics to Google.
+Attachment drafts stay on your device until Send, and can be removed before sending.

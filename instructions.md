@@ -182,7 +182,7 @@ block script volume changes (including iOS native video), use the hardware volum
 buttons; the player shows that instruction instead of a false percentage.
 
 See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.16.1 must be reloaded after installing this build.
+release conditions. Extension 1.17.0 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External
@@ -202,7 +202,7 @@ hardware brightness. iOS may still require hardware buttons for volume.
 
 For free GIF chat, create a Web/API beta key at https://developers.giphy.com/dashboard/
 and enter it in Room settings → GIPHY API key → Save GIF key. Open chat's emoji
-picker and select GIFs for trending or search. Choosing a GIF adds its link to the
+picker and select GIFs for trending or search. Choosing a GIF adds a removable preview to the
 message draft; press Send to share it. Use a standalone GIF link for an inline
 preview. Free beta keys allow 100 API calls/hour across everyone using the key;
 GIPHY enforces the allowance and the app never upgrades or purchases a plan.
@@ -215,3 +215,18 @@ remains clickable. Google's Tenor API closed on June 30, 2026.
 Skin tone is a preference: neutral emoji stay visible, while hands/people use the
 chosen tone where supported. GIF trending loads when its tab opens and recovers
 if the host adds or changes the key while the picker is already on that tab.
+
+GIPHY trending and every submitted search each use one API call, regardless of
+how many results are returned. Typing alone does not call the API. Reopening the
+same loaded results does not issue another request. GIF preview/Send use the
+returned media URL, without another search API request. The quota applies across
+viewers using your key. The quota label has been removed from the picker; the
+small Powered By GIPHY mark remains because the API requires it.
+
+Use Stickers for 881 animated Google Noto choices with no key or GIPHY search
+allowance. A GIPHY quota error automatically opens this fallback and pauses GIF
+requests for an hour in that picker. Sticker searches are local, and images load
+from Google when displayed. An internet connection is still needed. The fallback
+is an animated sticker catalog; arbitrary GIF searches still use GIPHY. Choosing
+a GIF/sticker displays a removable preview before Send. Skin tone applies to
+hands and people; Unicode smileys remain yellow. Emoji-only chat is shown larger.

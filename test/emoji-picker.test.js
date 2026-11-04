@@ -49,3 +49,9 @@ test('skin tones keep neutral emoji visible and select matching variants in ever
  assert.ok(search(catalog,'',-1,'all').some(([emoji])=>emoji==='👍🏿'));
  assert.ok(search(catalog,'',-1,'default').every(([emoji])=>!/[\u{1f3fb}-\u{1f3ff}]/u.test(emoji)));
 });
+
+test('bundled animated sticker metadata references only official Google assets',()=>{
+ assert.equal(catalog.stickers.length,881);assert.equal(new Set(catalog.stickers.map(row=>row[3])).size,catalog.stickers.length);
+ for(const row of catalog.stickers){assert.equal(typeof row[1],'string');assert.match(row[3],/^[a-f0-9]{4,6}(?:_[a-f0-9]{4,6})*$/);}
+ assert.match(read('public/data/noto.LICENSE.txt'),/Attribution 4.0 International/);assert.equal(read('extension/noto.LICENSE.txt'),read('public/data/noto.LICENSE.txt'));
+});

@@ -1208,10 +1208,10 @@ function buildReactions() {
   $('#reactPop').innerHTML = html;
   $('#tbReactPop').innerHTML = html;
 }
+const chatDraft = WpEmoji.createDraft($('#chatInput'));
 const chatPicker = WpEmoji.create($('#chatEmojiPop'), { load: loadEmojiCatalog, giphyKey: () => S.settings.giphyKey || '', onPick: emoji => {
   if (!(isHost || S.perms.chat)) return noPerm('chat');
-  const input = $('#chatInput'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-  input.setRangeText(emoji, start, end, 'end'); closePops(); input.focus();
+  chatDraft.pick(emoji); closePops();
 } });
 $('#reactBtn').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#reactPop'); });
 $('#tbReact').addEventListener('click', e => { e.stopPropagation(); if (!(isHost || S.perms.react)) return noPerm('react'); togglePop('#tbReactPop'); });
@@ -1407,6 +1407,7 @@ document.addEventListener('keydown', e => {
   const field = (e.composedPath?.()[0] || e.target).closest('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]), textarea, select, [contenteditable]');
   if (e.key === 'Escape') { closePops(); $('#quickChat').hidden = true; return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if ((e.key === 'Enter' || e.key === ' ') && (e.composedPath?.()[0] || e.target).closest('button')) return;
   // in an empty chat box, up/down still change the volume
   if (field && !((e.key === 'ArrowUp' || e.key === 'ArrowDown') && field.tagName === 'INPUT' && ['chatInput', 'quickChatInput'].includes(field.id) && !field.value)) return;
   const k = e.key.toLowerCase();

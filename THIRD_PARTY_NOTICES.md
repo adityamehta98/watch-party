@@ -50,3 +50,11 @@ No GIPHY media or search response is bundled or saved to disk by the app.
 The unmodified static Powered By GIPHY mark embedded in the picker comes from
 https://media.giphy.com/giphy-attribution-marks.zip (Static Logos/Small/Dark
 Backgrounds/PoweredBy_200px-Black_HorizLogo.png); GIPHY trademarks remain theirs.
+
+Animated Google Noto stickers (881 metadata entries) load unmodified from
+https://fonts.gstatic.com/s/e/notoemoji/latest/ when opened or shared. Copyright
+Google; artwork licensed under CC BY 4.0. Picker/message credits link to the source
+and license. Complete terms are in LICENSES/Google-Noto-CC-BY-4.0.txt in the build
+and public/data/noto.LICENSE.txt in source. Catalog metadata was taken from
+https://googlefonts.github.io/noto-emoji-files/; its source hash is recorded in the
+local emoji catalog. No image collection is bundled.

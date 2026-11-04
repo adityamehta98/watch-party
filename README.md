@@ -696,7 +696,7 @@ See [Safari extension removal, unused-code results and FFmpeg compatibility chec
 
 Only one popup is shown at a time. The silent bell has no badge/count and opens your own received notifications with timestamps. Only the host can clear every viewer's history. Closing the panel keeps it; closing the host executable erases the in-memory history. Storage is bounded to 1,000 recent notices across the room.
 
-The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Appearance depends on the device's emoji font; no third-party emoji CDN or analytics is used. Reload extension 1.16.1 after updating.
+The local Unicode Emoji 18.0 catalog includes 3,963 emoji, categories, search and skin tones for chat. Reactions keep their compact set of quick buttons. Appearance depends on the device's emoji font; no third-party emoji CDN or analytics is used. Reload extension 1.17.0 after updating.
 
 Continue Watching hides a series when its most recently watched episode is the known final episode with at most five minutes remaining. For short episodes, at least half must be watched. Saved progress remains available from the library and episode picker. Unknown episode totals are retained.
 
@@ -706,3 +706,9 @@ runs on explicit submit; choose a result and press Send. The key is editable onl
 by the host and necessarily visible to admitted clients for GIPHY's direct-browser
 API. No paid plan or automatic upgrade is configured. See instructions.md and
 PRIVACY.md for setup and third-party requests.
+
+The chat composer previews GIF/sticker attachments before sending. A separate
+Google Noto tab provides 881 searchable animated stickers without an API key;
+GIPHY quota errors automatically switch to it. Sticker search runs locally, with
+images loaded from Google (CC BY 4.0). GIPHY's required attribution is kept in a
+compact footer, and emoji-only messages appear larger.

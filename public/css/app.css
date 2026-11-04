@@ -399,7 +399,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .msg.cont .av, .msg.cont .who { visibility: hidden; height: 0; }
 .msg.system { display: block; text-align: center; color: var(--faint); font-size: 12px; }
 .host-tag { font-size: 10px; font-weight: 800; color: var(--accent); border: 1px solid rgba(245,181,68,.4); border-radius: 4px; padding: 0 4px; letter-spacing: .04em; }
-.chat-form { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--border); }
+.chat-form { display: flex; align-items: center; gap: 6px; padding: 10px; border-top: 1px solid var(--border); }
 .chat-form input { flex: 1; min-width: 0; height: 40px; }
 .chat-emoji-wrap { flex: none; }
 .chat-emoji-wrap .icon-btn { width: 40px; height: 40px; border-color: var(--border-2); }

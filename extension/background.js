@@ -226,9 +226,9 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     let url; try { url = new URL(m.url); } catch { return; }
     if (url.origin !== 'https://api.giphy.com' || url.username || url.password || !/^\/v1\/gifs\/(?:search|trending)$/.test(url.pathname)) return;
     fetch(url.href, { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(10000) }).then(async response => {
-      if (!response.ok) throw Error(response.status === 429 ? 'Free GIF search limit reached. Try again later.' : 'GIPHY is unavailable. Check the key or try again later.');
+      if (!response.ok) throw Object.assign(Error(response.status === 429 ? 'Free GIF search limit reached. Try again later.' : 'GIPHY is unavailable. Check the key or try again later.'), { status: response.status });
       return response.json();
-    }).then(reply, error => reply({ error: error.message })); return true;
+    }).then(reply, error => reply({ error: error.message, status: error.status })); return true;
   }
   if (m.wp === 'emoji-catalog') {
     fetch(chrome.runtime.getURL('emoji-data.json')).then(response => response.json()).then(reply, () => reply(null));

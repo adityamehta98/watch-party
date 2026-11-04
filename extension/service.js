@@ -366,7 +366,7 @@
     crunchyroll: ['#f47521', '#fff'], paramount: ['#0064ff', '#fff'], max: ['#002be7', '#fff'], disney: ['#1f4fe0', '#fff'],
     appletv: ['#f2f2f7', '#111'], youtube: ['#ff0033', '#fff'],
   }[SERVICE] || ['#f5b544', '#1a1300'];
-  let chatPicker = null;
+  let chatPicker = null, chatDraft = null;
   let host = null, root = null, chatOpen = false, reactsOpen = false, chatEmojiOpen = false, facesOpen = true;
   const hue = str => { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || '?';
@@ -530,7 +530,7 @@
     // controls without covering this UI or changing its stacking order.
     host.popover = 'manual';
     host.setAttribute('style', 'all:initial;position:fixed;inset:auto;z-index:2147483647;left:0;top:0;margin:0;padding:0;border:0;background:transparent;overflow:visible;');
-    chatPicker = null;
+    chatPicker = null; chatDraft = null;
     root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>
       :host { all: initial; }
@@ -570,7 +570,7 @@
       .list { flex: 1; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; color: #eceef2; font-size: 13.5px; line-height: 1.35; max-height: 260px; }
       .list b { color: #f5b544; margin-right: 6px; }
       .list .sys { color: #8a8f99; font-size: 12px; text-align: center; }
-      form { position: relative; display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.1); }
+      form { position: relative; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.1); }
       input { flex: 1; min-width: 0; height: 34px; border-radius: 9px; border: 1px solid rgba(255,255,255,.18); background: #1b1d23; color: #fff; padding: 0 10px; font-size: 13.5px; outline: none; }
       form .send { border-radius: 9px; width: auto; padding: 0 12px; height: 34px; background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 13px; }
       form .emoji-toggle { width: 34px; height: 34px; border-radius: 9px; flex: none; }
@@ -612,6 +612,7 @@
       else if (a === 'chat-emoji') { chatEmojiOpen = !chatEmojiOpen; render(); if (!chatEmojiOpen) root.getElementById('input').focus({ preventScroll: true }); }
       else if (a === 'faces') { facesOpen = !facesOpen; if (facesOpen) send({ type: 'want-cams' }); render(); }
     });
+    chatDraft = WpEmoji.createDraft(root.getElementById('input'));
     root.getElementById('form').addEventListener('submit', e => {
       e.preventDefault();
       const i = root.getElementById('input');
@@ -698,10 +699,9 @@
     const chatEmoji = root.getElementById('chatEmoji');
     chatEmoji.hidden = !chatOpen || !chatEmojiOpen || !ui.canChat;
     if (!chatEmoji.hidden) {
-      chatPicker ||= WpEmoji.create(chatEmoji, { load: () => chrome.runtime.sendMessage({ wp: 'emoji-catalog' }), giphyKey: () => ui?.giphyKey || '', request: async url => { const result = await chrome.runtime.sendMessage({ wp: 'giphy-search', url }); if (result?.error) throw Error(result.error); return result; }, onPick: emoji => {
+      chatPicker ||= WpEmoji.create(chatEmoji, { load: () => chrome.runtime.sendMessage({ wp: 'emoji-catalog' }), giphyKey: () => ui?.giphyKey || '', request: async url => { const result = await chrome.runtime.sendMessage({ wp: 'giphy-search', url }); if (result?.error) throw Object.assign(Error(result.error), { status: result.status }); return result; }, onPick: emoji => {
         if (!ui?.canChat) return;
-        const input = root.getElementById('input'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
-        input.setRangeText(emoji, start, end, 'end'); chatEmojiOpen = false; input.focus({ preventScroll: true }); render();
+        chatDraft.pick(emoji); chatEmojiOpen = false; render();
       } }); chatPicker.open();
     }
     if (chatOpen) seenChat = ui.chat.length;
