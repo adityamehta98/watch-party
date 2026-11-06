@@ -1,4 +1,4 @@
-// Builds dist/WatchParty/ : WatchParty.exe (Node + app + web page in one file) and bin/ffmpeg.
+// Builds build/output/WatchParty/ : WatchParty.exe (Node + app + web page in one file) and bin/ffmpeg.
 // Usage: node build/build-windows.js <path-to-windows-node.exe> <path-to-ffmpeg-bin-folder>
 // The windows node.exe must be the same version as the node running this script.
 'use strict';
@@ -9,8 +9,8 @@ const { buildChromium } = require('./build-extensions');
 const { packageNotices, supportedNode } = require('./package-notices');
 
 const ROOT = path.resolve(__dirname, '..');
-const OUT = path.join(ROOT, 'dist', 'WatchParty');
-const TMP = path.join(ROOT, 'dist', '.build');
+const OUT = path.join(ROOT, 'build', 'output', 'WatchParty');
+const TMP = path.join(ROOT, 'build', 'cache', 'sea');
 const [winNode, ffmpegBin] = process.argv.slice(2);
 const TOOLS = process.env.BUILD_TOOLS || path.join(ROOT, 'node_modules');
 if (!winNode || !ffmpegBin) { console.error('usage: node build/build-windows.js node.exe ffmpeg/bin'); process.exit(1); }
@@ -21,6 +21,7 @@ for (const tool of ['ffmpeg.exe', 'ffprobe.exe']) {
   if (!fs.existsSync(path.join(ffmpegBin, tool))) throw new Error(`Missing required FFmpeg tool: ${tool}`);
 }
 
+for (const target of [OUT, TMP]) if (!target.startsWith(ROOT + path.sep)) throw new Error('Build output escaped workspace');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'bin'), { recursive: true });
@@ -97,13 +98,8 @@ for (const f of fs.readdirSync(ffmpegBin)) {
 }
 const ffmpegVersion = execFileSync(path.join(ffmpegBin, 'ffmpeg.exe'), ['-version'], { encoding: 'utf8', windowsHide: true }).trim();
 packageNotices(ROOT, OUT, winNode, ffmpegBin, Object.keys(bundle.metafile.inputs), ffmpegVersion);
-for (const file of ['README.md', 'instructions.md', 'PRIVACY.md']) fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
-// Review reports are optional; required licenses are enforced by packageNotices above.
-for (const file of ['SECURITY_AUDIT.md', 'DEAD_CODE_AND_FFMPEG.md', 'docs/AUDIT_COVERAGE.md']) {
-  if (!fs.existsSync(path.join(ROOT, file))) continue;
-  fs.mkdirSync(path.dirname(path.join(OUT, file)), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
-}
+fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(OUT, 'README.md'));
+fs.cpSync(path.join(ROOT, 'docs'), path.join(OUT, 'docs'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'refresh.bat'), path.join(OUT, 'refresh.bat'));
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log('built', OUT);

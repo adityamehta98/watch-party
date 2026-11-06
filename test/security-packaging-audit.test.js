@@ -30,7 +30,7 @@ test('release assembly retains full license texts and records binary integrity a
   put(path.join(root, 'LICENSE'), 'Application MIT notice\n');
   put(path.join(root, 'public', 'data', 'emoji.LICENSE.txt'), 'Unicode License V3\n');
   put(path.join(root, 'public', 'data', 'noto.LICENSE.txt'), 'Creative Commons Attribution 4.0\n');
-  put(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'Third-party notice\n');
+  put(path.join(root, 'docs', 'THIRD_PARTY_NOTICES.md'), 'Third-party notice\n');
   put(node, 'original Node binary');
   put(path.join(path.dirname(node), 'LICENSE'), 'Complete Node and third-party notices\n');
   put(path.join(ffmpeg, '..', 'LICENSE.txt'), 'Full GPL text\n');

@@ -1,5 +1,11 @@
 # Privacy and local storage
 
+## Runtime locations
+
+In a source checkout, private settings, history and cache live under `app/`.
+In a portable release, paths are relative to the executable. Custom cache
+locations are preserved.
+
 Watch Party is hosted on the owner's PC. This describes the current source, not a
 promise about third-party sites or a substitute for a publisher-specific policy.
 

@@ -53,7 +53,13 @@ def main():
     if args.anilist_id < 1 or not re.fullmatch(r'[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*', args.language):
         parser.error('Invalid anime ID or subtitle language')
     root = Path(__file__).resolve().parents[1]
-    folder = root / 'cache' / 'subtitles' / f'anime-{args.anilist_id}' / args.audio
+    runtime = root if (root / 'config.json').exists() else root / 'app'
+    config_file = runtime / 'config.json'
+    config = json.loads(config_file.read_text(encoding='utf-8')) if config_file.exists() else {}
+    cache = Path(config.get('cacheDir') or 'cache')
+    if not cache.is_absolute():
+        cache = runtime / cache
+    folder = cache / 'subtitles' / f'anime-{args.anilist_id}' / args.audio
     prepared = {}
     with zipfile.ZipFile(args.archive) as archive:
         if len(archive.infolist()) > 2000:

@@ -5,7 +5,7 @@ const zlib = require('node:zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const COMMON = path.join(ROOT, 'extension');
-const CHROMIUM_STAGE_ROOT = path.join(ROOT, 'dist', '.chromium-extension');
+const CHROMIUM_STAGE_ROOT = path.join(ROOT, 'build', 'cache', 'chromium-extension');
 const CHROMIUM_STAGE = path.join(CHROMIUM_STAGE_ROOT, 'watch-party-sync');
 const CHROMIUM_OUTPUT = path.join(ROOT, 'public', 'ext', 'watch-party-sync.zip');
 

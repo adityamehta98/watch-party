@@ -9,7 +9,7 @@
     "build:extensions": "node build/build-extensions.js",
     "benchmark:sync": "node benchmark/sync-benchmark.js --write",
     "test": "node --test test/*.test.js",
-    "audit:unused": "npx --yes knip@6.44.1 --config knip.json",
+    "audit:unused": "npx --yes knip@6.44.1 --config build/knip.json",
     "test:ffmpeg": "node benchmark/ffmpeg-compatibility.js"
   },
   "engines": {

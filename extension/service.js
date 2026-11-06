@@ -575,9 +575,7 @@
       form .send { border-radius: 9px; width: auto; padding: 0 12px; height: 34px; background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 13px; }
       form .emoji-toggle { width: 34px; height: 34px; border-radius: 9px; flex: none; }
       form .emoji-toggle svg { width: 18px; height: 18px; }
-      .emoji-menu { position: absolute; left: 8px; bottom: 48px; width: 228px; padding: 7px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(18,20,25,.98); box-shadow: 0 12px 32px rgba(0,0,0,.55); z-index: 2; }
-      .emoji-menu button { width: 32px; height: 32px; border-radius: 8px; background: transparent; font-size: 19px; }
-      .emoji-menu button:hover { background: rgba(255,255,255,.12); }
+      .emoji-menu { position:absolute;left:8px;bottom:48px;display:block;width:min(330px,calc(100vw - 24px));padding:9px;max-height:min(420px,65dvh);overflow:auto;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(18,20,25,.98);box-shadow:0 12px 32px rgba(0,0,0,.55);z-index:2; }
       .list b { color: var(--brand); }
       [hidden] { display: none !important; }
     </style>
@@ -592,7 +590,6 @@
       </div>
       <div class="reacts" id="reacts" hidden></div>
       <div class="faces" id="faces"></div>
-      <style>.emoji-menu{display:block;width:min(330px,calc(100vw - 24px));padding:9px;max-height:400px;overflow:auto}</style>
       <div class="chat" id="chat" hidden><div class="list" id="list"></div><form id="form" autocomplete="off"><button class="emoji-toggle" type="button" data-a="chat-emoji" title="Add emoji" aria-label="Add emoji"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/></svg></button><div class="emoji-menu" id="chatEmoji" hidden></div><input id="input" maxlength="500" placeholder="Say something…"><button class="send" type="submit">Send</button></form></div>
     </div>`;
     // typing here must not reach the video player's keyboard shortcuts (space would pause it)

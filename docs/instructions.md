@@ -1,4 +1,13 @@
-# Anime playback troubleshooting: AniList, MegaPlay, and iPad
+# Anime playback and troubleshooting
+
+## Local paths
+
+In a source checkout, `config.json`, `watch-history.json`, `bin/` and `cache/`
+are under `app/`; portable downloads keep them beside the executable.
+Run `build.bat` from the repository root, then use root `refresh.bat` or
+`app/WatchParty.exe`.
+
+## AniList, MegaPlay, and iPad
 
 ## The source URL issue
 
@@ -181,8 +190,8 @@ Controls, menus, camera tiles and the home shelf are excluded. On devices that
 block script volume changes (including iOS native video), use the hardware volume
 buttons; the player shows that instruction instead of a false percentage.
 
-See SECURITY_AUDIT.md and PRIVACY.md for the security/storage review and unresolved
-release conditions. Extension 1.17.5 must be reloaded after installing this build.
+See PRIVACY.md, THIRD_PARTY_NOTICES.md and AUDIT_COVERAGE.md for storage,
+license obligations and validation scope. Extension 1.17.6 must be reloaded after installing this build.
 
 Safari extension/native companion support has been removed. iPad/iPhone/Safari
 web playback for anime, local movies and YouTube remains available. External

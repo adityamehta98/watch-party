@@ -80,6 +80,6 @@ svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none
 .chat-form input:focus { outline: 2px solid rgba(245,181,68,.5); border-color: transparent; }
 .emoji-btn { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
 .emoji-btn:hover, .emoji-btn.on { color: var(--text); background: var(--panel-2); }
-.emoji-picker { position: absolute; left: 10px; bottom: 54px; width: min(330px, calc(100vw - 24px)); padding: 9px; display: block; max-height: 440px; overflow: auto; border: 1px solid var(--border-2); border-radius: 12px; background: rgba(22,24,29,.98); box-shadow: 0 12px 32px rgba(0,0,0,.55); z-index: 3; }
+.emoji-picker { position: absolute; left: 10px; bottom: 54px; width: min(330px, calc(100vw - 24px)); padding: 9px; display: block; max-height: min(420px, 65dvh); overflow: auto; border: 1px solid var(--border-2); border-radius: 12px; background: rgba(22,24,29,.98); box-shadow: 0 12px 32px rgba(0,0,0,.55); z-index: 3; }
 .send { width: 36px; height: 36px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; display: grid; place-items: center; }
 .send svg { width: 18px; height: 18px; }

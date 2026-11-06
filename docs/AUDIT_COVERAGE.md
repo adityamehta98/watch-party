@@ -1,115 +1,21 @@
-# Source coverage inventory
+# Validation scope
 
-Current first-party files are inventoried below. Source inventory and automated checks do not prove absence of defects. Safari extension/native code was retired; Safari/iPad web playback remains supported. See DEAD_CODE_AND_FFMPEG.md for Knip scope and actual compatibility evidence.
+The source tree, packaged application and optional browser extension have separate checks.
 
-| File | Physical lines |
-|---|---:|
-| .gitignore | 49 |
-| LICENSE | 21 |
-| PRIVACY.md | 71 |
-| README.md | 693 |
-| SECURITY_AUDIT.md | 122 |
-| THIRD_PARTY_NOTICES.md | 42 |
-| benchmark/README.md | 13 |
-| benchmark/ffmpeg-compatibility.js | 197 |
-| benchmark/results.json | 39 |
-| benchmark/sync-benchmark.js | 127 |
-| bin/README.txt | 3 |
-| build.bat | 93 |
-| build/build-extensions.js | 83 |
-| build/build-windows.js | 105 |
-| build/import-anime-captions.py | 84 |
-| build/package-notices.js | 61 |
-| build/prepare-tools.ps1 | 65 |
-| config.example.json | 35 |
-| extension/LICENSE | 21 |
-| extension/ad-domains.js | 20 |
-| extension/background.js | 487 |
-| extension/catalog-launch.js | 248 |
-| extension/custom-clean.js | 135 |
-| extension/manifest.json | 61 |
-| extension/netflix-main.js | 34 |
-| extension/party.js | 56 |
-| extension/playback-history.js | 74 |
-| extension/service.js | 814 |
-| extension/services.js | 63 |
-| extension/sidebar.css | 87 |
-| extension/sidebar.html | 77 |
-| extension/sidebar.js | 215 |
-| extension/theater.css | 24 |
-| extension/theater.html | 20 |
-| extension/theater.js | 219 |
-| instructions.md | 190 |
-| knip.json | 37 |
-| package-lock.json | 867 |
-| package.json | 28 |
-| public/css/app.css | 1440 |
-| public/index.html | 395 |
-| public/js/anime-resume.js | 33 |
-| public/js/app.js | 3438 |
-| public/js/camera-gallery.js | 80 |
-| public/js/camera-layout.js | 40 |
-| public/js/capabilities.js | 49 |
-| public/js/file-playback.js | 133 |
-| public/js/fullscreen.js | 91 |
-| public/js/media.js | 375 |
-| public/js/net.js | 78 |
-| public/js/platform.js | 16 |
-| public/js/player-menu.js | 72 |
-| public/js/player.js | 448 |
-| public/js/rtc.js | 120 |
-| public/js/subtitles.js | 136 |
-| public/js/sync.js | 16 |
-| public/js/visuals.js | 41 |
-| public/sw.js | 39 |
-| refresh.bat | 62 |
-| server/anime-history.js | 134 |
-| server/anime.js | 152 |
-| server/assets.js | 36 |
-| server/captions.js | 72 |
-| server/catalog.js | 229 |
-| server/cert.js | 88 |
-| server/free-media.js | 170 |
-| server/guard.js | 76 |
-| server/index.js | 906 |
-| server/library.js | 878 |
-| server/media.js | 71 |
-| server/pwa.js | 27 |
-| server/remote-media.js | 102 |
-| server/room.js | 1029 |
-| server/services.js | 70 |
-| server/sessions.js | 23 |
-| server/settings.js | 16 |
-| server/subtitle-search.js | 142 |
-| server/tailscale.js | 188 |
-| server/tools.js | 134 |
-| server/tunnel.js | 67 |
-| server/turn.js | 335 |
-| server/upnp.js | 205 |
-| server/upstream.js | 110 |
-| server/youtube.js | 73 |
-| test/anime-history.test.js | 295 |
-| test/anime-resume.test.js | 40 |
-| test/anime-source.test.js | 68 |
-| test/anime-startup.test.js | 182 |
-| test/camera-layout.test.js | 126 |
-| test/captions.test.js | 66 |
-| test/catalog-autoplay.test.js | 302 |
-| test/catalog-launch.test.js | 126 |
-| test/episode-navigation.test.js | 56 |
-| test/home-navigation.test.js | 26 |
-| test/ipad-anime.test.js | 124 |
-| test/mobile-controls.test.js | 92 |
-| test/playback-history.test.js | 39 |
-| test/player-menu.test.js | 108 |
-| test/player.test.js | 427 |
-| test/regression.test.js | 1050 |
-| test/retired-safari-extension.test.js | 30 |
-| test/security-browser-audit.test.js | 48 |
-| test/security-extension-audit.test.js | 144 |
-| test/security-packaging-audit.test.js | 54 |
-| test/security-server-audit.test.js | 70 |
-| test/subtitle-search.test.js | 119 |
-| test/theater-load.test.js | 112 |
-| test/volume-gestures.test.js | 33 |
-| DEAD_CODE_AND_FFMPEG.md | 134 |
+- `npm test`: browser logic, server authorization, playback, media preparation and release notices.
+- `npm run audit:unused`: pinned Knip analysis using `build/knip.json`.
+- `npm run benchmark:sync`: deterministic sync simulation; results are under `benchmark/`.
+- `npm run test:ffmpeg`: local media and fixture compatibility checks. Private paths and reports stay under `app/cache/`.
+- `build.bat`: locked dependencies, Windows executable, extension package and bundled licenses.
+
+These checks do not prove absence of bugs, security issues or media-rights restrictions.
+The historical SECURITY_AUDIT.md and DEAD_CODE_AND_FFMPEG.md reports were removed; this document does not recreate their conclusions.
+
+## Reviewed static-analysis flags
+
+The current Knip run reports no unused files or dependencies. Its 17 export
+candidates are retained after checking real call sites: server/anime.js is used
+through the anime namespace in server/index.js and server/room.js; tools.findBin,
+tools.IS_SEA and youtube.search are called by server/index.js. REQUIRED_EXT_VERSION,
+detectPlatform and playerMenuState are used internally and by dynamic-import
+tests. Knip exits nonzero for these flags; they are not suppressed wholesale.

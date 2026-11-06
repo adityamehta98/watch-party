@@ -36,7 +36,7 @@ function packageNotices(root, out, winNode, ffmpegBin, inputs, ffmpegVersion) {
   fs.copyFileSync(path.join(root, 'public', 'data', 'emoji.LICENSE.txt'), path.join(licenseRoot, 'Unicode-LICENSE.txt'));
   fs.copyFileSync(path.join(root, 'public', 'data', 'noto.LICENSE.txt'), path.join(licenseRoot, 'Google-Noto-CC-BY-4.0.txt'));
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(out, 'LICENSE'));
-  fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(out, 'THIRD_PARTY_NOTICES.md'));
+  fs.copyFileSync(path.join(root, 'docs', 'THIRD_PARTY_NOTICES.md'), path.join(out, 'THIRD_PARTY_NOTICES.md'));
   const packages = [];
   for (const [name, directory] of [...bundlePackages(root, inputs)].sort(([a], [b]) => a.localeCompare(b))) {
     const info = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));

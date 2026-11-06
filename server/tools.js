@@ -6,8 +6,10 @@ const path = require('path');
 
 let IS_SEA = false;
 try { IS_SEA = require('node:sea').isSea(); } catch { IS_SEA = false; }
-// When packaged as WatchParty.exe, everything (config, cache, bin\ffmpeg.exe) lives next to the exe.
-const ROOT = IS_SEA ? path.dirname(process.execPath) : path.resolve(__dirname, '..');
+// Portable releases use the executable directory. Source runs share app/ with local builds;
+// retain the old root until build.bat migrates an existing checkout's settings.
+const SOURCE_ROOT = path.resolve(__dirname, '..');
+const ROOT = IS_SEA ? path.dirname(process.execPath) : fs.existsSync(path.join(SOURCE_ROOT, 'config.json')) ? SOURCE_ROOT : path.join(SOURCE_ROOT, 'app');
 const IS_WIN = process.platform === 'win32';
 
 function exists(p) {
@@ -131,4 +133,4 @@ function encoderLabel(enc) {
   return 'CPU (slow)';
 }
 
-module.exports = { findBin, run, detectEncoders, hasDoviStrip, encoderLabel, ROOT };
+module.exports = { findBin, run, detectEncoders, hasDoviStrip, encoderLabel, ROOT, IS_SEA };

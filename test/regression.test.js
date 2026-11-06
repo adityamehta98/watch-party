@@ -13,8 +13,9 @@ const { EventEmitter } = require('node:events');
 const { spawnSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
+const APP_ROOT = require('../server/tools').ROOT;
 const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : path.join(dir, e.name));
+const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).filter(e => !(dir === path.join(ROOT, 'build') && ['cache', 'output'].includes(e.name))).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : path.join(dir, e.name));
 
 test('every JavaScript file parses', () => {
   for (const dir of ['server', 'public/js', 'extension', 'build', 'test']) {
@@ -279,7 +280,7 @@ test('synchronization benchmark results and README badge are reproducible', () =
   const measured = JSON.parse(read('benchmark/results.json'));
   assert.ok(measured.samples > 100000);
   assert.ok(measured.p50Ms <= measured.p95Ms && measured.p95Ms <= measured.p99Ms);
-  assert.match(read('README.md'), /\.github\/badges\/sync\.svg/);
+  assert.match(read('docs/GUIDE.md'), /\.github\/badges\/sync\.svg/);
 });
 
 test('visual policy disables costly effects for accessibility and constrained devices', async () => {
@@ -514,8 +515,8 @@ test('media server supports full, HEAD, bounded, suffix, and invalid byte ranges
 });
 
 test('prepare builds and cleans a native Safari HLS package', async t => {
-  const ffmpeg = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-  const ffprobe = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+  const ffmpeg = path.join(APP_ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobe = path.join(APP_ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
   if (!fs.existsSync(ffmpeg)) return t.skip('bundled ffmpeg is not available on this platform');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-hls-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -635,8 +636,8 @@ test('HLS audio copy is explicit and never bypasses stereo or six-channel limits
 });
 
 test('progressive preparation really downmixes source AAC when stereo is requested', async t => {
-  const ffmpeg = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-  const ffprobe = path.join(ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+  const ffmpeg = path.join(APP_ROOT, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobe = path.join(APP_ROOT, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
   if (!fs.existsSync(ffmpeg)) return t.skip('bundled ffmpeg is not available on this platform');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-hls-audio-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -981,7 +982,7 @@ test('legacy Cloudflare settings are cleaned and launcher docs are accurate', ()
   assert.equal(migrated.safariExtensionUrl, undefined);
   assert.equal(migrated.version, 2);
   assert.equal(migrateConfig({ version: 2, tunnel: 'cloudflare' }).tunnel, 'cloudflare');
-  assert.doesNotMatch(read('bin/README.txt'), /installed by refresh\.bat/i);
+  assert.doesNotMatch(read('docs/FFMPEG.md'), /installed by refresh\.bat/i);
 });
 
 function event() { const listeners = []; return { addListener(fn) { listeners.push(fn); }, fire(...a) { return listeners.map(fn => fn(...a)); } }; }
@@ -1046,5 +1047,5 @@ test('secret, authentication, and cleanup invariants remain enforced', () => {
   assert.doesNotMatch(index, /-Message \$\{JSON\.stringify/);
   assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.html')));
   assert.ok(!fs.existsSync(path.join(ROOT, 'extension/popup.js')));
-  assert.doesNotMatch(`${read('public/css/app.css')}\n${read('README.md')}\n${read('bin/README.txt')}`, /tunnel-box|link-seg|tile\.speaking|Start Watch Party\.bat/);
+  assert.doesNotMatch(`${read('public/css/app.css')}\n${read('README.md')}\n${read('docs/FFMPEG.md')}`, /tunnel-box|link-seg|tile\.speaking|Start Watch Party\.bat/);
 });
