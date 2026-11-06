@@ -75,6 +75,9 @@ function stripPeSignature(src, dst) {
 }
 const exe = path.join(OUT, 'WatchParty.exe');
 stripPeSignature(winNode, exe);
+// Replace Node's icon before postject adds the SEA resource, preserving both in the final PE.
+execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+  path.join(__dirname, 'set-windows-icon.ps1'), '-Executable', exe], { stdio: 'inherit', windowsHide: true });
 execFileSync(process.execPath, [path.join(TOOLS, 'postject', 'dist', 'cli.js'), exe, 'NODE_SEA_BLOB', path.join(TMP, 'sea.blob'),
   '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'], { stdio: 'inherit' });
 
