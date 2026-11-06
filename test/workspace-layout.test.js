@@ -32,6 +32,7 @@ test('local installation preserves private data, relative paths and repeat insta
   const release = path.join(root, 'build/output/WatchParty');
   put(path.join(release, 'WatchParty.exe'), 'new executable');
   put(path.join(release, 'bin/ffmpeg.exe'), 'new tool');
+  fs.copyFileSync(path.join(ROOT, 'build/refresh-windows-icon.ps1'), path.join(release, 'bin/refresh-icon.ps1'));
   put(path.join(root, 'WatchParty.exe'), 'old executable');
   const original = JSON.stringify({ adminKey: 'fixture-secret', folders: ['movies'], cacheDir: 'prepared' });
   put(path.join(root, 'config.json'), original);
@@ -39,6 +40,7 @@ test('local installation preserves private data, relative paths and repeat insta
   put(path.join(root, 'cache/subtitles/manual.vtt'), 'saved captions');
   const install = () => spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'build/install-local.ps1'), '-Workspace', root, '-NoLaunch'], { encoding: 'utf8', windowsHide: true });
   let result = install(); assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Refreshed the executable icon in Windows Explorer/, 'installation refreshes the shell after replacing the executable');
   assert.equal(fs.existsSync(path.join(root, 'config.json')), false);
   const app = path.join(root, 'app');
   const config = JSON.parse(fs.readFileSync(path.join(app, 'config.json')));

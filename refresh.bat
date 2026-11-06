@@ -27,6 +27,7 @@ powershell -NoProfile -Command "$ErrorActionPreference='Stop'; foreach ($folder 
 if errorlevel 1 goto inuse
 move /y "_update\new\WatchParty.exe" "%EXE_DIR%\WatchParty.exe" >nul
 if errorlevel 1 goto inuse
+if exist "bin\refresh-icon.ps1" powershell -NoProfile -ExecutionPolicy Bypass -File "bin\refresh-icon.ps1" -Executable "%EXE_DIR%\WatchParty.exe"
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $base=[IO.Path]::GetFullPath((Get-Location).Path); $target=[IO.Path]::GetFullPath((Join-Path $base '_update')); if (-not $target.StartsWith($base + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update path' }; Remove-Item -LiteralPath $target -Recurse -Force"
 echo   Done.
 echo.

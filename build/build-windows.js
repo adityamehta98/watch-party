@@ -99,6 +99,7 @@ execFileSync(process.execPath, [path.join(TOOLS, 'postject', 'dist', 'cli.js'), 
 for (const f of fs.readdirSync(ffmpegBin)) {
   if (/^(ffmpeg|ffprobe)\.exe$/i.test(f) || /\.dll$/i.test(f)) fs.copyFileSync(path.join(ffmpegBin, f), path.join(OUT, 'bin', f));
 }
+fs.copyFileSync(path.join(__dirname, 'refresh-windows-icon.ps1'), path.join(OUT, 'bin', 'refresh-icon.ps1'));
 const ffmpegVersion = execFileSync(path.join(ffmpegBin, 'ffmpeg.exe'), ['-version'], { encoding: 'utf8', windowsHide: true }).trim();
 packageNotices(ROOT, OUT, winNode, ffmpegBin, Object.keys(bundle.metafile.inputs), ffmpegVersion);
 fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(OUT, 'README.md'));

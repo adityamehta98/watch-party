@@ -70,6 +70,8 @@ foreach ($name in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','BUILD-MANIFE
 $executable = Join-Path $root 'WatchParty.exe'
 Assert-LocalPath $executable
 Copy-Item -LiteralPath (Join-Path $release 'WatchParty.exe') -Destination $executable -Force
+$iconRefresh = Join-Path $app 'bin\refresh-icon.ps1'
+if (Test-Path -LiteralPath $iconRefresh -PathType Leaf) { & $iconRefresh -Executable $executable }
 # Remove only the obsolete executable/launcher left by the previous local layout.
 foreach ($name in @('WatchParty.exe','refresh.bat')) {
   $obsolete = Join-Path $app $name
