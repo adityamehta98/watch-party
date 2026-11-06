@@ -4,7 +4,7 @@ Watch local movies and anime together with synchronized playback, chat, reaction
 
 ## Run on Windows
 
-Double-click **refresh.bat**, or open **app/WatchParty.exe** directly. Run **build.bat** after changing the source. It builds a fresh release, installs it into app/, and starts it.
+Double-click **refresh.bat**, or open **WatchParty.exe** directly. Run **build.bat** after changing the source. It builds a fresh release, installs its companion files into app/, and starts the root executable.
 
 Existing settings, watch history, caches and tools are migrated from the old root layout on the first build. They are preserved across later builds. To update a portable download, keep its complete folder together and use its refresh.bat.
 
@@ -24,7 +24,7 @@ Source runs share app/config.json, app/watch-history.json and app/cache/ with th
 
 | Path | Contents |
 | --- | --- |
-| app/ | Installed executable, tools, extension, private settings/history and caches; ignored by Git |
+| app/ | Tools, extension, private settings/history and caches; ignored by Git |
 | server/ | Host server and media delivery |
 | public/ | Web player and chat |
 | extension/ | Chromium extension source |

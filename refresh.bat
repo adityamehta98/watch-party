@@ -1,7 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if exist "app\WatchParty.exe" cd /d "%~dp0app"
+set "EXE_DIR=%CD%"
+if not exist "WatchParty.exe" if exist "app\WatchParty.exe" set "EXE_DIR=%CD%\app"
+if exist "app\BUILD-MANIFEST.json" cd /d "%~dp0app"
 title Watch Party update
 rem Starts Watch Party. If an update is waiting in the _update folder, installs it first.
 if not exist "_update\WatchParty.part00" goto noupdate
@@ -23,7 +25,7 @@ if errorlevel 1 goto unzipfail
 if not exist "_update\new\WatchParty.exe" goto unzipfail
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; foreach ($folder in @('bin','extension','LICENSES','docs')) { $source=Join-Path '_update\new' $folder; if (Test-Path -LiteralPath $source -PathType Container) { Copy-Item -LiteralPath $source -Destination '.' -Recurse -Force } }; foreach ($file in @('LICENSE','THIRD_PARTY_NOTICES.md','BUILD-MANIFEST.json','README.md')) { $source=Join-Path '_update\new' $file; if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination $file -Force } }"
 if errorlevel 1 goto inuse
-move /y "_update\new\WatchParty.exe" "WatchParty.exe" >nul
+move /y "_update\new\WatchParty.exe" "%EXE_DIR%\WatchParty.exe" >nul
 if errorlevel 1 goto inuse
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $base=[IO.Path]::GetFullPath((Get-Location).Path); $target=[IO.Path]::GetFullPath((Join-Path $base '_update')); if (-not $target.StartsWith($base + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe update path' }; Remove-Item -LiteralPath $target -Recurse -Force"
 echo   Done.
@@ -31,14 +33,14 @@ echo.
 echo   If the Watch Party Sync extension changed too, reload it once:
 echo   open brave://extensions (or chrome://extensions) and click its round reload arrow.
 echo.
-start "" "%CD%\WatchParty.exe" %*
+start "" /d "%EXE_DIR%" "%EXE_DIR%\WatchParty.exe" %*
 powershell -NoProfile -Command "Start-Sleep -Seconds 8"
 exit /b 0
 
 :noupdate
-if not exist "WatchParty.exe" goto noexe
+if not exist "%EXE_DIR%\WatchParty.exe" goto noexe
 rem Watch Party runs in the background (no window) and opens its page in your browser.
-start "" "%CD%\WatchParty.exe" %*
+start "" /d "%EXE_DIR%" "%EXE_DIR%\WatchParty.exe" %*
 exit /b 0
 
 :noexe

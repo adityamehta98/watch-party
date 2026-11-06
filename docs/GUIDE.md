@@ -567,7 +567,7 @@ To import a ZIP containing episode-named SRT files, run `python build/import-ani
 
 ## Configuration (`config.json`)
 
-Created automatically on first run, next to `WatchParty.exe` (under `app/` in a source checkout). Most settings can also be changed from the host page. See [`config.example.json`](config.example.json). Delete `config.json` to reset everything.
+Created automatically on first run, under `app/` in a source checkout (beside the exe in a flat portable release). Most settings can also be changed from the host page. See [`config.example.json`](config.example.json). Delete `config.json` to reset everything.
 
 | Key | Default | Description |
 |---|---|---|
@@ -603,7 +603,7 @@ Created automatically on first run, next to `WatchParty.exe` (under `app/` in a 
 
 ```
 watch-party/
-├── app/                    local installation, private data, cache and tools (ignored)
+├── app/                    private data, cache, tools and extension (ignored)
 ├── server/                 Node backend
 ├── public/                 web player and chat
 ├── extension/              Chromium extension source
@@ -613,7 +613,8 @@ watch-party/
 │   ├── cache/              downloaded build tools and assembly scratch files (ignored)
 │   └── output/WatchParty/  portable release (ignored)
 ├── docs/                   guides, notices and sample configuration
-├── refresh.bat             launches app/ or updates a portable release
+├── WatchParty.exe          main executable (ignored)
+├── refresh.bat             launches the executable or installs an update
 ├── build.bat               builds and installs into app/
 ├── package.json
 └── package-lock.json

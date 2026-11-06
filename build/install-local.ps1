@@ -18,7 +18,7 @@ function Assert-LocalPath([string]$Path) {
 Assert-LocalPath $app
 Assert-LocalPath $release
 if (-not (Test-Path -LiteralPath (Join-Path $release 'WatchParty.exe') -PathType Leaf)) { throw 'Build output is missing WatchParty.exe' }
-$legacy = @('config.json','watch-history.json','cache','bin','LICENSES','BUILD-MANIFEST.json','WatchParty.exe','_update')
+$legacy = @('config.json','watch-history.json','cache','bin','LICENSES','BUILD-MANIFEST.json','_update')
 foreach ($name in $legacy) {
   $source = Join-Path $root $name
   $target = Join-Path $app $name
@@ -63,9 +63,18 @@ foreach ($folder in @('bin','extension','LICENSES','docs')) {
   $source = Join-Path $release $folder
   if (Test-Path -LiteralPath $source -PathType Container) { Copy-Item -LiteralPath $source -Destination $app -Recurse -Force }
 }
-foreach ($name in @('WatchParty.exe','refresh.bat','README.md','LICENSE','THIRD_PARTY_NOTICES.md','BUILD-MANIFEST.json')) {
+foreach ($name in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','BUILD-MANIFEST.json')) {
   $source = Join-Path $release $name
   if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination (Join-Path $app $name) -Force }
 }
-Write-Output "Installed: $(Join-Path $app 'WatchParty.exe')"
-if (-not $NoLaunch) { Start-Process -FilePath (Join-Path $app 'WatchParty.exe') -WorkingDirectory $app -WindowStyle Hidden }
+$executable = Join-Path $root 'WatchParty.exe'
+Assert-LocalPath $executable
+Copy-Item -LiteralPath (Join-Path $release 'WatchParty.exe') -Destination $executable -Force
+# Remove only the obsolete executable/launcher left by the previous local layout.
+foreach ($name in @('WatchParty.exe','refresh.bat')) {
+  $obsolete = Join-Path $app $name
+  Assert-LocalPath $obsolete
+  if (Test-Path -LiteralPath $obsolete -PathType Leaf) { Remove-Item -LiteralPath $obsolete -Force }
+}
+Write-Output "Installed: $executable"
+if (-not $NoLaunch) { Start-Process -FilePath $executable -WorkingDirectory $root -WindowStyle Hidden }

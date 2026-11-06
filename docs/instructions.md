@@ -3,9 +3,10 @@
 ## Local paths
 
 In a source checkout, `config.json`, `watch-history.json`, `bin/` and `cache/`
-are under `app/`; portable downloads keep them beside the executable.
+are under `app/`; the executable stays at the repository root. Portable
+downloads keep those files beside their executable.
 Run `build.bat` from the repository root, then use root `refresh.bat` or
-`app/WatchParty.exe`.
+`WatchParty.exe`.
 
 ## AniList, MegaPlay, and iPad
 

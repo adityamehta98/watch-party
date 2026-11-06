@@ -22,6 +22,8 @@ test('runtime paths distinguish source checkouts, legacy settings and portable e
   assert.equal(resolve(false).ROOT, root, 'legacy source settings remain readable until migration');
   assert.equal(resolve(true).ROOT, path.join(root, 'portable'));
   assert.equal(resolve(true).IS_SEA, true);
+  put(path.join(root, 'portable/app/BUILD-MANIFEST.json'), '{}');
+  assert.equal(resolve(true).ROOT, path.join(root, 'portable/app'), 'root executable finds organized companions');
 });
 
 test('local installation preserves private data, relative paths and repeat installs, refusing conflicts', { skip: process.platform !== 'win32' }, t => {
@@ -44,10 +46,15 @@ test('local installation preserves private data, relative paths and repeat insta
   assert.equal(fs.readFileSync(path.join(app, 'cache/migration/config.original.json'), 'utf8'), original);
   assert.equal(fs.readFileSync(path.join(app, 'watch-history.json'), 'utf8'), '{"resume":360}');
   assert.equal(fs.readFileSync(path.join(app, 'cache/subtitles/manual.vtt'), 'utf8'), 'saved captions');
-  assert.equal(fs.readFileSync(path.join(app, 'WatchParty.exe'), 'utf8'), 'new executable');
+  assert.equal(fs.readFileSync(path.join(root, 'WatchParty.exe'), 'utf8'), 'new executable');
+  assert.equal(fs.existsSync(path.join(app, 'WatchParty.exe')), false);
   assert.equal(fs.readFileSync(path.join(app, 'bin/ffmpeg.exe'), 'utf8'), 'new tool');
+  put(path.join(app, 'WatchParty.exe'), 'obsolete nested executable');
+  put(path.join(app, 'refresh.bat'), 'obsolete nested launcher');
   const savedConfig = fs.readFileSync(path.join(app, 'config.json'), 'utf8');
   result = install(); assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(path.join(app, 'WatchParty.exe')), false);
+  assert.equal(fs.existsSync(path.join(app, 'refresh.bat')), false);
   assert.equal(fs.readFileSync(path.join(app, 'config.json'), 'utf8'), savedConfig);
   put(path.join(root, 'config.json'), '{"other":"do not overwrite"}');
   result = install(); assert.notEqual(result.status, 0);

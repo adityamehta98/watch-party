@@ -6,10 +6,13 @@ const path = require('path');
 
 let IS_SEA = false;
 try { IS_SEA = require('node:sea').isSea(); } catch { IS_SEA = false; }
-// Portable releases use the executable directory. Source runs share app/ with local builds;
-// retain the old root until build.bat migrates an existing checkout's settings.
-const SOURCE_ROOT = path.resolve(__dirname, '..');
-const ROOT = IS_SEA ? path.dirname(process.execPath) : fs.existsSync(path.join(SOURCE_ROOT, 'config.json')) ? SOURCE_ROOT : path.join(SOURCE_ROOT, 'app');
+// A local build keeps its executable at the root and companions in app/.
+// Flat portable releases still keep everything beside their executable.
+const BASE = IS_SEA ? path.dirname(process.execPath) : path.resolve(__dirname, '..');
+const APP = path.join(BASE, 'app');
+const ROOT = IS_SEA
+  ? (fs.existsSync(path.join(APP, 'BUILD-MANIFEST.json')) || fs.existsSync(path.join(APP, 'config.json')) ? APP : BASE)
+  : (fs.existsSync(path.join(BASE, 'config.json')) ? BASE : APP);
 const IS_WIN = process.platform === 'win32';
 
 function exists(p) {

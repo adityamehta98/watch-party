@@ -24,12 +24,12 @@ echo [3/4] Building the portable release...
 "%WIN_NODE%" build\build-windows.js "%WIN_NODE%" "%CD%\build\cache\ffmpeg\bin"
 if errorlevel 1 goto fail
 
-echo [4/4] Installing into app and starting Watch Party...
+echo [4/4] Installing companions into app and starting WatchParty.exe...
 powershell -NoProfile -ExecutionPolicy Bypass -File "build\install-local.ps1"
 if errorlevel 1 goto fail
 echo.
 echo === BUILD SUCCESSFUL ===
-echo Installed app: %CD%\app\WatchParty.exe
+echo Installed exe: %CD%\WatchParty.exe
 echo Portable release: %CD%\build\output\WatchParty
 echo Reload the browser page to use the new web files.
 pause
