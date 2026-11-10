@@ -8,6 +8,8 @@ Double-click **refresh.bat**, or open **WatchParty.exe** directly. Run **build.b
 
 Existing settings, watch history, caches and tools are migrated from the old root layout on the first build. They are preserved across later builds. To update a portable download, keep its complete folder together and use its refresh.bat.
 
+Watch Party opens as a private player and stays running until you close its window. In **People**, choose **Start server** to enable guest sharing and network setup, or **Stop server** to disconnect guests and keep watching privately. Solo sessions have no inactivity timeout. With guests connected, five inactive minutes stop sharing only when playback, cameras, microphones and media preparation are inactive; your private player stays connected. Closing all host windows shuts down sharing and the app, clears chat and generated playback caches, and preserves watch history.
+
 ## Development
 
 Use a supported Node security release listed in package.json, with npm on PATH.

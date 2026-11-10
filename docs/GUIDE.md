@@ -102,10 +102,14 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
    - *"Windows protected your PC"*: click **More info**, then **Run anyway** (the app is unsigned).
    - *"Windows Defender Firewall has blocked some features"*: tick **Private networks** only, then **Allow**.
 4. Your browser opens the **host page**. In **Library**, add the folders that hold your movies.
-5. Open the **Room** tab and check **Your connection**. A green dot means you're ready. A red dot means you need one router change (see [Network setup](#network-setup)).
+5. Watch privately, or choose **People → Start server** to invite guests. Then open **Room → Your connection** to check the guest link (see [Network setup](#network-setup)).
 6. **Library → Show in room** on a movie, then **Invite → Copy invite message** and send it to your friends.
 
-Watch Party runs in the background with no window. Closing the host page stops it a few seconds later. Double-clicking `WatchParty.exe` while it's running just reopens the page. Log output goes to `cache\watchparty.log`.
+Watch Party starts as a private player and stays running until you close its browser window. A temporary socket disconnect or a background tab does not close the player. **People → Stop server** disconnects guests while preserving private playback. Solo sessions stay open. With guests connected, sharing stops after five inactive minutes when playback, cameras, microphones and media preparation are inactive. Closing all host windows shuts down the whole app after a short reload grace period, including guest sharing, chat and generated playback caches. Watch history, settings, tools and certificates remain. Double-clicking `WatchParty.exe` while it's running reopens the page. Log output goes to `cache\watchparty.log` during the session.
+
+Continue watching includes Netflix, supported streaming services, local movies and YouTube alongside anime. It records observed host playback in `watch-history.json`, including the canonical title link and timestamp. The host extension also imports previously saved Watch Party streaming progress when available; viewing that was never recorded cannot be recovered. Resume opens the saved title and synchronizes to its saved position. Camera and microphone buttons remain available in the top bar on the home screen.
+
+Netflix joins keep the room destination through login and profile PIN entry. A `/watch` address alone does not count as arriving at the movie: the player must report loaded video. After unlock, recovery navigates inside the existing Netflix document to preserve the unlocked profile. If Netflix's page router does not respond, the app reports the failure without repeatedly reloading the PIN gate. Fullscreen chat retains keyboard focus until closed or clicked outside. Every player, service overlay and side panel offers the same room reactions.
 
 ---
 
@@ -134,8 +138,9 @@ npm start
 
 1. creates `config.json` with defaults and a random `adminKey`,
 2. creates a self-signed HTTPS certificate in `cache/`,
-3. tries to open port **8765** on your router via UPnP,
-4. opens `http://127.0.0.1:8765/host/<adminKey>` in your browser.
+3. opens `http://127.0.0.1:8765/host/<adminKey>` in your browser as a private player.
+
+Tailscale, router mappings, tunnels and the webcam relay start only after **People → Start server**. The server's inactivity timeout does not apply to the private player.
 
 ### Where ffmpeg is found
 
@@ -280,7 +285,7 @@ Details that make this safe:
 - **Audio stays on the video clock.** Audio the browser can't play is re-encoded to AAC (Windows' `aac_mf` encoder when it works, ffmpeg's `aac` otherwise) through `aresample=async=1`, which fills or trims tiny gaps so long movies don't drift.
 - **The MP4 copy reads the fragments as one file.** Pass 2 opens `init.mp4` and the segments in order through ffmpeg's `concatf:` protocol. Reading them through ffmpeg's HLS demuxer instead started the finished MP4's audio about 10 seconds late.
 
-Prepared copies go in `cache/` and are deleted when the app stops, unless `keepPrepared` is `true`.
+Prepared copies go in `cache/` and are deleted when the app stops. Generated captions, probe metadata and session status are also cleared; watch history is stored separately.
 
 ### 4. Keeping everyone in sync
 
@@ -337,7 +342,7 @@ In order of preference:
 
 | Method | File | When |
 |---|---|---|
-| **UPnP** | `server/upnp.js` | Router supports it. The app opens the port at start and closes it at exit. |
+| **UPnP** | `server/upnp.js` | Router supports it. Start server opens the port; Stop server or inactivity closes it. |
 | **Manual port forward** | – | Port 8765 TCP + UDP to the host PC |
 | **Tailscale** | `server/tailscale.js` | Apartments or CGNAT. Private sharing, a trusted `*.ts.net` HTTPS cert, or a public **Funnel** link |
 | **Cloudflare quick tunnel** | `server/tunnel.js` | Last resort, if `cloudflared` is in `bin/`. No webcams. |
@@ -575,7 +580,7 @@ Created automatically on first run, under `app/` in a source checkout (beside th
 | `bind` | `"0.0.0.0"` | Interface to listen on |
 | `folders` | `[]` | Movie folders to scan |
 | `cacheDir` | `"cache"` | Where prepared copies, certs and logs go. Point it at a big drive if needed. |
-| `keepPrepared` | `false` | Keep prepared copies after the app stops |
+| `keepPrepared` | `false` | Legacy startup setting; full app shutdown always clears generated playback caches |
 | `tmdbToken` | `""` | TMDB API Read Access Token used server-side for Movies & TV search and episode metadata |
 | `freeMedia` | `true` | Search explicitly licensed Public Domain/Creative Commons video from curated Internet Archive collections |
 | `movieTvSources` | `[]` | Authorized HLS/direct movie and TV episode sources; see [Movies & TV](#movies--tv-no-extension) |

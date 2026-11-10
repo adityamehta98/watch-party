@@ -333,7 +333,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.17.6';
+export const REQUIRED_EXT_VERSION = '1.17.7';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],

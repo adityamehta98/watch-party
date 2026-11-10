@@ -11,8 +11,17 @@ promise about third-party sites or a substitute for a publisher-specific policy.
 
 ## What is shared
 
+The app starts as a private player. Guest pages, media and WebSocket connections
+are unavailable until the host chooses **People → Start server**. Tailscale,
+router mappings, tunnels and the webcam relay start only when sharing is enabled.
+**Stop server** disconnects guests and returns to private playback; inactivity
+also stops sharing after five minutes with guests connected, playback stopped,
+and cameras/microphones off. Solo sessions do not time out. Closing all host
+windows shuts down the app and its sharing setup. A Tailscale connection that was already
+running before sharing is left connected when sharing stops.
+
 The host and admitted viewers receive room names, chat, reactions, playback state,
-episode history and media the host makes available. Anime watch history is shared
+watch history and media the host makes available. Saved playback history is shared
 with admitted viewers by design. Camera/microphone sharing starts through the
 device's permission flow and the controls you activate. Participants can see and
 hear streams you share.
@@ -31,8 +40,8 @@ network requests needed for the features you enable.
 | Browser local storage | Name/client ID, volume, subtitles, layout and local playback preferences | Until cleared in browser/site settings |
 | Browser session storage | Temporary extension reconnect guard | Tab/browser session |
 | Service worker Cache Storage | A fixed list of app scripts, styles, icons and the HLS library | Replaced on app-shell version changes or when site data is cleared |
-| `watch-history.json` | Episode position, completion, language and artwork metadata | Until the host removes/resets the local history |
-| Host `cache/` | Prepared local media, captions, metadata, certificates and diagnostics | Feature-specific eviction or explicit host cleanup; prepared media can be large |
+| `watch-history.json` | Anime episode metadata and observed playback positions, titles and canonical streaming links | Preserved across shutdown and cache cleanup |
+| Host `cache/` | Prepared local media, captions, metadata, certificates and diagnostics | Generated playback/session data is cleared on app shutdown; certificates and unrelated files remain |
 | Room memory | Live chat, reactions, participants, private per-viewer notifications and synchronization diagnostics | Bounded live buffers; room/server lifetime |
 
 Authentication cookies are HttpOnly, SameSite-scoped, and Secure on HTTPS.
