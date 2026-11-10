@@ -137,7 +137,17 @@
   // you to the room's title once you're in.
   function signingIn() {
     if (/\/(login|signin|sign-in|sign_in|auth|ap\/signin|profiles|ProfilesGate|welcome|register|account\/profile)/i.test(location.pathname + location.search)) return true;
-    if ([...document.querySelectorAll('input[type="password"], input[autocomplete="one-time-code"], [data-uia*="pin" i], [data-uia*="profile-gate" i], .profiles-gate-container, .list-profiles')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) return true;
+    // Match PIN tokens, not arbitrary substrings: "loading-spinner" contains "pin".
+    const gates = document.querySelectorAll('input[type="password"], input[autocomplete="one-time-code"], [data-uia="pin" i], [data-uia^="pin-" i], [data-uia*="-pin-" i], [data-uia$="-pin" i], [data-uia*="profile-gate" i], .profiles-gate-container, .list-profiles');
+    if ([...gates].some(el => {
+      if (el.checkVisibility) return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      if (!el.getClientRects().length) return false;
+      for (let node = el; node; node = node.parentElement) {
+        const css = getComputedStyle(node);
+        if (css.display === 'none' || css.visibility === 'hidden' || (css.opacity != null && css.opacity !== '' && Number(css.opacity) < .05)) return false;
+      }
+      return true;
+    })) return true;
     const h = (document.querySelector('h1, h2') || {}).textContent || '';
     return /who'?s watching|who is watching|profile lock|enter your pin|choose (a|your) profile/i.test(h);
   }

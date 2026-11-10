@@ -2640,7 +2640,7 @@ $('#svcGrid').addEventListener('click', e => {
   if (cb) { cb.checked = store.get('wp.autoSkip', true); cb.addEventListener('change', () => { store.set('wp.autoSkip', cb.checked); dockPush(true); }); }
 }
 
-let followTimer = null, lastFollowUrl = '', followBase = '';
+let followTimer = null, lastFollowUrl = '', followBase = '', pendingFollowUrl = '';
 function maybeFollowTab() {
   if ((!isHost && isCustom()) || !remote || !remote.linked || !remote.st) return;
   const m = S.movie;
@@ -2649,19 +2649,23 @@ function maybeFollowTab() {
 
   const pageNow = () => (remote.st && remote.st.url) || (m.service === 'custom' ? remote.pageUrl : '') || '';
   const url = canonicalUrl(pageNow());
-  if (!url || url === canonicalUrl(m.url) || url === lastFollowUrl || url === followBase) return;
-  if (!(st.dur > 60) || st.ad || st.paused) return; // nothing real is playing yet
+  if (!url || url === canonicalUrl(m.url) || url === lastFollowUrl || url === followBase || url === pendingFollowUrl) return;
+  if (!(st.dur > 60) || st.ad || remote.signingIn) return;
+  // A loaded title is a selection even when paused while waiting for friends to join.
   // a home page / browse rows / profile picker / info page plays trailers by itself: never a pick
   if (!isTitlePage(pageNow())) return;
 
   if (!isHost && !m.browsing && !reachedTitle) return;
   if (m.service === 'custom' ? !!serviceOfUrl(url) : serviceOfUrl(url) !== m.service) return; // wandered off to another site
-  lastFollowUrl = url;
+  pendingFollowUrl = url;
   clearTimeout(followTimer);
   followTimer = setTimeout(() => {
-    if (!remote.st || canonicalUrl(pageNow()) !== url || (!isHost && isCustom())) return;
-    const advanceFrom = m.service === 'netflix' && canonicalUrl(remote.st.advanceFrom) === canonicalUrl(m.url) ? m.url : '';
-    const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, advanceFrom, title: remote.st.title || '', duration: remote.st.dur || 0, position: remote.currentTime, playing: !remote.st.paused || (!!remote.st.hold && !!S.state && !!S.state.playing) };
+    followTimer = null; pendingFollowUrl = '';
+    const current = remote.st;
+    if (S.movie?.id !== m.id || !current || !(current.dur > 60) || current.ad || remote.signingIn || canonicalUrl(pageNow()) !== url || (!isHost && isCustom())) return;
+    const advanceFrom = m.service === 'netflix' && canonicalUrl(current.advanceFrom) === canonicalUrl(m.url) ? m.url : '';
+    const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, advanceFrom, title: current.title || '', duration: current.dur || 0, position: remote.currentTime, playing: !current.paused || (!!current.hold && !!S.state && !!S.state.playing) };
+    lastFollowUrl = url;
     conn.send(msg);
   }, 1200);
 }
@@ -2712,7 +2716,7 @@ function bringAlong(movie) {
   if (!movie || kindOf(movie) !== 'service') { lastMovieUrl = ''; clearServiceAdvance(); return; }
   const prev = lastMovieUrl;
   lastMovieUrl = movie.url;
-  if (prev !== movie.url) { followBase = remote ? canonicalUrl(remote.pageUrl || '') : ''; reachedTitle = false; clearTimeout(followTimer); lastFollowUrl = ''; }
+  if (prev !== movie.url) { followBase = remote ? canonicalUrl(remote.pageUrl || '') : ''; reachedTitle = false; clearTimeout(followTimer); followTimer = null; pendingFollowUrl = ''; lastFollowUrl = ''; }
 
   if (!remote || !remote.present || movie.browsing) return;
   if (!prev || prev === movie.url) return; // first load: the panel's Open button handles it

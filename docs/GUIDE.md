@@ -111,6 +111,8 @@ Continue watching includes Netflix, supported streaming services, local movies a
 
 Netflix joins keep the room destination through login and profile PIN entry. A `/watch` address alone does not count as arriving at the movie: the player must report loaded video. After unlock, recovery navigates inside the existing Netflix document to preserve the unlocked profile. If Netflix's page router does not respond, the app reports the failure without repeatedly reloading the PIN gate. Fullscreen chat retains keyboard focus until closed or clicked outside. Every player, service overlay and side panel offers the same room reactions.
 
+A loaded Netflix title is shared even when the host pauses to wait for guests. Login detection matches actual PIN controls and ignores loading spinners and invisible cached forms. A brief loss of the host's playback report retries title publication instead of leaving the room in browse mode.
+
 ---
 
 ## Running from source
