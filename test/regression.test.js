@@ -61,7 +61,7 @@ test('manifest and HTML local assets exist and extension versions agree', () => 
     ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon),
     ...manifest.content_scripts.flatMap(x => [...(x.js || []), ...(x.css || [])])];
   for (const rel of new Set(refs)) assert.ok(fs.existsSync(path.join(ROOT, 'extension', rel)), rel);
-  assert.equal(/REQUIRED_EXT_VERSION = '([^']+)'/.exec(read('public/js/media.js'))[1], manifest.version);
+  assert.equal(/LATEST_EXT_VERSION = '([^']+)'/.exec(read('public/js/media.js'))[1], manifest.version);
   for (const html of ['public/index.html', 'extension/sidebar.html', 'extension/theater.html']) {
     const dir = path.dirname(path.join(ROOT, html));
     for (const m of read(html).matchAll(/(?:src|href)="([^"#]+)"/g)) {
@@ -258,7 +258,7 @@ test('store upload has a root manifest, exact extension files and reproducible b
     fs.mkdirSync(path.join(root, 'public', 'js'), { recursive: true });
     fs.writeFileSync(path.join(root, 'extension', 'manifest.json'), JSON.stringify({ version: '1.0.0', description: 'Watch together.' }));
     fs.writeFileSync(path.join(root, 'extension', 'background.js'), '// packaged code\n');
-    fs.writeFileSync(path.join(root, 'public', 'js', 'media.js'), "const REQUIRED_EXT_VERSION = '1.0.0';");
+    fs.writeFileSync(path.join(root, 'public', 'js', 'media.js'), "const LATEST_EXT_VERSION = '1.0.0';");
     const output = buildStore(root), first = fs.readFileSync(output), entries = unzipEntries(output);
     assert.deepEqual([...entries.keys()].sort(), ['background.js', 'manifest.json']);
     for (const [name, bytes] of entries) assert.deepEqual(bytes, fs.readFileSync(path.join(root, 'extension', name)));

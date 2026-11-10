@@ -63,7 +63,7 @@ function versions(root = ROOT) {
   if (!manifest.description || manifest.description.length > 132) throw new Error('extension description must be 1–132 characters');
   const common = manifest.version;
   const media = fs.readFileSync(path.join(root, 'public', 'js', 'media.js'), 'utf8');
-  const page = /REQUIRED_EXT_VERSION = '([^']+)'/.exec(media)?.[1];
+  const page = /LATEST_EXT_VERSION = '([^']+)'/.exec(media)?.[1];
   if (!page || common !== page) throw new Error(`extension version mismatch: Chromium ${common}, page ${page || 'missing'}`);
 }
 

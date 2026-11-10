@@ -93,7 +93,7 @@ test('expired restart markers cannot reload tabs from a later browser session', 
 test('the app offers Update extension then Reload page, with no restart before the second click', async () => {
   const f = fixture(), renders = [];
   const context = vm.createContext({
-    S: { movie: { kind: 'service' } }, REQUIRED_EXT_VERSION: '1.18.0',
+    S: { movie: { kind: 'service' } }, LATEST_EXT_VERSION: '1.18.0',
     remote: { updateExtension: (op, required) => op === 'check' ? f.updater.check(required) : f.updater.apply([7]) },
     renderServicePanel() { renders.push(JSON.parse(JSON.stringify(context.S.extUpdate))); },
     kindOf: m => m.kind, toast() {},
@@ -114,20 +114,26 @@ test('the real page bridge and RemoteMedia carry update results, ignoring foreig
   const listeners = [], posted = [], f = fixture();
   const context = vm.createContext({ URL, EventTarget, Event, performance, console, setTimeout, clearTimeout, setInterval() {},
     location: { origin: 'https://party.example' }, document: { readyState: 'complete', querySelector: () => ({}), addEventListener() {} },
-    chrome: { runtime: { getManifest: () => ({ version: '1.17.9' }),
+    chrome: { runtime: { getManifest: () => ({ version: '1.17.8' }),
       connect: () => ({ onMessage: event(), onDisconnect: event(), postMessage() {} }),
-      sendMessage: async m => m.wp === 'extension-update' ? f.updater.check(m.required) : { ok: true } } },
+      sendMessage: async m => m.wp === 'extension-update' ? f.updater.check(m.required) : { ok: true, version: '1.17.9', updates: true, verified: true } } },
     window: { addEventListener: (name, fn) => { if (name === 'message') listeners.push(fn); } },
   });
   context.window.postMessage = data => { posted.push(data); for (const fn of listeners) fn({ source: context.window, origin: context.location.origin, data }); };
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/party.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js/media.js'), 'utf8').replace(/^export /gm, '') + '\nvar remote = new RemoteMedia();', context);
+  await tick();
   assert.equal(context.remote.canUpdate, true);
+  assert.equal(context.remote.version, '1.17.9', 'the worker version replaces the stale content-script snapshot');
   const result = await context.remote.updateExtension('check', '1.18.0');
   assert.equal(result.status, 'ready');
   assert.equal(f.checks(), 1);
   const original = context.remote.version;
   for (const fn of listeners) fn({ source: {}, origin: context.location.origin, data: { source: 'wp-ext', type: 'hello', version: '99', updates: true } });
   assert.equal(context.remote.version, original);
+  for (const fn of listeners) fn({ source: context.window, origin: context.location.origin, data: { source: 'wp-ext', type: 'hello', version: '1.17.1' } });
+  assert.equal(context.remote.version, original, 'a stale cached hello cannot downgrade an active worker report');
+  for (const fn of listeners) fn({ source: context.window, origin: context.location.origin, data: { source: 'wp-ext', type: 'hello', version: '1.17.8', verified: true } });
+  assert.equal(context.remote.version, original, 'an enabled old copy cannot downgrade a newer active copy');
   await tick();
 });

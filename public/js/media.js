@@ -159,6 +159,9 @@ export class RemoteMedia extends AdapterBase {
     this.onInfo = onInfo || (() => {});
     this.present = false;       // extension installed?
     this.version = null;
+    this.versionVerified = false;
+    this.canSettings = false;
+    this.access = null;
     this.canUpdate = false;
     this.updateRequests = new Map();
     this.updateSequence = 0;
@@ -187,8 +190,19 @@ export class RemoteMedia extends AdapterBase {
   onMessage(e) {
     if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
-    if (m.type === 'hello') { this.present = true; this.version = m.version; this.canUpdate = m.updates === true; this.onInfo(); }
-    else if (m.type === 'extension-update-result') {
+    if (m.type === 'hello') {
+      // An old content script can outlive an extension reload. Its cached hello
+      // must not replace metadata verified by the active background worker.
+      if (this.versionVerified && !m.verified) return;
+      if (this.versionVerified && m.verified && extOutdated(m.version, this.version)) return;
+      this.present = true; this.version = m.version; this.versionVerified = m.verified === true;
+      this.canUpdate = m.updates === true; this.canSettings = m.settings === true;
+      this.extensionId = m.extensionId || this.extensionId;
+      this.onInfo();
+      if (!this.versionVerified && !this.infoRequested) { this.infoRequested = true; this.post({ type: 'extension-info' }); }
+    }
+    else if (m.type === 'service-access') { this.access = m; this.onInfo(); }
+    else if (m.type === 'extension-update-result' || m.type === 'extension-settings-result') {
       const request = this.updateRequests.get(m.id);
       if (request) { clearTimeout(request.timer); this.updateRequests.delete(m.id); request.resolve(m.result || { status: 'error' }); }
     }
@@ -270,11 +284,16 @@ export class RemoteMedia extends AdapterBase {
   openPanel() { this.post({ type: 'open-panel' }); }
   updateExtension(op, required) {
     if (!this.canUpdate) return Promise.resolve({ status: 'manual' });
+    return this.extensionRequest('extension-update', { op, required }, 46000);
+  }
+  openSettings() { return this.extensionRequest('extension-settings', {}, 3000); }
+  checkAccess() { this.post({ type: 'extension-info' }); }
+  extensionRequest(type, fields, timeout) {
     const id = ++this.updateSequence;
     return new Promise(resolve => {
-      const timer = setTimeout(() => { this.updateRequests.delete(id); resolve({ status: 'error', error: 'The extension did not respond. Reload this page and try again.' }); }, 46000);
+      const timer = setTimeout(() => { this.updateRequests.delete(id); resolve({ status: 'error', error: 'The extension did not respond. Reload this page and try again.' }); }, timeout);
       this.updateRequests.set(id, { resolve, timer });
-      this.post({ type: 'extension-update', id, op, required });
+      this.post({ type, id, ...fields });
     });
   }
   overlay(item) { if (this.linked) this.post({ type: 'overlay', item }); }
@@ -349,8 +368,10 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.17.9';
-export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
+export const LATEST_EXT_VERSION = '1.17.10';
+// Updater-only releases must not prevent compatible Netflix players from opening.
+export const REQUIRED_EXT_VERSION = '1.17.8';
+export const extOutdated = (v, required = REQUIRED_EXT_VERSION) => { const a = String(v || '0').split('.').map(Number), b = required.split('.').map(Number); for (let i = 0; i < 4; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],
   crunchyroll: ['crunchyroll.com'], paramount: ['paramountplus.com'], max: ['max.com', 'hbomax.com'], disney: ['disneyplus.com'], appletv: ['tv.apple.com'],

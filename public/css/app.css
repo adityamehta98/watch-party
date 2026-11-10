@@ -228,7 +228,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .anime-card .t { font-weight: 600; }
 .anime-card .m { color: var(--faint); font-size: 12px; margin-top: 2px; }
 .anime-card .pick { margin-left: auto; display: flex; gap: 6px; align-items: center; flex: none; }
-.service-panel { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; overflow: auto;
+.service-panel { position: absolute; inset: 0; display: grid; place-items: center; align-items: safe center; padding: 24px; text-align: center; overflow: auto;
   background: radial-gradient(900px 500px at 50% 0%, rgba(245,181,68,.10), transparent 60%), #07080a; z-index: 1; }
 .service-panel[hidden] { display: none !important; }
 .svc-card { width: min(560px, 100%); }

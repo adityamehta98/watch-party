@@ -18,13 +18,13 @@ function event() {
   return { addListener(fn) { listeners.push(fn); }, fire(...args) { for (const fn of listeners) fn(...args); }, listeners };
 }
 
-async function background({ recovered = [], tabUrl = 'chrome-extension://audit/theater.html' } = {}) {
+async function background({ recovered = [], tabUrl = 'chrome-extension://audit/theater.html', version } = {}) {
   let rules = recovered, updateChecks = 0;
   const values = {};
   const storage = { get: async key => ({ [key]: values[key] }), set: async data => Object.assign(values, data), remove: async key => { delete values[key]; } };
   const runtimeMessage = event(), connect = event(), before = event(), committed = event();
   const chrome = {
-    runtime: { id: 'audit', getURL: file => 'chrome-extension://audit/' + file, onMessage: runtimeMessage, onConnect: connect, sendMessage: async () => {},
+    runtime: { id: 'audit', getManifest: () => ({ version }), getURL: file => 'chrome-extension://audit/' + file, onMessage: runtimeMessage, onConnect: connect, sendMessage: async () => {},
       requestUpdateCheck: async () => { updateChecks++; return { status: 'update_available', version: '1.18.0' }; } },
     storage: { session: storage, local: storage }, management: { getSelf: async () => ({ version: '1.17.9', installType: 'normal' }) },
     sidePanel: { setPanelBehavior: async () => {} },
@@ -62,6 +62,29 @@ test('extension updates require a connected party page from this extension', asy
   await f.send(message, { ...from, id: 'other-extension' });
   await f.send(message, { ...from, url: 'https://www.netflix.com/watch/123' });
   assert.equal(f.updateChecks(), 1);
+});
+
+test('the active worker reports its version, opens settings in its own browser window and distinguishes Netflix access', async () => {
+  const f = await background({ version: '1.17.10' }), messages = [], opened = [], partyMessages = event();
+  let allowed = false;
+  f.context.chrome.tabs.create = async options => { opened.push(options); return { id: 8 }; };
+  f.context.chrome.permissions = { contains: async ({ origins }) => { assert.deepEqual(Array.from(origins), ['https://www.netflix.com/*']); return allowed; } };
+  f.connect.fire({ name: 'party', sender: { id: 'audit', url: 'http://127.0.0.1:8765/host/test', tab: { id: 7, windowId: 42 } },
+    disconnect() {}, onMessage: partyMessages, onDisconnect: event(), postMessage: message => messages.push(message) });
+  assert.equal(messages[0].version, '1.17.10');
+  assert.equal(messages[0].verified, true);
+  partyMessages.fire({ type: 'extension-settings', id: 1 });
+  await tick();
+  assert.equal(opened[0].windowId, 42);
+  assert.equal(opened[0].url, 'chrome://extensions/?id=audit');
+  assert.equal(messages.find(message => message.type === 'extension-settings-result').result.status, 'opened');
+  partyMessages.fire({ type: 'watch', service: 'netflix', url: 'https://www.netflix.com/browse' });
+  await tick();
+  assert.equal(messages.filter(message => message.type === 'service-access').at(-1).allowed, false);
+  allowed = true;
+  partyMessages.fire({ type: 'extension-info' });
+  await tick();
+  assert.equal(messages.filter(message => message.type === 'service-access').at(-1).allowed, true);
 });
 
 test('playback URLs redact account credentials, sign-in parameters and fragments before sharing', () => {

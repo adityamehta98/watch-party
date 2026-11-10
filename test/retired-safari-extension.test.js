@@ -10,7 +10,7 @@ function panel(platform, remote = { present: false }) {
   const element = { hidden: false, innerHTML: '' };
   const context = vm.createContext({ PLATFORM: platform, remote, S: { movie: { kind: 'service', service: 'netflix', title: 'Example', url: 'https://www.netflix.com/watch/123' }, people: [] },
     $: () => element, stage: { classList: { toggle() {} } }, SERVICE_NAMES: { netflix: 'Netflix' }, kindOf: movie => movie.kind,
-    esc: value => String(value), isHost: false, isTheater: false, isCustom: () => false, navigator: { userAgent: 'Chrome/130' }, extOutdated: () => false });
+    esc: value => String(value), isHost: false, isTheater: false, isCustom: () => false, navigator: { userAgent: 'Chrome/130' }, LATEST_EXT_VERSION: '1.17.10', extOutdated: () => false });
   vm.runInContext(panelSource + '\nrenderServicePanel();', context);
   return element.innerHTML;
 }

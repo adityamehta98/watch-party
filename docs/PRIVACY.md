@@ -57,6 +57,8 @@ explicitly prepared on the host.
 
 ## Streaming sites and third parties
 
+The optional Windows extension file updater installs under `%LOCALAPPDATA%\WatchParty` after explicit approval. Its state records installation/automatic-file-update consent and approved update origins, without storing room keys. A per-user `watchparty-sync` URI handler accepts update requests from the app; any new origin needs approval before a download. It sends the current party access key only to that party's origin to fetch its update metadata and archive. TLS validation remains enabled, and room keys are not written to updater state. Permission expansion needs another approval. Extension files are replaced in the fixed `SyncExtension` folder; obsolete code is removed and browser playback/login data is not modified. The helper and its preferences persist across party shutdown; they are installed software, separate from generated session caches.
+
 The extension does not request a cookies or browser-history API permission and
 does not intentionally copy login cookies/passwords into Watch Party. Streaming
 sites retain their own login, cookies, storage, DRM and terms. The extension can

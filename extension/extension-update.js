@@ -27,7 +27,11 @@ var WPExtensionUpdate = (() => {
             // still needs new files locally; never pretend a reload downloaded them.
             const manifest = await request(api.runtime.getURL('manifest.json'), { cache: 'no-store' }).then(r => r.json());
             version = manifest.version;
-            if (!atLeast(version, required)) return { status: 'manual' };
+            if (!atLeast(version, required)) {
+              const managed = await request(api.runtime.getURL('watch-party-managed.json'), { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null).catch(() => null);
+              return { status: managed?.schema === 1 ? 'native' : 'manual' };
+            }
           } else {
             version = (await session.get(AVAILABLE))[AVAILABLE];
             if (!atLeast(version, required)) {

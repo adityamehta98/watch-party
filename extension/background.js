@@ -37,6 +37,21 @@ function customSite(url, partyOrigin, blockPopups) {
 try { chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {}); } catch { /* older Chrome */ }
 
 function post(port, msg) { try { port.postMessage(msg); } catch { /* closed */ } }
+function extensionHello() {
+  return { type: 'hello', version: chrome.runtime.getManifest?.().version, verified: true,
+    updates: true, settings: true, extensionId: chrome.runtime.id };
+}
+async function reportServiceAccess(party) {
+  if (!party.watch || !chrome.permissions?.contains) return;
+  let origin; try { origin = new URL(party.watch.url).origin; } catch { return; }
+  if (!/^https?:\/\//.test(origin)) return;
+  const allowed = await chrome.permissions.contains({ origins: [origin + '/*'] });
+  post(party.port, { type: 'service-access', service: party.watch.service, origin, allowed });
+}
+async function updateFromParty(party, m) {
+  const tabs = [party.tabId, ...[...parties].flatMap(p => [p.tabId, p.link?.tabId, p.pendingTab])];
+  return m.op === 'check' ? extensionUpdater.check(m.required) : m.op === 'apply' ? extensionUpdater.apply(tabs) : { status: 'error' };
+}
 
 function allowedUrl(url) {
   try {
@@ -119,6 +134,7 @@ function onPartyPort(port) {
   // inside the "watch here" window, the streaming site sits in the same tab
   if (tab && theaterTabs.has(tab.id)) { party.inTheater = true; party.pendingTab = tab.id; }
   parties.add(party);
+  if (extensionHello().version) post(port, extensionHello());
   // this tab keeps everyone connected while you watch in another tab: don't let Chrome unload it
   if (tab) chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
   port.onDisconnect.addListener(() => {
@@ -127,6 +143,21 @@ function onPartyPort(port) {
   });
   port.onMessage.addListener(async m => {
     switch (m.type) {
+      case 'extension-info':
+        if (extensionHello().version) post(port, extensionHello());
+        reportServiceAccess(party).catch(() => {});
+        break;
+      case 'extension-update':
+        updateFromParty(party, m).then(result => post(port, { type: 'extension-update-result', id: m.id, result }),
+          () => post(port, { type: 'extension-update-result', id: m.id, result: { status: 'error', error: 'Could not update the extension.' } }));
+        break;
+      case 'extension-settings':
+        // The extension opens its own details in the same browser/profile. A
+        // native browser launch cannot identify the profile that owns this tab.
+        chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id, windowId: party.windowId, active: true })
+          .then(() => post(port, { type: 'extension-settings-result', id: m.id, result: { status: 'opened' } }),
+            () => post(port, { type: 'extension-settings-result', id: m.id, result: { status: 'error' } }));
+        break;
       case 'playback-history': {
         if (!/^\/host\//.test(new URL(port.sender.url).pathname)) return;
         const saved = await chrome.storage.local.get(null), entries = [];
@@ -143,6 +174,7 @@ function onPartyPort(port) {
       }
       case 'watch':
         party.watch = { service: m.service, url: m.url, launchTitle: String(m.launchTitle || '').slice(0, 140), launchId: String(m.launchId || '').slice(0, 80), playbackRef: m.playbackRef || null, blockPopups: m.blockPopups !== false };
+        reportServiceAccess(party).catch(() => {});
         if (party.link) post(port, { type: 'linked', tabId: party.link.tabId, service: m.service });
         rebindDocks();
         break;
@@ -265,7 +297,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     fetch(chrome.runtime.getURL('emoji-data.json')).then(response => response.json()).then(reply, () => reply(null));
     return true;
   }
-  if (m.wp === 'ping') { reply({ ok: true }); return; } // the party page checking that this part is running
+  if (m.wp === 'ping') { reply({ ok: true, ...extensionHello() }); return; }
   if (m.wp === 'service-navigate' && theaterSender(sender) && theaterTabs.has(sender.tab.id) && allowedUrl(m.url)) {
     chrome.tabs.sendMessage(sender.tab.id, { wp: 'navigate', url: m.url }).then(reply, () => reply({ ok: false, error: 'The service navigation is not connected. Retry when the page finishes loading.' }));
     return true;

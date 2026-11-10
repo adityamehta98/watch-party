@@ -6,6 +6,13 @@
   let port = null;
   let lastWatch = null;
   const toPage = m => window.postMessage({ source: 'wp-ext', ...m }, location.origin);
+  function hello() {
+    ask({ wp: 'ping' }).then(r => {
+      if (r.ok) toPage({ type: 'hello', version: r.version || version, verified: !!r.version,
+        updates: r.updates !== false, settings: r.settings === true, extensionId: chrome.runtime.id });
+      else toPage({ type: 'ext-problem', kind: r.error === 'stale' ? 'stale' : 'background', error: r.error });
+    });
+  }
   // A message to the extension's background part. If the extension was reloaded since this page opened,
   // this copy of the bridge is cut off from it: tell the page, which reloads itself to get the new one.
   function ask(msg, timeout = 4000) {
@@ -33,7 +40,7 @@
     window.addEventListener('message', e => {
       if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-page') return;
       const { source, ...m } = e.data;
-      if (m.type === 'ping') { toPage({ type: 'hello', version, updates: true }); return; }
+      if (m.type === 'ping') { hello(); return; }
       if (m.type === 'extension-update') {
         ask({ wp: 'extension-update', op: m.op, required: m.required }, 45000)
           .then(result => toPage({ type: 'extension-update-result', id: m.id, result }));
@@ -49,9 +56,7 @@
       if (m.type === 'unwatch') lastWatch = null;
       if (port) try { port.postMessage(m); } catch { /* reconnecting */ }
     });
-    toPage({ type: 'hello', version, updates: true });
-    // is the extension's background part running? (if not, nothing it does will work: say so)
-    ask({ wp: 'ping' }).then(r => { if ((!r || !r.ok) && !(r && r.error === 'stale')) toPage({ type: 'ext-problem', kind: 'background', error: r && r.error }); });
+    hello();
     // links on the party page that open a new tab (sign-in pages, help): let them through
     document.addEventListener('click', e => {
       const a = e.target && e.target.closest && e.target.closest('a[target="_blank"]');

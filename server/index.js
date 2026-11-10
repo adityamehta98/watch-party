@@ -1,4 +1,8 @@
 'use strict';
+if (process.argv.includes('--extension-helper') || /^(?:WatchPartyExtensionSetup(?: \(\d+\))?|ExtensionUpdater)\.exe$/i.test(require('path').basename(process.execPath))) {
+  const helper = require('./extension-helper');
+  helper.main().then(() => process.exit(0), error => { helper.message(error.message); process.exit(1); });
+} else {
 const http = require('http');
 const https = require('https');
 const net = require('net');
@@ -36,7 +40,8 @@ const { createExtensionSetup } = require('./extension-setup');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
-const extensionSetup = createExtensionSetup({ root: ROOT });
+const extensionSetup = createExtensionSetup({ root: ROOT, installer: tools.IS_SEA ? process.execPath : null });
+try { if (tools.IS_SEA) require('./extension-helper').syncBundled(); } catch (error) { console.warn('Extension files were not updated:', error.message); }
 
 (function logToFile() {
   try {
@@ -276,7 +281,7 @@ async function info() {
     uploadMbps: config.uploadMbps || 0,
     settings: room.publicSettings(true),
     blocked: guard.list(),
-    extensionDir: fs.existsSync(path.join(ROOT, 'extension', 'manifest.json')) ? path.join(ROOT, 'extension') : null,
+    extensionDir: extensionSetup.info()?.directory || null,
     extensionSetup: extensionSetup.info(),
     updatePending: updatePending(),
     movieTv: { configured: catalog.configured(), tmdbConfigured: catalog.tmdbConfigured(), freeEnabled: catalog.freeEnabled(), sources: catalog.sourceCount() },
@@ -493,6 +498,10 @@ async function api(req, res, p) {
   if (req.method === 'POST' && !/^application\/json/.test(req.headers['content-type'] || '')) return sendJson(res, 415, { error: 'json only' });
   const body = req.method === 'POST' ? await readBody(req) : {};
   let m;
+  if (p === '/api/extension/install' && req.method === 'POST') {
+    try { return sendJson(res, 200, await extensionSetup.install()); }
+    catch (e) { return sendJson(res, 400, { error: e.message }); }
+  }
   if (p === '/api/extension/setup' && req.method === 'POST') {
     try { return sendJson(res, 200, await extensionSetup.open({ browser: body.browser, folder: body.folder === true })); }
     catch (e) { return sendJson(res, 400, { error: e.message }); }
@@ -782,6 +791,16 @@ async function handler(req, res) {
     if (!invited && p === '/manifest.webmanifest') { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
     // page files (css/js): only for this PC or someone who opened a valid invite link
     if (!invited) return notFound(req, res, 'asset without invite');
+    if (p === '/extension/update-info') {
+      const archive = assets.get('ext/watch-party-sync.zip');
+      const version = /LATEST_EXT_VERSION = '([^']+)'/.exec(assets.get('js/media.js')?.body.toString() || '')?.[1];
+      return sendJson(res, 200, { version, sha256: crypto.createHash('sha256').update(archive.body).digest('hex'), helper: tools.IS_SEA });
+    }
+    if (p === '/ext/WatchPartyExtensionSetup.exe') {
+      if (!tools.IS_SEA) return notFound(req, res, 'installer unavailable in source mode');
+      res.setHeader('Content-Disposition', 'attachment; filename="WatchPartyExtensionSetup.exe"');
+      return serveFile(req, res, process.execPath, { type: 'application/octet-stream' });
+    }
     if (p === '/manifest.webmanifest') {
       const startUrl = local ? `/host/${config.adminKey}` : `/join/${room.roomKey}`;
       res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' });
@@ -1004,3 +1023,4 @@ async function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 process.on('SIGHUP', shutdown); // closing the console window on Windows
+}

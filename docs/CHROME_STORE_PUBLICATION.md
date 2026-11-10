@@ -67,8 +67,8 @@ Before submission, complete the two-PC live Netflix check in [NETFLIX_FIX_VALIDA
 
 Once the approved store URL and extension ID exist, connect the app's initial Install button to that listing. Existing unpacked installations need a one-time switch to the store copy. Preserve required watch progress before removing a development copy: a different extension ID has separate browser storage. Normal later updates use **Update extension → Reload page**, without ZIPs or browser settings.
 
-## Update behavior in 1.17.9
+## Update behavior in 1.17.10
 
 When the page detects an old extension, it shows **Your extension is old** and **Update extension**. A store copy asks the browser for an available update; it never downloads executable code from the party server. When ready, the page offers **Reload page**. That click applies the staged extension update and reconnects the affected party/service tabs, including the combined theater window. Saved progress is retained.
 
-An unpacked host copy can use the same flow if its local folder already contains the required files. An unpacked guest whose files are still old receives the manual fallback. Older builds without the updater need a one-time manual update to this version. No-update, throttled and offline responses stay visible as retries rather than being reported as successful installs.
+Unpacked Windows copies now have a native file updater and fixed AppData directory; see [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). The installer keeps its own executable beside the extension and registers a per-user `watchparty-sync` URI handler. It requires initial installation consent, approval for each new HTTPS party origin, and approval for permission expansion. It only downloads extension archives to its own fixed directory; it cannot accept a destination from a URI. This helper is a separate native component to describe in review notes and privacy disclosures. Store-installed copies continue to use only the browser's updater. No-update, throttled and offline responses stay visible as retries rather than being reported as successful installs.

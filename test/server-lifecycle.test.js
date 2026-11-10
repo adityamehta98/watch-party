@@ -92,7 +92,7 @@ async function fixture(t, { idleMs = 60000, setupDelay = 0, alreadyOnline = fals
     tools.ROOT = root; tools.findBin = () => null;
     tools.detectEncoders = async () => null; tools.hasDoviStrip = async () => true;
     const setup = require(path.join(server, 'extension-setup'));
-    setup.createExtensionSetup = () => ({ info: () => null, open: async options => {
+    setup.createExtensionSetup = () => ({ info: () => null, install: async () => { log('extension:install'); return { ok: true }; }, open: async options => {
       log('extension:' + JSON.stringify(options)); return { ok: true, folderOpened: !!options.folder };
     } });
     const { PortMapper } = require(path.join(server, 'upnp'));
@@ -175,6 +175,18 @@ test('only an authenticated local host POST can open native extension setup', { 
   assert.equal(result.code, 200);
   assert.equal(result.data.folderOpened, true);
   assert.match(f.networkLog(), /extension:\{"browser":"brave","folder":true\}/);
+  assert.notEqual((await f.request('/api/extension/install', { body: {}, guest: true })).code, 200);
+  assert.notEqual((await f.request('/api/extension/install', { body: {}, key: 'wrong' })).code, 200);
+  assert.doesNotMatch(f.networkLog(), /extension:install/);
+  assert.equal((await f.request('/api/extension/install', { body: {} })).code, 200);
+});
+
+test('native updater downloads and verifies the real extension package through the server', { timeout: 15000 }, async t => {
+  const f = await fixture(t);
+  const { download, unpack } = require('../server/extension-install');
+  const bytes = await download(`http://127.0.0.1:${f.port}`, '');
+  assert.equal(unpack(bytes).manifest.version, '1.17.10');
+  assert.notEqual((await f.request('/extension/update-info', { guest: true })).code, 200);
 });
 
 test('private startup, manual sharing, guest disconnection, restart, and explicit window close', { timeout: 20000 }, async t => {

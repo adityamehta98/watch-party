@@ -1,8 +1,8 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.9**.
+Installed extension version: **1.17.10**. Minimum playback-compatible version: **1.17.8**.
 
-The Windows executable and companion extension were rebuilt and installed locally. The installed executable's SHA-256 matches the release executable. The complete regression suite passed: **294 tests, zero failures**. Results are in `build/cache/extension-update-all-tests.log`. The new extension update flow and first-publication preparation are documented in [CHROME_STORE_PUBLICATION.md](CHROME_STORE_PUBLICATION.md); real store delivery remains untested until a store item exists.
+The complete regression suite passed: **305 tests, zero failures**. Results are in `build/cache/extension-managed-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
 
 ## Follow-up: host playing while guest stays on Home
 
@@ -23,7 +23,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, reload Watch Party Sync **1.17.9** in Chrome or Edge, then reload Watch Party and the Netflix page. The host's installed extension folder is `app/extension`; the downloadable ZIP is `public/ext/watch-party-sync.zip`.
+1. On both PCs, follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and enable Watch Party Sync **1.17.10** from `%LOCALAPPDATA%\WatchParty\SyncExtension`. Disable the old copy if it came from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.
