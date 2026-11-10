@@ -32,9 +32,11 @@ const pwa = require('./pwa');
 const { createSessions } = require('./sessions');
 const { PlayerLifecycle } = require('./lifecycle');
 const { clearSessionCache } = require('./session-cache');
+const { createExtensionSetup } = require('./extension-setup');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
+const extensionSetup = createExtensionSetup({ root: ROOT });
 
 (function logToFile() {
   try {
@@ -275,6 +277,7 @@ async function info() {
     settings: room.publicSettings(true),
     blocked: guard.list(),
     extensionDir: fs.existsSync(path.join(ROOT, 'extension', 'manifest.json')) ? path.join(ROOT, 'extension') : null,
+    extensionSetup: extensionSetup.info(),
     updatePending: updatePending(),
     movieTv: { configured: catalog.configured(), tmdbConfigured: catalog.tmdbConfigured(), freeEnabled: catalog.freeEnabled(), sources: catalog.sourceCount() },
   };
@@ -490,6 +493,10 @@ async function api(req, res, p) {
   if (req.method === 'POST' && !/^application\/json/.test(req.headers['content-type'] || '')) return sendJson(res, 415, { error: 'json only' });
   const body = req.method === 'POST' ? await readBody(req) : {};
   let m;
+  if (p === '/api/extension/setup' && req.method === 'POST') {
+    try { return sendJson(res, 200, await extensionSetup.open({ browser: body.browser, folder: body.folder === true })); }
+    catch (e) { return sendJson(res, 400, { error: e.message }); }
+  }
   if (p === '/api/player/window' && req.method === 'POST') {
     const ok = lifecycle.window(body);
     return sendJson(res, ok ? 200 : 400, { ok });

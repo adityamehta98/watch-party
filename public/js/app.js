@@ -142,7 +142,7 @@ function start(name) {
     finishCatalogServiceLaunch();
     if (remote.present && extOutdated(remote.version) && !S.extWarned) {
       S.extWarned = true;
-      const fix = `Open ${/Edg\//.test(navigator.userAgent) ? 'edge' : 'brave or chrome'}://extensions and click its reload arrow, then reload this page.`;
+      const fix = `Open ${extensionBrowser()}://extensions and click its reload arrow, then reload this page. ${isHost ? 'Use the bundled extension folder; no new download is needed.' : 'First replace the files in your existing extension folder with the new download.'}`;
       toast(`Your Watch Party Sync extension is out of date (${remote.version || '?'}). ${fix}`, { kind: 'error', timeout: 20000 });
     }
   } });
@@ -573,6 +573,7 @@ function loadMovie(movie) {
 }
 
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
+function extensionBrowser() { return /Edg\//.test(navigator.userAgent) ? 'edge' : navigator.brave ? 'brave' : 'chrome'; }
 
 function renderServicePanel() {
   const panel = $('#servicePanel');
@@ -583,6 +584,11 @@ function renderServicePanel() {
   panel.hidden = false;
   const name = serviceName(m);
   const st = remote && remote.st;
+  const copy = (text, label) => `<button class="btn sm" type="button" data-copy="${esc(text)}">${esc(label || 'Copy')}</button>`;
+  const addr = `${extensionBrowser()}://extensions`;
+  const dir = S.info?.extensionDir;
+  const setupButton = (folder = false) => isHost && S.info?.extensionSetup?.browsers?.includes(extensionBrowser())
+    ? `<button class="btn ${folder ? 'primary' : ''}" type="button" data-svc="${folder ? 'extension-setup' : 'extension-settings'}">${folder ? 'Open extension setup' : 'Open extension settings'}</button>` : '';
   let status, button = '', help = '';
   if (!remote.present && (PLATFORM.mobile || PLATFORM.safari)) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
@@ -590,20 +596,17 @@ function renderServicePanel() {
     button = `<a class="btn primary" href="${esc(m.url)}" target="_blank" rel="noopener">Open ${esc(name)}</a>`;
     help = '<p class="fine">Streaming-service sync requires Chrome, Edge or Brave on a computer. On this browser, open the service separately and follow the live clock; chat and reactions remain available here. Anime and local movies play directly in Watch Party.</p>';
   } else if (!remote.present) {
-    const copy = (text, label) => `<button class="btn sm" type="button" data-copy="${esc(text)}">${esc(label || 'Copy')}</button>`;
-    const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : 'chrome://extensions';
     if (isHost) {
       if (!S.info) refreshInfoSoon();
-      const dir = (S.info && S.info.extensionDir) || 'D:\\watch-party\\extension';
-      status = `To watch together on ${esc(name)}, add the <b>Watch Party Sync</b> extension to this browser (one time). Everyone watches from their own ${esc(name)} account.`;
+      status = `Watch Party includes the <b>Watch Party Sync</b> extension. Enable it in this browser once to watch together on ${esc(name)}. Everyone watches from their own ${esc(name)} account.`;
+      button = setupButton(true);
       help = `<ol class="svc-steps">
-        <li>Copy this address <code>${addr}</code> ${copy(addr)} then paste it into a new tab's address bar and press Enter. (Browsers don't let pages open it for you.)</li>
+        <li>${button ? 'Click <b>Open extension setup</b> above to open this browser’s extensions page and the bundled folder.' : `Copy <code>${addr}</code> ${copy(addr)} into a new tab’s address bar.`}</li>
         <li>Turn on <b>Developer mode</b> (top right in Chrome, left side in Edge).</li>
-        <li>Click <b>Load unpacked</b> and choose your <code>${esc(dir)}</code> folder ${copy(dir, 'Copy folder')}</li>
-        <li>Click the puzzle piece next to the address bar and pin <b>Watch Party Sync</b> so you can see it.</li>
+        <li>Click <b>Load unpacked</b> and choose ${dir ? `<code>${esc(dir)}</code> ${copy(dir, 'Copy folder')}` : 'the <b>extension</b> folder included with Watch Party'}. No download or extraction is needed.</li>
         <li>Reload this tab.</li>
       </ol>
-      <p class="fine">Your friends get it from their own party page: the same steps show there with a download button. They only need it for streaming services. Your own movies and YouTube work without it.</p>`;
+      <p class="fine">Keep using this folder: Watch Party updates its files when the app is updated. After an update, click the extension’s reload arrow; you do not need to remove or add it again. Guests install from their own party page.</p>`;
     } else {
       status = `To watch together on ${esc(name)}, add the free <b>Watch Party Sync</b> extension (one time, about two minutes, Chrome or Edge on a computer). You'll sign in with your own ${esc(name)} account.`;
       help = `<ol class="svc-steps">
@@ -617,9 +620,10 @@ function renderServicePanel() {
     }
   } else if (extOutdated(remote.version)) {
     status = `Your <b>Watch Party Sync</b> extension is out of date (${esc(remote.version || '?')}). This party needs the newer one.`;
+    button = isHost ? setupButton() : '';
     help = isHost
-      ? `<ol class="svc-steps"><li>Open <code>chrome://extensions</code> (Brave: <code>brave://extensions</code>).</li><li>Click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol>`
-      : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder (replace the files).</li><li>Open <code>chrome://extensions</code> and click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol>`;
+      ? `<p>Updated extension files are included with Watch Party. No download or extraction is needed.</p><ol class="svc-steps"><li>${button ? 'Click <b>Open extension settings</b> above.' : `Open <code>${addr}</code> ${copy(addr)}.`}</li><li>Click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol><p class="fine">The bundled folder is ${dir ? `<code>${esc(dir)}</code> ${copy(dir, 'Copy folder')}` : 'the <b>extension</b> folder included with Watch Party'}. If you originally loaded a downloaded copy elsewhere, use <b>Load unpacked</b> to select this folder once. Future app updates use this same folder.</p>`
+      : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder (replace the files).</li><li>Open <code>${addr}</code> ${copy(addr)} and click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol><p class="fine">Keep the same folder and extension entry. You do not need to remove and add it again.</p>`;
   } else if (!remote.linked || !st) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
     status = isHost || m.browsing
@@ -646,7 +650,7 @@ function renderServicePanel() {
   const html = `<div class="svc-card"><div class="svc-name">${esc(name)}</div><h2>${esc(m.title && m.title !== name ? m.title : `Watching on ${name}`)}</h2><p>${status}</p>${button ? `<div class="row" style="justify-content:center">${button}</div>` : ''}${help}</div>`;
   if (panel.innerHTML !== html) panel.innerHTML = html;
 }
-$('#servicePanel').addEventListener('click', e => {
+$('#servicePanel').addEventListener('click', async e => {
   const c = e.target.closest('[data-copy]');
   if (c) {
     const done = () => toast('Copied', { timeout: 1500 });
@@ -655,6 +659,16 @@ $('#servicePanel').addEventListener('click', e => {
     return;
   }
   const b = e.target.closest('[data-svc]');
+  if (b && ['extension-setup', 'extension-settings'].includes(b.dataset.svc) && isHost) {
+    b.disabled = true;
+    try {
+      const folder = b.dataset.svc === 'extension-setup';
+      const result = await api('/api/extension/setup', { method: 'POST', body: JSON.stringify({ browser: extensionBrowser(), folder }) });
+      toast(folder ? `Extension settings opened. ${result.folderOpened ? 'The bundled folder is open too. ' : ''}Turn on Developer mode, then choose Load unpacked.` : 'Extension settings opened. Click the reload arrow on Watch Party Sync, then reload this tab.', { timeout: 10000 });
+    } catch (err) { toast(err.message, { kind: 'error', timeout: 10000 }); }
+    finally { b.disabled = false; }
+    return;
+  }
   if (b && b.dataset.svc === 'open') { togglePip({ keep: true, quiet: true }); remote.openPanel(); remote.openTab(); }
   if (b && b.dataset.svc === 'show') remote.showTab();
   if (b && b.dataset.svc === 'panel') remote.openPanel();

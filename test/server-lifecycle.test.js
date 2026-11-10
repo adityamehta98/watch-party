@@ -91,6 +91,10 @@ async function fixture(t, { idleMs = 60000, setupDelay = 0, alreadyOnline = fals
     const tools = require(path.join(server, 'tools'));
     tools.ROOT = root; tools.findBin = () => null;
     tools.detectEncoders = async () => null; tools.hasDoviStrip = async () => true;
+    const setup = require(path.join(server, 'extension-setup'));
+    setup.createExtensionSetup = () => ({ info: () => null, open: async options => {
+      log('extension:' + JSON.stringify(options)); return { ok: true, folderOpened: !!options.folder };
+    } });
     const { PortMapper } = require(path.join(server, 'upnp'));
     PortMapper.prototype.start = async function () { log('router:start'); this.set({ status: 'mapped' }); };
     PortMapper.prototype.stop = async function () { log('router:stop'); };
@@ -159,6 +163,19 @@ async function fixture(t, { idleMs = 60000, setupDelay = 0, alreadyOnline = fals
   };
   return { child, exited, request, until, networkLog, window, port, connect, root };
 }
+
+test('only an authenticated local host POST can open native extension setup', { timeout: 15000 }, async t => {
+  const f = await fixture(t);
+  const body = { browser: 'brave', folder: true };
+  assert.notEqual((await f.request('/api/extension/setup', { body, key: 'wrong-key' })).code, 200);
+  assert.notEqual((await f.request('/api/extension/setup', { body, guest: true })).code, 200);
+  assert.notEqual((await f.request('/api/extension/setup')).code, 200);
+  assert.doesNotMatch(f.networkLog(), /extension:/);
+  const result = await f.request('/api/extension/setup', { body });
+  assert.equal(result.code, 200);
+  assert.equal(result.data.folderOpened, true);
+  assert.match(f.networkLog(), /extension:\{"browser":"brave","folder":true\}/);
+});
 
 test('private startup, manual sharing, guest disconnection, restart, and explicit window close', { timeout: 20000 }, async t => {
   const f = await fixture(t);

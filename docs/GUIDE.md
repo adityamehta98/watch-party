@@ -443,10 +443,12 @@ In **Library → Watch together on a streaming service**, click a service.
 
 - **YouTube** plays inside the Watch Party page for everyone, phones included. No sign-in or extension needed.
 - **Netflix, Prime Video, Hulu, Peacock, Crunchyroll, Paramount+, Max, Disney+, Apple TV+** need the free **Watch Party Sync** extension, installed once by everyone watching:
-  1. Host: use the `extension/` folder. Guests: click **Download the extension** on their party page and unzip it.
+  1. Host: click **Open extension setup** on the service setup screen. Watch Party opens Chrome, Edge or Brave’s extensions page and its bundled extension folder. **No download or extraction is needed on the host.** If the browser is installed in a custom location, copy the displayed address and folder path instead. Guests: click **Download the extension** on their party page and unzip it.
   2. Open `chrome://extensions` (Edge: `edge://extensions`, Brave: `brave://extensions`) and turn on **Developer mode**.
-  3. Click **Load unpacked** and choose the folder.
+  3. Click **Load unpacked** and choose the folder. On the local host installation this is `app/extension`; portable releases use `extension` beside the executable. Keep this folder and extension entry for future updates.
   4. Reload the Watch Party page and click a service tile.
+
+The current extension is distributed as a development build. A normal **Add extension** confirmation and automatic browser updates require a published browser-store listing. On Windows, even an extension bundled with a native app must come from the Chrome Web Store for Chrome’s supported external-install flow; showing our own permission dialog does not replace that requirement. See [Chrome’s distribution rules](https://developer.chrome.com/docs/extensions/how-to/distribute) and [bundled-software installation](https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions). No store listing is configured in this build.
 
 Safari extension/native companion packaging has been retired. Safari and iPhone/iPad web playback remain supported.
 
@@ -462,7 +464,7 @@ How it behaves:
 - **Safari, iPhone/iPad and Android:** open the streaming service separately and follow the live clock. Chat and reactions remain in the party page.
 - **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; external service playback opens separately.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
-- **After each Watch Party update**, reload the extension at `chrome://extensions`. The party page tells you when it's out of date.
+- **After each Watch Party update**, the host’s bundled extension files are updated in place. Click **Open extension settings** on an outdated service setup screen and click the extension’s reload arrow. Reload Watch Party afterward. Hosts do not need another ZIP; nobody needs to remove and re-add the extension. Guests still need to replace their extracted files before reloading until a browser-store release is available.
 - The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It synchronizes playback metadata and does not intentionally read login cookies or passwords. Its broad permissions still grant access to controlled page content; use trusted sites and see PRIVACY.md.
 
 ### Custom site (any website with a video)
