@@ -18,16 +18,16 @@ The first Windows installer is about 85 MiB because it currently reuses the app'
 4. Turn on **Developer mode**: top right in Chrome/Brave, left side in Edge.
 5. If you previously installed Watch Party Sync from Downloads or another folder, turn that old entry **off**. Keep its old entry if you need to retain its browser-local data; do not run two enabled copies.
 6. Click **Load unpacked**. In the folder picker, paste `%LOCALAPPDATA%\WatchParty\SyncExtension` into its address bar and press Enter. Click **Select Folder**. Choose this exact folder, not its parent `WatchParty` folder. The app also has a **Copy folder** button; the host sees its fully expanded path.
-7. Return to Watch Party and click **Reload page**. If Netflix was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.11**.
+7. Return to Watch Party and click **Reload page**. If Netflix was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.12**.
 
 The initial browser step is required for an unpublished extension. The installer does not edit browser profiles, enable Developer mode, or force-install an extension. A future browser-store listing removes the Load unpacked step. The downloaded setup file can be deleted after installation; the helper and extension remain in AppData.
 
 ## Later updates
 
-1. Click **Update extension** in Watch Party.
+1. Open or reload Watch Party. If your active extension is older than the host's release, click **Update extension** in the top bar. The button is hidden when you're up to date. Chrome or Brave's extension reload arrow only reloads files already on disk.
 2. If asked, allow the browser to open **Watch Party Sync updater**. The first time an update comes from a new party address, the helper names that address and asks permission to use it. Approve only a host you trust. A change to extension permissions requires approval too.
 3. The helper downloads the package from that approved party address, checks its hash and contents, stages the files, and replaces the same `SyncExtension` directory. Obsolete files from the previous version are removed. It does not touch browser playback history, logins, cookies or another folder chosen through a URL.
-4. When Watch Party says the update is ready, click **Reload page**. The extension restarts and refreshes its controlled party/player tabs. No ZIP extraction, new folder selection or re-adding the extension is needed.
+4. When Watch Party says the update is ready, click **Reload page**. The extension restarts and refreshes its controlled party/player tabs. If you reload Watch Party after the new files have already arrived, it can finish that restart for you. With the browser already using `SyncExtension`, there is no new Windows installer download, ZIP extraction, folder selection or re-adding the extension.
 
 For the host, a new Watch Party app release also refreshes the managed extension files on startup after the helper has been installed and automatic file updates approved. New permissions are not approved during startup. The update source must use trusted HTTPS; localhost HTTP is allowed on the same PC. Updates do not bypass certificate validation.
 

@@ -140,11 +140,7 @@ function start(name) {
   remote = new RemoteMedia({ onInfo: () => {
     renderServicePanel(); maybeSendMeta();
     finishCatalogServiceLaunch();
-    if (remote.present && extOutdated(remote.version) && !S.extWarned) {
-      S.extWarned = true;
-      toast('Your extension is old. Update it to keep watching together.', { kind: 'error', timeout: 20000,
-        actions: [{ label: 'Update extension', primary: true, run: () => updateExtension() }] });
-    }
+    checkExtensionUpdate();
   } });
   remote.onProblem = p => { if (p.kind === 'theater') clearTimeout(enterTheater.timer); extProblem(p); };
   remote.onLaunchResult = result => { if (result.error) toast(result.error, { kind: 'error', timeout: 12000 }); };
@@ -160,9 +156,9 @@ function start(name) {
   });
   wire();
   conn.connect();
-  fetch('/extension/update-info', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(info => {
-    S.extPackage = info; renderServicePanel();
-  }).catch(() => {});
+  refreshExtensionPackage();
+  clearInterval(S.extPackagePoll);
+  S.extPackagePoll = setInterval(refreshExtensionPackage, 60000);
 }
 
 function wire() {
@@ -578,6 +574,62 @@ function loadMovie(movie) {
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
 function extensionBrowser() { return /Edg\//.test(navigator.userAgent) ? 'edge' : navigator.brave ? 'brave' : 'chrome'; }
 const extensionFolder = () => isHost && S.info?.extensionSetup?.managedDirectory || '%LOCALAPPDATA%\\WatchParty\\SyncExtension';
+function extensionTargetVersion() {
+  const version = S.extPackage?.version;
+  return /^\d{1,5}(?:\.\d{1,5}){0,3}$/.test(version || '') && extOutdated(LATEST_EXT_VERSION, version) ? version : LATEST_EXT_VERSION;
+}
+async function refreshExtensionPackage() {
+  try {
+    const response = await fetch('/extension/update-info', { cache: 'no-store' });
+    if (!response.ok) return;
+    S.extPackage = await response.json();
+    renderServicePanel(); checkExtensionUpdate();
+  } catch { /* The next connection or periodic check can retry. */ }
+}
+async function checkExtensionUpdate() {
+  renderExtensionUpdate();
+  if (!remote?.present || !extOutdated(remote.version, extensionTargetVersion())) return;
+  const target = extensionTargetVersion(), version = remote.version, stamp = `${version}|${target}`;
+  if (S.extWarned !== stamp) {
+    S.extWarned = stamp;
+    toast(`Extension update available: ${version} → ${target}. Click Update extension to install it.`, { timeout: 20000,
+      actions: [{ label: 'Update extension', primary: true, run: () => updateExtension() }] });
+  }
+  if (!remote.canUpdate || S.extUpdate?.busy || S.extProbeKey === stamp) return;
+  S.extProbeKey = stamp;
+  // This reads the installed files; it never launches the native helper or
+  // requests a store download. Ready files can finish on an ordinary page reload.
+  const result = await remote.updateExtension('check', target, { passive: true });
+  if (remote.version !== version || extensionTargetVersion() !== target || S.extUpdate?.busy) return;
+  if (result.status !== 'ready') return;
+  S.extUpdate = { busy: true, message: 'Finishing the installed extension update…' };
+  renderExtensionUpdate();
+  const applied = await remote.updateExtension('apply', target);
+  if (applied.status !== 'reloading') {
+    S.extUpdate = { ready: true, message: applied.error || 'New files are installed. Click Reload page to finish.' };
+    renderExtensionUpdate();
+  }
+}
+function renderExtensionUpdate() {
+  const available = !!remote?.present && extOutdated(remote.version, extensionTargetVersion());
+  if (remote?.present && !available) {
+    S.extUpdate = null;
+    const dialog = $('#extensionUpdateDialog');
+    if (dialog.open) dialog.close();
+  }
+  const button = $('#extensionUpdateBtn');
+  button.hidden = !available;
+  button.disabled = !!S.extUpdate?.busy;
+  button.textContent = S.extUpdate?.busy ? 'Updating…' : S.extUpdate?.ready ? 'Reload to update' : 'Update extension';
+  button.title = available ? `Installed ${remote.version}; latest ${extensionTargetVersion()}` : 'Extension is up to date';
+  const body = $('#extensionUpdateBody');
+  const { installer, installSteps } = extensionSetupUi();
+  const manual = S.extUpdate?.manual;
+  body.innerHTML = `<p>Installed: <b>${esc(remote?.version || 'Not detected')}</b> · Latest: <b>${esc(extensionTargetVersion())}</b></p>
+    <p role="status">${esc(S.extUpdate?.message || 'A newer extension is available. Playback can continue while you choose when to update.')}</p>
+    ${available ? `<button class="btn primary" type="button" data-svc="extension-update" ${S.extUpdate?.busy ? 'disabled' : ''}>${S.extUpdate?.busy ? 'Please wait…' : S.extUpdate?.ready ? 'Reload page' : 'Update extension'}</button>` : ''}
+    ${manual ? `<p>${S.extUpdate.unmanaged ? 'The browser is using a copy outside the updater’s folder. Installing the Windows helper does not move that browser entry.' : 'Check whether the browser or updater is waiting for your approval.'} If you already installed the helper, skip the installer download and check the folder in the browser steps below.</p>${installer}${installSteps()}` : ''}`;
+}
 async function runNativeExtensionUpdate() {
   const url = new URL('watchparty-sync://update');
   url.searchParams.set('origin', location.origin);
@@ -586,7 +638,7 @@ async function runNativeExtensionUpdate() {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 2000));
-    const result = await remote.updateExtension('check', LATEST_EXT_VERSION);
+    const result = await remote.updateExtension('check', extensionTargetVersion());
     if (result.status === 'ready') return result;
     if (result.status === 'error') return result;
   }
@@ -595,13 +647,16 @@ async function runNativeExtensionUpdate() {
 
 async function updateExtension() {
   if (S.extUpdate?.busy) return;
+  if (remote?.present && !extOutdated(remote.version, extensionTargetVersion())) { renderExtensionUpdate(); return; }
+  const dialog = $('#extensionUpdateDialog');
+  if (dialog && !dialog.open) dialog.showModal();
   const applying = !!S.extUpdate?.ready;
   S.extUpdate = { busy: true, message: applying ? 'Reloading…' : 'Checking for the new extension…' };
-  renderServicePanel();
-  let result = await remote.updateExtension(applying ? 'apply' : 'check', LATEST_EXT_VERSION);
+  renderServicePanel(); renderExtensionUpdate();
+  let result = await remote.updateExtension(applying ? 'apply' : 'check', extensionTargetVersion());
   if (result.status === 'native') {
     S.extUpdate.message = 'Updating the extension files. Approve the updater if your browser asks.';
-    renderServicePanel();
+    renderServicePanel(); renderExtensionUpdate();
     result = await runNativeExtensionUpdate();
   }
   if (result.status === 'reloading') return; // the new extension reloads the affected party and service tabs
@@ -611,22 +666,14 @@ async function updateExtension() {
     no_update: 'The new extension is not available from the browser store yet. Please try again later.',
     manual: result.error || 'Set up the file updater once using the steps below. Future updates use this button.',
   };
-  S.extUpdate = { ready: result.status === 'ready', manual: result.status === 'manual',
+  S.extUpdate = { ready: result.status === 'ready', manual: result.status === 'manual', unmanaged: result.status === 'manual' && !result.error,
     message: messages[result.status] || result.error || 'Could not update the extension. Please try again.' };
-  renderServicePanel();
+  renderServicePanel(); renderExtensionUpdate();
   if (kindOf(S.movie) !== 'service') toast(S.extUpdate.message, { timeout: 15000,
     actions: S.extUpdate.ready ? [{ label: 'Reload page', primary: true, run: () => updateExtension() }] : [] });
 }
 
-function renderServicePanel() {
-  const panel = $('#servicePanel');
-  const m = S.movie;
-  if (!panel) return;
-  stage.classList.toggle('service-setup', !!m && kindOf(m) === 'service' && !(remote && remote.present));
-  if (!m || kindOf(m) !== 'service') { panel.hidden = true; return; }
-  panel.hidden = false;
-  const name = serviceName(m);
-  const st = remote && remote.st;
+function extensionSetupUi() {
   const copy = (text, label) => `<button class="btn sm" type="button" data-copy="${esc(text)}">${esc(label || 'Copy')}</button>`;
   const addr = `${extensionBrowser()}://extensions`;
   const dir = S.info?.extensionDir;
@@ -645,6 +692,18 @@ function renderServicePanel() {
     <li>If an older <b>Watch Party Sync</b> copy is listed from another folder, turn it <b>off</b> first. Click <b>Load unpacked</b>. ${installer ? `Paste <code>${esc(extensionFolder())}</code> ${copy(extensionFolder(), 'Copy folder')} into the folder picker’s address bar, press Enter, then click <b>Select Folder</b>.` : 'Select the extracted extension folder containing <b>manifest.json</b>.'} Keep only this copy enabled.</li>
     <li>Return here and <button class="btn sm" type="button" data-svc="extension-page-reload">Reload page</button>. After the first setup, use <b>Update extension → Reload page</b>; keep the same folder.</li>
   </ol>`;
+  return { zip, installer, installSteps, setupButton };
+}
+function renderServicePanel() {
+  const panel = $('#servicePanel');
+  const m = S.movie;
+  if (!panel) return;
+  stage.classList.toggle('service-setup', !!m && kindOf(m) === 'service' && !(remote && remote.present));
+  if (!m || kindOf(m) !== 'service') { panel.hidden = true; return; }
+  panel.hidden = false;
+  const name = serviceName(m);
+  const st = remote && remote.st;
+  const { zip, installer, installSteps, setupButton } = extensionSetupUi();
   const updateButton = () => `<button class="btn primary" type="button" data-svc="extension-update" ${S.extUpdate?.busy ? 'disabled' : ''}>${S.extUpdate?.busy ? 'Please wait…' : S.extUpdate?.ready ? 'Reload page' : 'Update extension'}</button>`;
   let status, button = '', help = '';
   if (!remote.present && (PLATFORM.mobile || PLATFORM.safari)) {
@@ -695,14 +754,14 @@ function renderServicePanel() {
     button = `<button class="btn primary" type="button" data-svc="panel">Show the party next to ${esc(name)}</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} again</button>`;
     help = `<p class="fine">Watch in the ${esc(name)} tab. The party (chat, cameras, people and the play controls) sits in the panel on the right side of Chrome, next to the video. Closed it? Click the Watch Party icon in Chrome's toolbar, or the button above. Keep this tab open in the background: it's what keeps everyone connected.</p>`;
   }
-  if (remote.present && !extOutdated(remote.version) && extOutdated(remote.version, LATEST_EXT_VERSION)) {
+  if (remote.present && !extOutdated(remote.version) && extOutdated(remote.version, extensionTargetVersion())) {
     help += `<p class="fine">${esc(S.extUpdate?.message || 'A newer extension is available. Your current version can keep watching.')} ${updateButton()} ${zip}</p>`;
     if (S.extUpdate?.manual) help += `<div class="row" style="justify-content:center">${installer}</div>` + installSteps();
   }
   const html = `<div class="svc-card"><div class="svc-name">${esc(name)}</div><h2>${esc(m.title && m.title !== name ? m.title : `Watching on ${name}`)}</h2><p>${status}</p>${button ? `<div class="row" style="justify-content:center">${button}</div>` : ''}${help}</div>`;
   if (panel.innerHTML !== html) panel.innerHTML = html;
 }
-$('#servicePanel').addEventListener('click', async e => {
+async function onServiceAction(e) {
   const c = e.target.closest('[data-copy]');
   if (c) {
     const done = () => toast('Copied', { timeout: 1500 });
@@ -738,7 +797,10 @@ $('#servicePanel').addEventListener('click', async e => {
   if (b && b.dataset.svc === 'show') remote.showTab();
   if (b && b.dataset.svc === 'panel') remote.openPanel();
   if (b && b.dataset.svc === 'theater') enterTheater();
-});
+}
+$('#servicePanel').addEventListener('click', onServiceAction);
+$('#extensionUpdateBody').addEventListener('click', onServiceAction);
+$('#extensionUpdateBtn').addEventListener('click', () => updateExtension());
 
 function onRemoteUserAction(m) {
   if (kindOf(S.movie) !== 'service') return;

@@ -109,6 +109,7 @@
         <button class="icon-btn" id="notificationBtn" type="button" title="Notification history" aria-label="Notification history" aria-expanded="false"><svg><use href="#i-bell"/></svg></button>
         <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
         <button class="btn sm" id="installBtn" type="button" hidden>Install</button>
+        <button class="btn primary sm" id="extensionUpdateBtn" type="button" hidden>Update extension</button>
         <button class="btn primary sm host-only" id="inviteBtn" type="button" aria-label="Invite"><svg><use href="#i-link"/></svg><span>Invite</span></button>
         <button class="icon-btn" id="sidebarBtn" type="button" title="Show or hide the side panel" aria-label="Toggle side panel"><svg><use href="#i-panel"/></svg></button>
       </div>
@@ -385,6 +386,13 @@
     </aside>
   </div>
 
+  <dialog class="dialog extension-update-dialog" id="extensionUpdateDialog" aria-labelledby="extensionUpdateTitle">
+    <form method="dialog" class="dialog-inner">
+      <button class="icon-btn close" value="close" aria-label="Close extension update"><svg><use href="#i-x"/></svg></button>
+      <h2 id="extensionUpdateTitle">Update Watch Party Sync</h2>
+      <div id="extensionUpdateBody"></div>
+    </form>
+  </dialog>
   <dialog class="dialog" id="inviteDialog">
     <form method="dialog" class="dialog-inner">
       <button class="icon-btn close" value="close" aria-label="Close"><svg><use href="#i-x"/></svg></button>

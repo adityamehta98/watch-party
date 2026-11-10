@@ -50,7 +50,7 @@ async function reportServiceAccess(party) {
 }
 async function updateFromParty(party, m) {
   const tabs = [party.tabId, ...[...parties].flatMap(p => [p.tabId, p.link?.tabId, p.pendingTab])];
-  return m.op === 'check' ? extensionUpdater.check(m.required) : m.op === 'apply' ? extensionUpdater.apply(tabs) : { status: 'error' };
+  return m.op === 'check' ? extensionUpdater.check(m.required, { passive: !!m.passive }) : m.op === 'apply' ? extensionUpdater.apply(tabs) : { status: 'error' };
 }
 
 function allowedUrl(url) {
@@ -281,7 +281,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (m.wp === 'extension-update') {
     if (!sender.tab || !partyPageUrl(sender.url) || ![...parties].some(p => p.tabId === sender.tab.id && p.port.sender.url === sender.url)) return;
     const tabs = [sender.tab.id, ...[...parties].flatMap(p => [p.tabId, p.link?.tabId, p.pendingTab])];
-    const job = m.op === 'check' ? extensionUpdater.check(m.required) : m.op === 'apply' ? extensionUpdater.apply(tabs) : Promise.resolve({ status: 'error' });
+    const job = m.op === 'check' ? extensionUpdater.check(m.required, { passive: !!m.passive }) : m.op === 'apply' ? extensionUpdater.apply(tabs) : Promise.resolve({ status: 'error' });
     job.then(reply, () => reply({ status: 'error', error: 'Could not apply the update. Please try again.' }));
     return true;
   }

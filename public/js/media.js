@@ -282,9 +282,9 @@ export class RemoteMedia extends AdapterBase {
   get pageUrl() { return this.lastUrl || (this.st && this.st.url) || ''; } // the freshest: status and page reports both update lastUrl
   get signingIn() { return !!(this.page && this.page.signin && performance.now() - this.page.at < 8000); }
   openPanel() { this.post({ type: 'open-panel' }); }
-  updateExtension(op, required) {
+  updateExtension(op, required, { passive = false } = {}) {
     if (!this.canUpdate) return Promise.resolve({ status: 'manual' });
-    return this.extensionRequest('extension-update', { op, required }, 46000);
+    return this.extensionRequest('extension-update', { op, required, passive }, 46000);
   }
   openSettings() { return this.extensionRequest('extension-settings', {}, 3000); }
   checkAccess() { this.post({ type: 'extension-info' }); }
@@ -368,7 +368,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const LATEST_EXT_VERSION = '1.17.11';
+export const LATEST_EXT_VERSION = '1.17.12';
 // Updater-only releases must not prevent compatible Netflix players from opening.
 export const REQUIRED_EXT_VERSION = '1.17.8';
 export const extOutdated = (v, required = REQUIRED_EXT_VERSION) => { const a = String(v || '0').split('.').map(Number), b = required.split('.').map(Number); for (let i = 0; i < 4; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };

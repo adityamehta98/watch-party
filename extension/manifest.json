@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watch Party Sync",
-  "version": "1.17.11",
+  "version": "1.17.12",
   "description": "Watch streaming videos together with synchronized playback, chat, reactions and party controls.",
   "icons": {
     "16": "icon16.png",

@@ -69,6 +69,27 @@ test('unpacked updates reload only when the files on disk actually meet the requ
   assert.equal((await guest.updater.apply([7])).status, 'error');
 });
 
+test('passive discovery never downloads a store update or restarts a current extension', async () => {
+  const store = fixture();
+  assert.equal((await store.updater.check('1.18.0', { passive: true })).status, 'outdated');
+  assert.equal(store.checks(), 0);
+  assert.equal(store.reloads(), 0);
+  assert.equal((await store.updater.check('1.17.9', { passive: true })).status, 'current');
+  assert.equal(store.timers.length, 0);
+  const managed = fixture({ installType: 'development' });
+  assert.equal((await managed.updater.check('1.18.0', { passive: true })).status, 'ready');
+  assert.equal(managed.checks(), 0);
+});
+
+test('an explicit update click during passive discovery still requests the store download', async () => {
+  const f = fixture();
+  const passive = f.updater.check('1.18.0', { passive: true });
+  const explicit = f.updater.check('1.18.0');
+  assert.equal((await passive).status, 'outdated');
+  assert.equal((await explicit).status, 'ready');
+  assert.equal(f.checks(), 1);
+});
+
 test('a downloaded update survives worker sleep and repeated clicks share one check', async () => {
   const f = fixture({ status: 'throttled' });
   f.api.runtime.onUpdateAvailable.fire({ version: '1.18.0' });
@@ -96,10 +117,11 @@ test('the app offers Update extension then Reload page, with no restart before t
     S: { movie: { kind: 'service' } }, LATEST_EXT_VERSION: '1.18.0',
     remote: { updateExtension: (op, required) => op === 'check' ? f.updater.check(required) : f.updater.apply([7]) },
     renderServicePanel() { renders.push(JSON.parse(JSON.stringify(context.S.extUpdate))); },
+    $: () => null, renderExtensionUpdate() {}, extensionTargetVersion: () => '1.18.0',
     kindOf: m => m.kind, toast() {},
   });
   const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
-  vm.runInContext(app.slice(app.indexOf('async function updateExtension()'), app.indexOf('function renderServicePanel()')), context);
+  vm.runInContext(app.slice(app.indexOf('async function updateExtension()'), app.indexOf('function extensionSetupUi()')), context);
   await context.updateExtension();
   assert.equal(context.S.extUpdate.ready, true);
   assert.equal(f.timers.length, 0);

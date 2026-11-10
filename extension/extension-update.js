@@ -10,17 +10,23 @@ var WPExtensionUpdate = (() => {
   }
   function create(api, { request = globalThis.fetch, later = setTimeout } = {}) {
     const session = api.storage?.session;
-    let checking = null, applying = null;
+    let checking = null, checkingTarget = '', checkingPassive = false, applying = null;
     api.runtime.onUpdateAvailable?.addListener(details => {
       if (session && valid(details.version)) session.set({ [AVAILABLE]: details.version }).catch(() => {});
     });
-    async function check(required) {
+    async function check(required, { passive = false } = {}) {
       if (!session || !valid(required)) return { status: 'error', error: 'This browser cannot check extension updates.' };
-      if (checking) return checking;
+      if (checking) {
+        if (checkingTarget === required && (passive || !checkingPassive)) return checking;
+        await checking;
+        return check(required, { passive });
+      }
+      checkingTarget = required; checkingPassive = passive;
       checking = (async () => {
         await session.remove(READY);
         const self = await api.management.getSelf(); // getSelf needs no management permission
         let version = self.version;
+        if (passive && atLeast(version, required)) return { status: 'current', version };
         if (!atLeast(version, required)) {
           if (self.installType === 'development') {
             // The host app updates its bundled folder in place. An unpacked guest copy
@@ -35,6 +41,7 @@ var WPExtensionUpdate = (() => {
           } else {
             version = (await session.get(AVAILABLE))[AVAILABLE];
             if (!atLeast(version, required)) {
+              if (passive) return { status: 'outdated' };
               const result = await api.runtime.requestUpdateCheck();
               if (result.status !== 'update_available') return { status: result.status === 'throttled' ? 'throttled' : 'no_update' };
               version = result.version;

@@ -42,7 +42,7 @@
       const { source, ...m } = e.data;
       if (m.type === 'ping') { hello(); return; }
       if (m.type === 'extension-update') {
-        ask({ wp: 'extension-update', op: m.op, required: m.required }, 45000)
+        ask({ wp: 'extension-update', op: m.op, required: m.required, passive: !!m.passive }, 45000)
           .then(result => toPage({ type: 'extension-update-result', id: m.id, result }));
         return;
       }
