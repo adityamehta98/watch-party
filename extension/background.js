@@ -161,6 +161,12 @@ function onPartyPort(port) {
       case 'navigate':
         // the host moved on to another title: take this person's streaming tab there too
         if (!allowedUrl(m.url)) return;
+        if (wpServiceOf(new URL(m.url).hostname) === 'netflix' && (party.link || party.pendingTab != null)) {
+          chrome.tabs.sendMessage(party.link?.tabId ?? party.pendingTab, { wp: 'navigate', url: m.url }).catch(() => {
+            post(port, { type: 'ext-problem', kind: 'navigation', error: 'Netflix navigation is not connected. Reload the Watch Party extension and retry.' });
+          });
+          break;
+        }
         if (party.link) chrome.tabs.update(party.link.tabId, { url: m.url }).catch(() => {});
         else {
           // the tab we opened for them earlier (still on the service's front page, say), or a new one
@@ -249,6 +255,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     return true;
   }
   if (m.wp === 'ping') { reply({ ok: true }); return; } // the party page checking that this part is running
+  if (m.wp === 'service-navigate' && theaterSender(sender) && theaterTabs.has(sender.tab.id) && allowedUrl(m.url)) {
+    chrome.tabs.sendMessage(sender.tab.id, { wp: 'navigate', url: m.url }).then(reply, () => reply({ ok: false, error: 'The service navigation is not connected. Retry when the page finishes loading.' }));
+    return true;
+  }
   if (m.wp === 'theater-hello' && theaterSender(sender) && partyPageUrl(m.party)) {
     // the "watch here" window opened in this tab, or reminds us it's there (it does every few seconds,
     // since this background part is put to sleep by the browser now and then and forgets)
@@ -342,6 +352,8 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       // the tab this party watches in (linked, or the one we opened / the window it lives in)
       const mine = party.link ? party.link.tabId === tabId : (party.pendingTab == null || party.pendingTab === tabId);
       if (mine) post(party.port, { type: 'page', url: wpSharedPageUrl(m.url), signin: !!m.signin });
+    } else if (m.wp === 'navigation-error') {
+      if (party.link?.tabId === tabId || party.pendingTab === tabId) post(party.port, { type: 'ext-problem', kind: 'navigation', error: String(m.error || '').slice(0, 300) });
     } else if (m.wp === 'user' && party.link && party.link.tabId === tabId) {
       post(party.port, { type: 'user', action: m.action, t: m.t, land: !!m.land, url: wpSharedPageUrl(m.url), vol: m.vol, muted: m.muted });
     }
@@ -396,14 +408,14 @@ function injectFrame(tabId, frameId, url) {
   if (partyOrigin && u.origin === partyOrigin) return;
   const target = { tabId, frameIds: [frameId] };
   if (wpServiceOf(u.hostname)) {
-    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'emoji-picker.js', 'service.js'] })
+    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'emoji-picker.js', 'service-navigation.js', 'service.js'] })
       .then(() => wpServiceOf(u.hostname) === 'netflix' ? chrome.scripting.executeScript({ target, world: 'MAIN', files: ['netflix-main.js'] }) : null)
       .catch(() => {});
     return;
   }
   if (!customHosts.has(tabId)) return;                            // a custom site, only where the host opened one
   chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
-    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'emoji-picker.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
+    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'emoji-picker.js', 'service-navigation.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
     .catch(() => {});
 }
 // every frame already loaded in a tab (a tab claimed after it loaded, or a woken-up background part);

@@ -17,7 +17,22 @@
     const v = document.querySelector('video');
     const result = (ok, error = '') => window.postMessage({ source: 'wp-netflix', op, ok, error }, location.origin);
     try {
-      if (op === 'seek') {
+      if (op === 'navigate') {
+        const url = new URL(t, location.origin);
+        if (url.origin !== location.origin || !/^\/watch\/\d+\/?$/.test(url.pathname)) { result(false, 'invalid-title'); return; }
+        const link = [...document.querySelectorAll('a[href]')].find(el => {
+          try { const href = new URL(el.href); return href.origin === url.origin && href.pathname === url.pathname; } catch { return false; }
+        });
+        if (link) link.click();
+        else {
+          // Notify the existing SPA router. A document reload discards Netflix's
+          // in-memory unlocked profile and can send the viewer back to the PIN gate.
+          history.pushState({}, '', url.pathname);
+          window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+        }
+        result(true);
+      }
+      else if (op === 'seek') {
         if (p && Number.isFinite(t) && t >= 0) { p.seek(Math.round(t * 1000)); result(true); }
         else result(false, 'unavailable');
       }

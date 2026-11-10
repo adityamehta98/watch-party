@@ -119,6 +119,12 @@ function load(url, custom, strict) {
 // extension's background part to sleep after a while, and it starts again knowing nothing.
 setInterval(() => { chrome.runtime.sendMessage({ wp: 'theater-hello', party: partyUrl, custom: customUrl || null, blockPopups: currentStrict }).catch(() => {}); }, 10000);
 const svcOf = u => { try { return wpServiceOf(new URL(u).hostname) || 'custom'; } catch { return ''; } };
+function navigateService(url, custom, strict) {
+  if (svcOf(url) !== 'netflix' || svcOf(currentSvcUrl) !== 'netflix') { load(url, custom, strict); return; }
+  chrome.runtime.sendMessage({ wp: 'service-navigate', url }).then(result => {
+    if (!result?.ok) showFrameFailure(result?.error || 'Netflix navigation is not connected.');
+  }, error => showFrameFailure(error.message));
+}
 function allowedPartyUrl(url) {
   try {
     const u = new URL(url);
@@ -184,7 +190,7 @@ window.addEventListener('message', e => {
     if (show && !nativeTransition && (m.url !== currentSvcUrl || !!m.strict !== currentStrict)) {
       if (!currentSvcUrl || !!m.strict !== currentStrict) load(m.url, !!m.custom, !!m.strict);
       // (not in the middle of signing in, unless the room switched to another service altogether)
-      else if ((!m.signin || svcOf(m.current) !== svcOf(m.url)) && wpCanonicalUrl(m.current) !== wpCanonicalUrl(m.url)) load(m.url, !!m.custom, !!m.strict);
+      else if ((!m.signin || svcOf(m.current) !== svcOf(m.url)) && wpCanonicalUrl(m.current) !== wpCanonicalUrl(m.url)) navigateService(m.url, !!m.custom, !!m.strict);
       currentSvcUrl = m.url;
       waitingSince = 0; helpClosed = false;
     }
@@ -200,7 +206,7 @@ window.addEventListener('message', e => {
     if (show && !m.linked) { if (!waitingSince) waitingSince = Date.now(); } else waitingSince = 0;
     checkStuck();
   } else if (m.wpTheater === 'goto') {
-    if (allowedServiceUrl(m.url, !!m.custom)) { load(m.url, !!m.custom, !!m.strict); currentSvcUrl = m.url; }
+    if (allowedServiceUrl(m.url, !!m.custom)) { navigateService(m.url, !!m.custom, !!m.strict); currentSvcUrl = m.url; }
   } else if (m.wpTheater === 'fullscreen') {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else box.requestFullscreen().catch(() => {});

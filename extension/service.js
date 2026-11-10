@@ -107,6 +107,7 @@
 
   // ------------------------------------------------ report status
   function status() {
+    if (TOP && (signingIn() || (NETFLIX && !/^\/watch\/\d+/.test(location.pathname)))) return null;
     const v = pick();
     if (!v) return null;
     const ad = isAd(v);
@@ -136,11 +137,18 @@
   // you to the room's title once you're in.
   function signingIn() {
     if (/\/(login|signin|sign-in|sign_in|auth|ap\/signin|profiles|ProfilesGate|welcome|register|account\/profile)/i.test(location.pathname + location.search)) return true;
-    if (document.querySelector('input[type="password"], input[autocomplete="one-time-code"], [data-uia*="pin" i], [data-uia*="profile-gate" i], .profiles-gate-container, .list-profiles')) return true;
+    if ([...document.querySelectorAll('input[type="password"], input[autocomplete="one-time-code"], [data-uia*="pin" i], [data-uia*="profile-gate" i], .profiles-gate-container, .list-profiles')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) return true;
     const h = (document.querySelector('h1, h2') || {}).textContent || '';
     return /who'?s watching|who is watching|profile lock|enter your pin|choose (a|your) profile/i.test(h);
   }
   let lastPage = '', lastPageAt = 0;
+  const navigation = WpServiceNavigation.create({
+    here: sharedPageUrl, signingIn,
+    ready: url => sharedPageUrl() === url && !!pick() && video.readyState >= 2 && video.duration > 60,
+    navigate: url => { if (NETFLIX) netflix('navigate', url); else location.assign(url); },
+    failed: () => send({ wp: 'navigation-error', service: SERVICE, error: 'Netflix did not open the room title. Use its Play control or retry from Watch Party; your profile has been kept open.' }),
+  });
+  if (TOP) setInterval(() => navigation.tick(), 250);
   if (TOP) setInterval(() => {
     const info = { url: sharedPageUrl(), signin: signingIn() };
     const key = info.url + '|' + info.signin;
@@ -293,8 +301,13 @@
       }
     } catch { /* player not ready */ }
   }
-  chrome.runtime.onMessage.addListener(m => {
+  chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (!m) return;
+    if (m.wp === 'navigate' && TOP && sender.id === chrome.runtime.id) {
+      const url = wpSharedPageUrl(m.url);
+      if (!url || wpServiceOf(new URL(url).hostname) !== SERVICE) return;
+      navigation.request(url); reply({ ok: true }); return;
+    }
     if (m.wp === 'cmd') apply(m.cmd);
     else if (!TOP) return;
     else if (m.wp === 'overlay') { if (!m.dockOpen || document.fullscreenElement) overlay(m.item); } // the side panel already shows chat

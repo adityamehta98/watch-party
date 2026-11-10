@@ -2527,6 +2527,7 @@ function enterTheater() {
 }
 // The extension is installed but isn't answering: say what to do instead of silently doing nothing.
 function extProblem(p) {
+  if (p.kind === 'navigation') { toast(p.error || 'The service could not open the room title. Retry from its player.', { kind: 'error', timeout: 20000 }); return; }
   const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : /Brave/.test(navigator.userAgent) || navigator.brave ? 'brave://extensions' : 'chrome://extensions';
   if (p.kind === 'stale') {
     // the extension was reloaded after this page opened: reload the page once to reconnect
@@ -3389,10 +3390,10 @@ $('#animeLangToggle').addEventListener('click', e => {
 
 let keepOffSince = 0, keepLastGo = 0, reachedTitle = false;
 setInterval(() => {
-  if (isHost || !remote || !remote.present || !S.movie || kindOf(S.movie) !== 'service' || S.movie.browsing) { keepOffSince = 0; return; }
+  if (!remote || !remote.present || !S.movie || kindOf(S.movie) !== 'service' || S.movie.browsing) { keepOffSince = 0; return; }
   const want = canonicalUrl(S.movie.url);
   const here = canonicalUrl(remote.pageUrl);
-  if (here && here === want) reachedTitle = true;
+  if (here && here === want && !remote.signingIn && remote.readyState >= 2 && remote.st?.dur > 60 && !remote.st.ad && canonicalUrl(remote.st.url) === want) reachedTitle = true;
   // Anyone who was on the title and then went browsing is picking the next thing: leave them be.
   if (reachedTitle) { keepOffSince = 0; return; }
   const onService = here && (S.movie.service === 'custom' ? !serviceOfUrl(here) : serviceOfUrl(here) === S.movie.service);

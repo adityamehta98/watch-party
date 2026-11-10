@@ -26,11 +26,12 @@ function theater() {
   vm.runInContext(read('extension/services.js'), context);
   vm.runInContext(read('extension/theater.js'), context);
   return { context, element, messages,
-    stage(url = 'https://www.netflix.com/search?q=Mashle') {
+    stage(url = 'https://www.netflix.com/search?q=Mashle', extra = {}) {
       listeners.message({ origin: 'http://127.0.0.1:8765', source: element('party').contentWindow, data: {
-        wpTheater: 'stage', show: true, url, browsing: true, rect: { x: 0, y: 0, w: 1000, h: 700 },
+        wpTheater: 'stage', show: true, url, browsing: true, rect: { x: 0, y: 0, w: 1000, h: 700 }, ...extra,
       } });
     },
+    goto(url) { listeners.message({ origin: 'http://127.0.0.1:8765', source: element('party').contentWindow, data: { wpTheater: 'goto', url } }); },
     failure(message, sender = { id: 'extension' }) { runtime[0]({ wp: 'theater-frame-error', tabId: 7, url: 'https://www.netflix.com/login', error: 'net::ERR_BLOCKED_BY_RESPONSE', ...message }, sender); },
   };
 }
@@ -51,6 +52,20 @@ test('embedded service waits for successful setup and reports setup failures wit
   await tick();
   assert.equal(f.element('svc').src, 'https://www.netflix.com/search?q=Mashle');
   assert.equal(f.element('help').hidden, true);
+});
+
+test('post-PIN recovery and same-service title switches preserve the existing Netflix frame', async () => {
+  const f = theater(), first = 'https://www.netflix.com/watch/12345';
+  f.stage(first, { browsing: false }); await tick();
+  assert.equal(f.element('svc').src, first);
+  f.stage(first, { current: first, signin: true, browsing: false });
+  f.stage(first, { current: 'https://www.netflix.com/browse', signin: false, browsing: false });
+  f.goto(first); await tick();
+  assert.equal(f.element('svc').src, first);
+  assert.equal(f.messages.at(-1).wp, 'service-navigate');
+  f.stage('https://www.netflix.com/watch/98765', { current: first, browsing: false }); await tick();
+  assert.equal(f.element('svc').src, first, 'title change never reassigns the iframe source');
+  assert.equal(f.messages.at(-1).url, 'https://www.netflix.com/watch/98765');
 });
 
 test('late setup responses cannot replace a newly selected embedded service', async () => {
