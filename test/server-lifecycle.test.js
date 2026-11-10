@@ -14,11 +14,10 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 test('private windows do not expire on inactivity, and reloads cancel a pending close', () => {
   let now = 0;
-  const lifecycle = new PlayerLifecycle({ now: () => now, closeGraceMs: 100, idleMs: 500 });
+  const lifecycle = new PlayerLifecycle({ now: () => now, closeGraceMs: 100 });
   const window = (id, action, sequence) => lifecycle.window({ id, action, sequence });
   window('firstwindow1', 'open', 1);
   now = 24 * 3600e3;
-  assert.equal(lifecycle.serverIdle(), true);
   assert.equal(lifecycle.playerClosed(), false);
   window('firstwindow1', 'close', 3);
   window('firstwindow1', 'open', 2); // late heartbeat cannot undo close
@@ -31,19 +30,17 @@ test('private windows do not expire on inactivity, and reloads cancel a pending 
   assert.equal(lifecycle.playerClosed(), true);
 });
 
-test('all private windows must close; activity resets only the server idle deadline', () => {
+test('all private windows must close; an inactive open window never expires', () => {
   let now = 0;
-  const lifecycle = new PlayerLifecycle({ now: () => now, closeGraceMs: 10, idleMs: 100 });
+  const lifecycle = new PlayerLifecycle({ now: () => now, closeGraceMs: 10 });
   lifecycle.window({ id: 'firstwindow1', action: 'open', sequence: 1 });
   lifecycle.window({ id: 'otherwindow1', action: 'open', sequence: 1 });
   lifecycle.window({ id: 'firstwindow1', action: 'close', sequence: 2 });
   now = 101;
   assert.equal(lifecycle.playerClosed(), false);
   lifecycle.window({ id: 'otherwindow1', action: 'activity', sequence: 2 });
-  assert.equal(lifecycle.serverIdle(), false);
   assert.equal(lifecycle.window({ id: '../invalid', action: 'close', sequence: 1 }), false);
-  now += 101;
-  assert.equal(lifecycle.serverIdle(), true);
+  now += 24 * 3600e3;
   assert.equal(lifecycle.playerClosed(), false);
 });
 
@@ -236,7 +233,7 @@ test('private startup, manual sharing, guest disconnection, restart, and explici
   assert.equal(await f.exited, 0);
 });
 
-test('solo sharing stays open; group inactivity returns to a connected private player', { timeout: 15000 }, async t => {
+test('solo and idle group sharing stay online until an explicit Stop server', { timeout: 15000 }, async t => {
   const f = await fixture(t, { idleMs: 400 });
   await f.window('open', 1);
   await f.request('/api/server/start', { body: {} });
@@ -246,6 +243,10 @@ test('solo sharing stays open; group inactivity returns to a connected private p
   assert.equal((await f.request('/api/info')).data.server.status, 'running');
   const guest = await f.connect('guest');
   const guestClosed = new Promise(resolve => guest.once('close', resolve));
+  await delay(1800);
+  assert.equal((await f.request('/api/info')).data.server.status, 'running');
+  assert.equal(guest.readyState, WebSocket.OPEN);
+  await f.request('/api/server/stop', { body: {} });
   await f.until(async () => (await f.request('/api/info')).data.server.status === 'stopped');
   await guestClosed;
   assert.equal(host.readyState, WebSocket.OPEN);
@@ -253,27 +254,19 @@ test('solo sharing stays open; group inactivity returns to a connected private p
   assert.match(f.networkLog(), /tailscale:down/);
 });
 
-test('five minute inactivity excludes solo sessions, cameras, microphones and playback', () => {
+test('the lifecycle has no inactivity deadline, even after a day without activity', () => {
   let now = 0;
   const lifecycle = new PlayerLifecycle({ now: () => now });
-  const host = { admitted: true, role: 'host', media: {} }, guest = { admitted: true, role: 'guest', media: {} };
-  assert.equal(lifecycle.idleMs, 300000);
-  for (const media of [{ cam: true }, { mic: true }, { cam: true, mic: true }]) {
-    now += 600000; guest.media = media;
-    lifecycle.observeRoom([host, guest], false, false);
-    assert.equal(lifecycle.serverIdle(), false);
-  }
-  guest.media = {};
-  now += 299999; lifecycle.observeRoom([host, guest], false, false);
-  assert.equal(lifecycle.serverIdle(), false);
-  now++; assert.equal(lifecycle.serverIdle(), true);
-  lifecycle.observeRoom([host], false, false);
-  assert.equal(lifecycle.serverIdle(), false);
-  now += 600000; lifecycle.observeRoom([host, guest], true, false);
-  assert.equal(lifecycle.serverIdle(), false);
+  lifecycle.window({ id: 'firstwindow1', action: 'open', sequence: 1 });
+  now += 24 * 3600e3;
+  assert.equal(lifecycle.playerClosed(), false);
+  assert.equal('idleMs' in lifecycle, false);
+  lifecycle.window({ id: 'firstwindow1', action: 'close', sequence: 2 });
+  now += lifecycle.closeGraceMs;
+  assert.equal(lifecycle.playerClosed(), true);
 });
 
-for (const kind of ['cam', 'mic']) test(`active ${kind} keeps a group online until it is turned off`, { timeout: 15000 }, async t => {
+for (const kind of ['cam', 'mic']) test(`turning ${kind} off does not stop sharing`, { timeout: 15000 }, async t => {
   const f = await fixture(t, { idleMs: 700 });
   await f.window('open', 1);
   await f.request('/api/server/start', { body: {} });
@@ -284,6 +277,9 @@ for (const kind of ['cam', 'mic']) test(`active ${kind} keeps a group online unt
   await delay(1800);
   assert.equal((await f.request('/api/info')).data.server.status, 'running');
   host.send(JSON.stringify({ type: 'media', cam: false, mic: false }));
+  await delay(1800);
+  assert.equal((await f.request('/api/info')).data.server.status, 'running');
+  await f.request('/api/server/stop', { body: {} });
   await f.until(async () => (await f.request('/api/info')).data.server.status === 'stopped');
   assert.equal(host.readyState, WebSocket.OPEN);
 });

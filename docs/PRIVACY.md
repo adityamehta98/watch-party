@@ -14,9 +14,8 @@ promise about third-party sites or a substitute for a publisher-specific policy.
 The app starts as a private player. Guest pages, media and WebSocket connections
 are unavailable until the host chooses **People → Start server**. Tailscale,
 router mappings, tunnels and the webcam relay start only when sharing is enabled.
-**Stop server** disconnects guests and returns to private playback; inactivity
-also stops sharing after five minutes with guests connected, playback stopped,
-and cameras/microphones off. Solo sessions do not time out. Closing all host
+**Stop server** disconnects guests and returns to private playback. Sharing
+stays on while the app is open, including during inactivity. Closing all host
 windows shuts down the app and its sharing setup. A Tailscale connection that was already
 running before sharing is left connected when sharing stops.
 

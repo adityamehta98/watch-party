@@ -105,7 +105,7 @@ Watch Party is a tiny self-hosted server for the host's Windows PC. Guests open 
 5. Watch privately, or choose **People → Start server** to invite guests. Then open **Room → Your connection** to check the guest link (see [Network setup](#network-setup)).
 6. **Library → Show in room** on a movie, then **Invite → Copy invite message** and send it to your friends.
 
-Watch Party starts as a private player and stays running until you close its browser window. A temporary socket disconnect or a background tab does not close the player. **People → Stop server** disconnects guests while preserving private playback. Solo sessions stay open. With guests connected, sharing stops after five inactive minutes when playback, cameras, microphones and media preparation are inactive. Closing all host windows shuts down the whole app after a short reload grace period, including guest sharing, chat and generated playback caches. Watch history, settings, tools and certificates remain. Double-clicking `WatchParty.exe` while it's running reopens the page. Log output goes to `cache\watchparty.log` during the session.
+Watch Party starts as a private player and stays running until you close its browser window. A temporary socket disconnect or a background tab does not close the player. **People → Stop server** disconnects guests while preserving private playback. Once started, sharing stays on during inactivity, with or without guests. Closing all host windows shuts down the whole app after a short reload grace period, including guest sharing, chat and generated playback caches. Watch history, settings, tools and certificates remain. Double-clicking `WatchParty.exe` while it's running reopens the page. Log output goes to `cache\watchparty.log` during the session.
 
 Continue watching includes Netflix, supported streaming services, local movies and YouTube alongside anime. It records observed host playback in `watch-history.json`, including the canonical title link and timestamp. The host extension also imports previously saved Watch Party streaming progress when available; viewing that was never recorded cannot be recovered. Resume opens the saved title and synchronizes to its saved position. Camera and microphone buttons remain available in the top bar on the home screen.
 
@@ -142,7 +142,7 @@ npm start
 2. creates a self-signed HTTPS certificate in `cache/`,
 3. opens `http://127.0.0.1:8765/host/<adminKey>` in your browser as a private player.
 
-Tailscale, router mappings, tunnels and the webcam relay start only after **People → Start server**. The server's inactivity timeout does not apply to the private player.
+Tailscale, router mappings, tunnels and the webcam relay start only after **People → Start server**. Use **Stop server** to turn off sharing while leaving the private player open.
 
 ### Where ffmpeg is found
 
@@ -346,7 +346,7 @@ In order of preference:
 
 | Method | File | When |
 |---|---|---|
-| **UPnP** | `server/upnp.js` | Router supports it. Start server opens the port; Stop server or inactivity closes it. |
+| **UPnP** | `server/upnp.js` | Router supports it. Start server opens the port; Stop server or closing the app closes it. |
 | **Manual port forward** | – | Port 8765 TCP + UDP to the host PC |
 | **Tailscale** | `server/tailscale.js` | Apartments or CGNAT. Private sharing, a trusted `*.ts.net` HTTPS cert, or a public **Funnel** link |
 | **Cloudflare quick tunnel** | `server/tunnel.js` | Last resort, if `cloudflared` is in `bin/`. No webcams. |

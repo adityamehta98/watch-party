@@ -159,13 +159,12 @@ let turnOk = false;
 let reachable = 'unknown';
 const lifecycle = new PlayerLifecycle({
   closeGraceMs: Number(process.env.WP_STOP_AFTER_MS) || 15000,
-  idleMs: Number(process.env.WP_SERVER_IDLE_MS) || 5 * 60e3,
 });
 let serverStatus = 'stopped', serverError = null, networkTask = null, stopTask = null;
 let tailscaleStarted = false;
 const networkTimers = new Set(), networkJobs = new Set();
 const networkActive = () => serverStatus === 'starting' || serverStatus === 'running';
-const serverInfo = () => ({ status: serverStatus, idleMinutes: lifecycle.idleMs / 60e3, error: serverError });
+const serverInfo = () => ({ status: serverStatus, error: serverError });
 
 library.on('update', () => {
   room.refreshLibraryMovie();
@@ -362,7 +361,6 @@ mapper.on('change', () => room.broadcastHosts({ type: 'network' }));
 function startSharing() {
   if (serverStatus !== 'stopped' || shuttingDown) return;
   serverStatus = 'starting'; serverError = null;
-  lifecycle.touch();
   room.broadcastHosts({ type: 'network' });
   networkTask = (async () => {
     try { await turn.start(); turnOk = true; } catch (e) { console.log('  ! Webcam relay:', e.message); }
@@ -886,7 +884,7 @@ function onUpgrade(req, socket, head) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     const reqInfo = { host: req.headers.host, funnel: viaFunnel(req) };
-    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req), session, activity: () => lifecycle.touch() });
+    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req), session });
   });
 }
 httpServer.on('upgrade', onUpgrade);
@@ -969,7 +967,7 @@ front.listen(config.port, config.bind, async () => {
   console.log('  ==============================================\n');
   console.log('  Your host page (keep this private):\n    ' + hostUrl + '\n');
   console.log('  Private player: stays open until you close its window.\n');
-  console.log('  To invite guests, open People and choose Start server. An idle group stops sharing after 5 minutes; solo sessions stay open.\n');
+  console.log('  To invite guests, open People and choose Start server. Sharing stays on until Stop server or the player window closes.\n');
   if (updatePending()) console.log('  ! An update is waiting but is not installed yet. Close this window and\n    double-click "refresh.bat" (not WatchParty.exe) to install it.\n');
   if (!bins.ffmpeg || !bins.ffprobe) console.log('  ! ffmpeg was not found in the "bin" folder. MKV files will not work.\n');
   openBrowser(hostUrl);
@@ -997,12 +995,6 @@ setInterval(() => {
     console.log('  The player window was closed. Stopping.');
     shutdown();
     return;
-  }
-  const watching = room.movie && room.state.playing && [...room.clients.values()].some(c => c.admitted);
-  lifecycle.observeRoom([...room.clients.values()], watching, library.running);
-  if (networkActive() && lifecycle.serverIdle()) {
-    console.log('  Sharing server is inactive. Returning to the private player.');
-    stopSharing();
   }
 }, 500);
 

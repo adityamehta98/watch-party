@@ -1771,7 +1771,7 @@ function renderServerControls() {
   $('#serverDescription').textContent = server?.error ? `Server error: ${server.error}. You can keep watching privately.`
     : status === 'stopped' ? 'Only you can watch. The player stays open until you close its window.'
     : status === 'stopping' ? 'Disconnecting guests. Your private player stays open.'
-    : `Solo sessions stay open. With guests, sharing stops after ${server.idleMinutes} inactive minutes while playback, cameras and microphones are off. Your private player stays connected.`;
+    : 'Sharing stays on until you click Stop server or close the Watch Party window. Inactivity does not stop it.';
 }
 async function changeServer(action) {
   S.serverPending = true;

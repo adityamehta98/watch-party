@@ -121,7 +121,7 @@ class Room {
       capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse, nativeHls: !!(msg.capabilities?.hls && msg.capabilities?.nativeHlsPreferred) },
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
       media: { cam: false, mic: false },
-      status: { at: 0 }, bufferingSince: null, lastWaitCause: 0, activity: ctx.activity,
+      status: { at: 0 }, bufferingSince: null, lastWaitCause: 0,
       metrics: { corrections: [], lastCorrection: '' },
       bytes: 0, lastBytes: 0, mbps: 0, joinedAt: Date.now(), lastReact: [],
     };
@@ -720,7 +720,6 @@ class Room {
   onMessage(client, msg) {
     const isHost = client.role === 'host';
     if (!client.admitted) return;
-    if (!['status', 'anime-progress', 'playback-progress', 'notification', 'lib-list', 'rtc'].includes(msg.type)) client.activity?.();
     switch (msg.type) {
       case 'playback-import': {
         if (!isHost || !this.animeHistory || !Array.isArray(msg.entries)) return;
