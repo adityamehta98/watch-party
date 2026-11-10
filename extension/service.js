@@ -568,7 +568,7 @@
       svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
       .dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; border-radius: 50%; background: #ef5d5d; display: none; }
       .dot.show { display: block; }
-      .reacts { display: flex; gap: 4px; padding: 5px; border-radius: 99px; background: rgba(12,13,16,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+      .reacts { display: flex; flex-wrap: wrap; max-width: min(430px, calc(100vw - 16px)); gap: 4px; padding: 5px; border-radius: 18px; background: rgba(12,13,16,.9); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
       .reacts button { width: 38px; height: 38px; font-size: 21px; background: rgba(255,255,255,.08); }
       .faces { display: flex; gap: 6px; flex-wrap: wrap; max-width: 560px; }
       .face { position: relative; width: 150px; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: #16181d; border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
@@ -618,7 +618,7 @@
       const a = b.dataset.a;
       if (a === 'cam' || a === 'mic') act({ op: a });
       else if (a === 'react') { reactsOpen = !reactsOpen; render(); }
-      else if (a === 'chat') { chatOpen = !chatOpen; chatEmojiOpen = false; seenChat = ui ? ui.chat.length : 0; render(); if (chatOpen) setTimeout(() => root.getElementById('input').focus(), 30); }
+      else if (a === 'chat') { chatOpen = !chatOpen; chatEmojiOpen = false; seenChat = ui ? ui.chat.length : 0; render(); if (chatOpen) chatFocus.claim(); else chatFocus.release(); wake(); }
       else if (a === 'chat-emoji') { chatEmojiOpen = !chatEmojiOpen; render(); if (!chatEmojiOpen) root.getElementById('input').focus({ preventScroll: true }); }
       else if (a === 'faces') { facesOpen = !facesOpen; if (facesOpen) send({ type: 'want-cams' }); render(); }
     });
@@ -630,13 +630,8 @@
       if (text) act({ op: 'chat', text });
       i.value = ''; i.dispatchEvent(new Event('input'));
     });
-    // Netflix occasionally blurs the active element while its native controls mount/unmount. Restore
-    // only an involuntary blur (no related target), so deliberate clicks on Netflix still work.
-    root.getElementById('input').addEventListener('blur', e => {
-      if (chatOpen && !e.relatedTarget) requestAnimationFrame(() => {
-        if (chatOpen && document.hasFocus()) root.getElementById('input').focus({ preventScroll: true });
-      });
-    });
+    chatFocus = WpOverlayFocus.create({ host, root, active: () => chatOpen,
+      close: () => { chatOpen = false; chatEmojiOpen = false; render(); } });
     // drag anywhere by the grip; remembered for next time (as a share of the screen)
     const grip = root.querySelector('.grip');
     grip.addEventListener('pointerdown', e => {
@@ -698,7 +693,7 @@
     const reacts = root.getElementById('reacts');
     reacts.hidden = !reactsOpen || !ui.canReact;
     if (reactsOpen && ui.canReact) {
-      const rhtml = (ui.reactions || []).slice(0, 8).map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
+      const rhtml = (ui.reactions || []).map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
       if (reacts.dataset.h !== rhtml) { reacts.dataset.h = rhtml; reacts.innerHTML = rhtml; }
     }
     root.getElementById('chat').hidden = !chatOpen;
@@ -776,7 +771,7 @@
     } catch { /* cameras just don't show */ }
   }
   // hide the buttons when the mouse rests (never while you're typing or pointing at them)
-  let idleTimer = null, hovering = false;
+  let idleTimer = null, hovering = false, chatFocus = null;
   function wake() {
     const wrap = root && root.querySelector('.wrap');
     if (!wrap) return;
@@ -784,7 +779,7 @@
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       const typing = root.activeElement && root.activeElement.id === 'input';
-      if (hovering || typing) { wake(); return; }
+      if (hovering || typing || chatOpen) { wake(); return; }
       wrap.classList.add('idle');
     }, 3000);
   }
@@ -813,7 +808,8 @@
     const visible = netflixControlsVisible();
     if (visible == null) return;
     wrap.classList.remove('idle');
-    wrap.classList.toggle('native-controls-hidden', !visible && !hovering);
+    wrap.classList.toggle('native-controls-hidden', !visible && !hovering && !chatOpen);
+    chatFocus?.restore();
   }, 160);
   for (const ev of ['mousemove', 'pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart']) document.addEventListener(ev, wake, { capture: true, passive: true });
   document.addEventListener('fullscreenchange', () => { render(); if (host && host.isConnected) restore(); wake(); });

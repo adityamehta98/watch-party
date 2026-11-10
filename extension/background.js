@@ -408,14 +408,14 @@ function injectFrame(tabId, frameId, url) {
   if (partyOrigin && u.origin === partyOrigin) return;
   const target = { tabId, frameIds: [frameId] };
   if (wpServiceOf(u.hostname)) {
-    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'emoji-picker.js', 'service-navigation.js', 'service.js'] })
+    chrome.scripting.executeScript({ target, files: ['services.js', 'playback-history.js', 'catalog-launch.js', 'emoji-picker.js', 'overlay-focus.js', 'service-navigation.js', 'service.js'] })
       .then(() => wpServiceOf(u.hostname) === 'netflix' ? chrome.scripting.executeScript({ target, world: 'MAIN', files: ['netflix-main.js'] }) : null)
       .catch(() => {});
     return;
   }
   if (!customHosts.has(tabId)) return;                            // a custom site, only where the host opened one
   chrome.scripting.executeScript({ target, func: () => { window.__wpCustom = true; } })
-    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'emoji-picker.js', 'service-navigation.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
+    .then(() => chrome.scripting.executeScript({ target, files: ['services.js', 'emoji-picker.js', 'overlay-focus.js', 'service-navigation.js', 'service.js', 'ad-domains.js', 'custom-clean.js'] }))
     .catch(() => {});
 }
 // every frame already loaded in a tab (a tab claimed after it loaded, or a woken-up background part);

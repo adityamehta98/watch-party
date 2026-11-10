@@ -516,6 +516,7 @@ function loadMovie(movie) {
   if (!movie || kindOf(movie) === 'service') hideTuneIn(true);
   syncAmbient();
   stage.classList.toggle('has-movie', !!movie);
+  $('#app').classList.toggle('at-home', !movie);
   stage.dataset.kind = kindOf(movie);
   renderAnimeOverlay();
   $('#ytOpen').hidden = kindOf(movie) !== 'youtube';
@@ -851,6 +852,8 @@ function applyPerms() {
   const camOk = isHost || S.perms.camera;
   $('#camBtn').classList.toggle('denied', !camOk);
   $('#micBtn').classList.toggle('denied', !camOk);
+  $('#tbCam').classList.toggle('denied', !camOk);
+  $('#tbMic').classList.toggle('denied', !camOk);
   renderBookmarks();
   renderPeople();
 }
@@ -2324,7 +2327,7 @@ async function togglePip(opts = {}) {
     </div>
     <div class="pop-chat" id="popChat"></div>
     <form class="pop-form" id="popForm"><input id="popInput" maxlength="500" placeholder="Say something…" autocomplete="off"><button class="btn sm primary" type="submit">Send</button></form>`);
-  doc.getElementById('popReacts').innerHTML = (S.reactions || []).slice(0, 5).map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
+  doc.getElementById('popReacts').innerHTML = (S.reactions || []).map(r => `<button type="button" data-emoji="${esc(r)}">${esc(r)}</button>`).join('');
   doc.body.addEventListener('click', e => {
     const em = e.target.closest('[data-emoji]');
     if (em) { if (isHost || S.perms.react) conn.send({ type: 'react', emoji: em.dataset.emoji }); else noPerm('react'); return; }

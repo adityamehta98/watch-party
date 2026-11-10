@@ -61,7 +61,7 @@ function render() {
   const rk = JSON.stringify([ui.reactions, ui.canReact]);
   if (rk !== lastReactKey) {
     lastReactKey = rk;
-    $('#reacts').innerHTML = ui.canReact ? ui.reactions.slice(0, 6).map(r => `<button type="button" data-emoji="${esc(r)}" title="React">${esc(r)}</button>`).join('') : '';
+    $('#reacts').innerHTML = ui.canReact ? ui.reactions.map(r => `<button type="button" data-emoji="${esc(r)}" title="React">${esc(r)}</button>`).join('') : '';
   }
 
   const pk = JSON.stringify(ui.people);

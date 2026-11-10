@@ -56,7 +56,7 @@ svg text { font: 700 7px system-ui, sans-serif; fill: currentColor; stroke: none
 .pill { height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--border-2); background: transparent; cursor: pointer; font-size: 12.5px; }
 .pill.on { background: rgba(62,207,142,.14); border-color: rgba(62,207,142,.4); color: #8ff0c2; }
 .pill:disabled { opacity: .4; cursor: not-allowed; }
-.reacts { display: flex; gap: 2px; margin-left: auto; }
+.reacts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; margin-left: auto; }
 .reacts button { width: 30px; height: 30px; border: 0; background: transparent; border-radius: 8px; cursor: pointer; font-size: 17px; line-height: 1; }
 .reacts button:hover { background: var(--panel-2); }
 
