@@ -154,7 +154,7 @@ class Room {
       peers: this.admitted().filter(c => c !== client).map(c => ({ id: c.id, name: c.name, media: c.media })),
       notifications: this.notificationHistory(client), notificationSession: this.notificationSession,
       settings: this.publicSettings(client.role === 'host'),
-      ...(this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden() } : {}),
+      ...(this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden(), playbackHistory: this.animeHistory.playbackList() } : {}),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
     });
     if (client.role === 'host') this.fillAnimePosters();
@@ -722,6 +722,41 @@ class Room {
     if (!client.admitted) return;
     if (!['status', 'anime-progress', 'playback-progress', 'notification', 'lib-list', 'rtc'].includes(msg.type)) client.activity?.();
     switch (msg.type) {
+      case 'playback-import': {
+        if (!isHost || !this.animeHistory || !Array.isArray(msg.entries)) return;
+        const entries = msg.entries.slice(0, 500).flatMap(value => {
+          const info = services.identify(value?.url);
+          if (!info || info.service !== value.service) return [];
+          return [{ id: 'u' + crypto.createHash('sha1').update(info.url).digest('hex').slice(0, 11), kind: 'service',
+            service: info.service, url: info.url, title: value.title, position: value.position, duration: value.duration,
+            updatedAt: Math.min(Date.now(), Number(value.lastWatched) || 0) }];
+        });
+        if (this.animeHistory.importPlayback(entries)) this.sendPlaybackHistory();
+        return;
+      }
+      case 'playback-progress': {
+        const st = msg.status || {}, movie = this.movie;
+        if (!isHost || !this.animeHistory || !movie || movie.kind === 'anime' || movie.browsing || st.movieId !== movie.id || st.seq !== this.state.seq ||
+          !st.loaded || !st.ready || st.seeking || st.error || st.blocked) return;
+        if (movie.kind === 'service' && services.identify(msg.url)?.url !== movie.url) return;
+        if (this.animeHistory.recordPlayback(movie, st.position, st.duration)) this.sendPlaybackHistory();
+        if (msg.flush) this.animeHistory.flush();
+        return;
+      }
+      case 'playback-dismiss': {
+        if (isHost && this.animeHistory?.dismissPlayback(msg.id)) this.sendPlaybackHistory();
+        return;
+      }
+      case 'select-playback': {
+        if (!this.canChoose(client)) return;
+        const saved = this.animeHistory?.playbackEntries.get(msg.id);
+        if (!saved) return;
+        if (saved.kind === 'file') this.selectMovie(client, saved.id);
+        else if (saved.kind === 'catalog') this.selectCatalog(client, { ref: saved.catalogRef, language: saved.language, title: saved.catalogTitle });
+        else this.selectUrl(client, saved.url, saved.kind === 'service', { title: saved.title, duration: saved.duration, position: saved.position, playing: true });
+        if (this.movie?.id === saved.id) this.setState({ position: saved.position, playing: true, anchor: Date.now() + START_DELAY_MS }, { by: client.name, action: 'resume' });
+        return;
+      }
       case 'notification': {
         if (!/^[A-Za-z0-9_-]{6,64}$/.test(msg.id || '')) return;
         const owner = this.notificationOwner(client);
@@ -1029,6 +1064,8 @@ class Room {
   sendAnimeHistory() {
     this.broadcast({ type: 'anime-history', episodes: this.animeHistory.list(), hidden: this.animeHistory.hidden() });
   }
+
+  sendPlaybackHistory() { this.broadcast({ type: 'playback-history', entries: this.animeHistory.playbackList() }); }
 
   async fillAnimePosters() {
     if (!this.animeHistory) return;

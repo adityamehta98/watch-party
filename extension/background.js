@@ -1,7 +1,7 @@
 // Watch Party Sync: connects a Watch Party page with a streaming tab (Netflix, Prime Video, ...),
 // and shows the party (chat, cameras, people, controls) in Chrome's side panel next to the video.
 // It never sees or touches the video stream itself, only play / pause / seek / volume.
-importScripts('services.js', 'ad-domains.js');
+importScripts('services.js', 'ad-domains.js', 'playback-history.js');
 
 const parties = new Set(); // one entry per open Watch Party page
 const docks = new Set();   // one entry per open side panel
@@ -123,6 +123,20 @@ function onPartyPort(port) {
   });
   port.onMessage.addListener(async m => {
     switch (m.type) {
+      case 'playback-history': {
+        if (!/^\/host\//.test(new URL(port.sender.url).pathname)) return;
+        const saved = await chrome.storage.local.get(null), entries = [];
+        for (const [key, data] of Object.entries(saved)) {
+          const service = /^wp\.progress\.v1:([^:]+):/.exec(key)?.[1];
+          if (!service) continue;
+          for (const value of Object.values(data?.entries || {})) {
+            const entry = WPPlayback.clean(value, service);
+            if (entry) entries.push({ ...entry, service });
+          }
+        }
+        post(port, { type: 'playback-history', entries: entries.sort((a, b) => b.lastWatched - a.lastWatched).slice(0, 500) });
+        break;
+      }
       case 'watch':
         party.watch = { service: m.service, url: m.url, launchTitle: String(m.launchTitle || '').slice(0, 140), launchId: String(m.launchId || '').slice(0, 80), playbackRef: m.playbackRef || null, blockPopups: m.blockPopups !== false };
         if (party.link) post(port, { type: 'linked', tabId: party.link.tabId, service: m.service });

@@ -69,6 +69,6 @@ var WPPlayback = (() => {
       return this.queue;
     }
   }
-  return { normalize, asset, key, episode, History };
+  return { normalize, asset, key, episode, clean, History };
 })();
 if (typeof module !== 'undefined') module.exports = WPPlayback;

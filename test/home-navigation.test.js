@@ -12,6 +12,7 @@ test('returning home saves progress before stopping playback and clears pending 
     conn: { send: message => actions.push(['send', message]) },
     pendingCatalogService: { id: 'netflix' },
     saveAnimeProgress: (status, flush) => actions.push(['save', flush]),
+    savePlaybackProgress: (status, flush) => actions.push(['save-playback', flush]),
     hideTuneIn: force => actions.push(['loading', force]),
     closeYouTube: () => actions.push(['browser']),
     closePops: () => actions.push(['popovers']),

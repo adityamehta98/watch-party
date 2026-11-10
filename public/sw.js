@@ -6,7 +6,7 @@ const SHELL = new Set([
   '/js/app.js', '/js/capabilities.js', '/js/file-playback.js', '/js/media.js', '/js/net.js',
   '/js/platform.js', '/js/player.js', '/js/player-window.js', '/js/rtc.js', '/js/sync.js', '/js/visuals.js',
   '/js/fullscreen.js', '/js/subtitles.js',
-  '/js/anime-resume.js', '/js/camera-layout.js', '/js/camera-gallery.js', '/js/player-menu.js',
+  '/js/anime-resume.js', '/js/playback-resume.js', '/js/camera-layout.js', '/js/camera-gallery.js', '/js/player-menu.js',
   '/vendor/hls.min.js', '/js/emoji-picker.js', '/js/notifications.js', '/data/emoji.json',
 ]);
 

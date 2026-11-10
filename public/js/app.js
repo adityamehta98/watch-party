@@ -3,6 +3,7 @@ import './emoji-picker.js';
 import { Connection } from './net.js';
 import { trackPlayerWindow } from './player-window.js';
 import { animeResumeCard, animeSeriesFinished } from './anime-resume.js';
+import { playbackResumeCard } from './playback-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
 import { createPlayerMenu } from './player-menu.js';
 import { SyncPlayer, DEVICE } from './player.js';
@@ -57,7 +58,7 @@ if (!clientId) { clientId = randId(); store.set(isHost ? 'wp.hostId' : 'wp.clien
 const S = {
   chatLog: [],
   me: null, perms: {}, people: [], totalMbps: 0, movie: null, state: null, settings: {}, reactions: [],
-  observatory: null, bookmarks: [], animeHistory: [], animeContinueHidden: [],
+  observatory: null, bookmarks: [], animeHistory: [], animeContinueHidden: [], playbackHistory: [],
   peers: new Map(), remoteStreams: new Map(), cam: false, mic: false, tab: 'chat', unread: 0,
   library: null, info: null, prepOpen: new Set(), prepOpts: new Map(), lastSender: null, lastSenderTs: 0,
   name: '',
@@ -153,7 +154,7 @@ function start(name) {
   remote.onDock = onDockMessage;
   player = new SyncPlayer({
     video, clock: conn.clock,
-    onStatus: st => { conn.send({ type: 'status', status: st }); saveAnimeProgress(st, M.paused || st.ended); },
+    onStatus: st => { conn.send({ type: 'status', status: st }); saveAnimeProgress(st, M.paused || st.ended); savePlaybackProgress(st, M.paused || st.ended); },
     onBlocked: kind => { $('#unmutePill').hidden = false; if (kind === 'blocked') renderNotice(); },
     onChange: () => { scheduleUi(); if (!tuneIn.awaitingMovie) { if (M?.error) hideTuneIn(true); else if (M && M.readyState >= (M.isAdapter ? 1 : 3)) hideTuneIn(); } },
   });
@@ -247,6 +248,7 @@ function wire() {
   conn.on('yt-results', m => onYtResults(m));
   conn.on('anime-results', m => onAnimeResults(m));
   conn.on('anime-history', m => { S.animeHistory = m.episodes || []; S.animeContinueHidden = m.hidden || []; renderAnimeHistory(); });
+  conn.on('playback-history', m => { S.playbackHistory = m.entries || []; renderAnimeHistory(); });
   conn.on('catalog-response', m => onCatalogResponse(m));
   conn.on('job', m => updateJob(m.id, m.job));
   conn.on('network', () => refreshInfoSoon());
@@ -266,6 +268,8 @@ function onWelcome(m) {
   S.bookmarks = m.bookmarks || [];
   S.animeHistory = m.animeHistory || [];
   S.animeContinueHidden = m.animeContinueHidden || [];
+  S.playbackHistory = m.playbackHistory || [];
+  if (isHost) remote?.post({ type: 'playback-history' });
   renderAnimeHistory();
   mesh.setIceServers(m.iceServers, m.relayOnly);
   screen('room');
@@ -2660,6 +2664,11 @@ function maybeFollowTab() {
 window.addEventListener('message', e => {
   if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
 
+  if (isHost && conn && e.origin === location.origin) {
+    if (e.data.type === 'hello') remote?.post({ type: 'playback-history' });
+    if (e.data.type === 'playback-history' && Array.isArray(e.data.entries)) conn.send({ type: 'playback-import', entries: e.data.entries.slice(0, 500) });
+  }
+
   const u = e.data.type === 'page' ? e.data.url : e.data.type === 'status' && e.data.st ? e.data.st.url : '';
   if (followBase && u && canonicalUrl(u) !== followBase) followBase = '';
   if (e.data.type === 'status') maybeFollowTab();
@@ -3073,9 +3082,15 @@ function saveAnimeProgress(status = player?.status(), flush = false) {
   if (!animeAutomationLeader() || !conn || !status || S.movie?.kind !== 'anime') return;
   conn.send({ type: 'anime-progress', status, flush });
 }
+function savePlaybackProgress(status = player?.status(), flush = false) {
+  if (!isHost || !conn || !status || !S.movie || S.movie.kind === 'anime') return;
+  if (M === remote && (remote.signingIn || remote.st?.ad)) return;
+  conn.send({ type: 'playback-progress', status, url: M === remote ? remote.st?.url : '', flush });
+}
 function returnHome() {
   if (!conn) return;
   saveAnimeProgress(undefined, true);
+  savePlaybackProgress(undefined, true);
   pendingCatalogService = null;
   hideTuneIn(true);
   closeYouTube();
@@ -3097,6 +3112,8 @@ video.addEventListener('pause', () => saveAnimeProgress(undefined, true));
 video.addEventListener('ended', () => saveAnimeProgress(undefined, true));
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveAnimeProgress(undefined, true); });
 window.addEventListener('pagehide', () => saveAnimeProgress(undefined, true));
+window.addEventListener('pagehide', () => savePlaybackProgress(undefined, true));
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePlaybackProgress(undefined, true); });
 
 function animeEpisodeLabel(id, episode) {
   const saved = S.animeHistory.find(e => e.anilistId === id && e.episode === episode);
@@ -3111,15 +3128,20 @@ function renderAnimeHistory() {
     groups.get(entry.anilistId).push(entry);
   }
   const visible = [...groups.values()].filter(entries => !S.animeContinueHidden.includes(entries[0].anilistId) && !animeSeriesFinished(entries));
+  const cards = visible.map(entries => ({ at: entries[0].updatedAt, html: animeResumeCard({ ...entries[0], canDismiss: isHost, poster: entries.find(entry => entry.poster)?.poster || '' }) }));
+  for (const entry of S.playbackHistory) if (!entry.hidden && entry.position < entry.duration - Math.min(30, entry.duration * .02)) {
+    cards.push({ at: entry.updatedAt, html: playbackResumeCard(entry, isHost) });
+  }
+  cards.sort((a, b) => b.at - a.at);
   const continueBox = $('#animeContinue');
   const scrollLeft = continueBox.querySelector('.anime-resume-grid')?.scrollLeft || 0;
   const homeFocus = document.activeElement?.closest('#animeContinue button');
   const focusedKey = homeFocus ? { ...homeFocus.dataset } : null;
-  continueBox.hidden = !visible.length;
-  $('#stageEmpty').classList.toggle('has-history', !!visible.length);
-  stage.classList.toggle('has-history', !!visible.length);
-  continueBox.innerHTML = visible.length ? `<div class="anime-resume-heading"><div><p>Your anime</p><h2>Continue watching</h2></div></div><div class="shelf-frame"><div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg></button><button type="button" data-shelf-page="1" aria-label="Next continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 6 6-6 6M20 12H4"/></svg></button></div><div class="anime-resume-grid" id="animeResumeShelf" tabindex="0" role="region" aria-label="Continue watching titles">${visible.map(entries => animeResumeCard({ ...entries[0], canDismiss: isHost, poster: entries.find(entry => entry.poster)?.poster || '' })).join('')}</div></div>` : '';
-  if (visible.length) continueBox.querySelector('.anime-resume-grid').scrollLeft = scrollLeft;
+  continueBox.hidden = !cards.length;
+  $('#stageEmpty').classList.toggle('has-history', !!cards.length);
+  stage.classList.toggle('has-history', !!cards.length);
+  continueBox.innerHTML = cards.length ? `<div class="anime-resume-heading"><div><p>Your watch history</p><h2>Continue watching</h2></div></div><div class="shelf-frame"><div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg></button><button type="button" data-shelf-page="1" aria-label="Next continue watching titles" aria-controls="animeResumeShelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 6 6-6 6M20 12H4"/></svg></button></div><div class="anime-resume-grid" id="animeResumeShelf" tabindex="0" role="region" aria-label="Continue watching titles">${cards.map(card => card.html).join('')}</div></div>` : '';
+  if (cards.length) continueBox.querySelector('.anime-resume-grid').scrollLeft = scrollLeft;
   if (focusedKey) {
     const replacement = $$('#animeContinue button').find(button => Object.entries(focusedKey).every(([key, value]) => button.dataset[key] === value));
     (replacement || $('#animeContinue [data-history-play]') || $('#stageEmpty .empty-actions button'))?.focus({ preventScroll: true });
@@ -3131,6 +3153,12 @@ function renderAnimeHistory() {
 }
 
 function onAnimeHistoryClick(event) {
+  const playback = event.target.closest('[data-playback-play], [data-playback-dismiss]');
+  if (playback) {
+    if (playback.dataset.playbackDismiss && !isHost) return;
+    conn.send({ type: playback.dataset.playbackDismiss ? 'playback-dismiss' : 'select-playback', id: playback.dataset.playbackDismiss || playback.dataset.playbackPlay });
+    return;
+  }
   const button = event.target.closest('[data-history-play], [data-history-dismiss]');
   if (!button) return;
   const id = Number(button.dataset.historyPlay || button.dataset.historyDismiss);

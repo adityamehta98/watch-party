@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { cleanPlayback } = require('./playback-history');
 
 function cleanPoster(value) {
   try {
@@ -15,6 +16,7 @@ class AnimeHistory {
     this.file = file;
     this.onError = onError;
     this.entries = new Map();
+    this.playbackEntries = new Map();
     this.hiddenAnime = new Set();
     this.dirty = false;
     this.timer = null;
@@ -22,6 +24,10 @@ class AnimeHistory {
     try {
       const data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (!Array.isArray(data.episodes)) throw new Error('Invalid anime history');
+      for (const value of Array.isArray(data.playback) ? data.playback : []) {
+        const entry = cleanPlayback(value);
+        if (entry) this.playbackEntries.set(entry.id, entry);
+      }
       for (const id of Array.isArray(data.hiddenAnime) ? data.hiddenAnime : []) {
         if (Number.isSafeInteger(id) && id > 0) this.hiddenAnime.add(id);
       }
@@ -41,6 +47,35 @@ class AnimeHistory {
   get(id, episode) { return this.entries.get(this.key(id, episode)); }
   list() { return [...this.entries.values()].sort((a, b) => b.updatedAt - a.updatedAt); }
   hidden() { return [...this.hiddenAnime]; }
+
+  playbackList() { return [...this.playbackEntries.values()].sort((a, b) => b.updatedAt - a.updatedAt); }
+  importPlayback(values) {
+    let changed = false;
+    for (const value of values.slice(0, 500)) {
+      const entry = cleanPlayback(value), old = entry && this.playbackEntries.get(entry.id);
+      if (!entry || !entry.position || old) continue;
+      this.playbackEntries.set(entry.id, entry); changed = true;
+    }
+    if (changed) { this.schedule(); this.flush(); }
+    return changed;
+  }
+  recordPlayback(movie, position, duration) {
+    const entry = cleanPlayback({ ...movie, position, duration, updatedAt: Date.now() });
+    if (!entry || !position) return false;
+    const old = this.playbackEntries.get(entry.id);
+    entry.hidden = !!old?.hidden;
+    if (old && old.position === entry.position && old.duration === entry.duration && old.title === entry.title) return false;
+    this.playbackEntries.set(entry.id, entry);
+    const keep = this.playbackList().slice(0, 500);
+    this.playbackEntries = new Map(keep.map(item => [item.id, item]));
+    this.schedule();
+    return true;
+  }
+  dismissPlayback(id) {
+    const entry = this.playbackEntries.get(id);
+    if (!entry || entry.hidden) return false;
+    entry.hidden = true; this.schedule(); this.flush(); return true;
+  }
 
   dismiss(id) {
     if (!Number.isSafeInteger(id) || !this.list().some(entry => entry.anilistId === id) || this.hiddenAnime.has(id)) return false;
@@ -124,7 +159,7 @@ class AnimeHistory {
     this.timer = null;
     if (!this.dirty) return;
     try {
-      fs.writeFileSync(this.file + '.tmp', JSON.stringify({ version: 2, episodes: this.list(), hiddenAnime: this.hidden() }));
+      fs.writeFileSync(this.file + '.tmp', JSON.stringify({ version: 3, episodes: this.list(), hiddenAnime: this.hidden(), playback: this.playbackList() }));
       fs.renameSync(this.file + '.tmp', this.file);
       this.dirty = false;
     } catch (error) { this.onError(error); }
