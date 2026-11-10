@@ -121,7 +121,7 @@ class Room {
       capabilities: { hls: !!msg.capabilities?.hls, mse: !!msg.capabilities?.mse, nativeHls: !!(msg.capabilities?.hls && msg.capabilities?.nativeHlsPreferred) },
       admitted: role === 'host' || !this.settings.requireApproval || !!(mem && mem.admitted),
       media: { cam: false, mic: false },
-      status: { at: 0 }, bufferingSince: null, lastWaitCause: 0,
+      status: { at: 0 }, bufferingSince: null, lastWaitCause: 0, activity: ctx.activity,
       metrics: { corrections: [], lastCorrection: '' },
       bytes: 0, lastBytes: 0, mbps: 0, joinedAt: Date.now(), lastReact: [],
     };
@@ -720,6 +720,7 @@ class Room {
   onMessage(client, msg) {
     const isHost = client.role === 'host';
     if (!client.admitted) return;
+    if (!['status', 'anime-progress', 'playback-progress', 'notification', 'lib-list', 'rtc'].includes(msg.type)) client.activity?.();
     switch (msg.type) {
       case 'notification': {
         if (!/^[A-Za-z0-9_-]{6,64}$/.test(msg.id || '')) return;
@@ -1047,7 +1048,10 @@ class Room {
     }
   }
 
-  shutdown() { clearInterval(this.timer); this.animeHistory?.flush(); }
+  shutdown() {
+    clearInterval(this.timer); this.animeHistory?.flush();
+    this.chat = []; this.notifications = []; this.bookmarks = []; this.memory.clear();
+  }
 }
 
 module.exports = { Room, randKey, PERMS, REACTIONS };

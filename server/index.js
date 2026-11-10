@@ -30,6 +30,8 @@ const { Catalog } = require('./catalog');
 const { migrateConfig } = require('./settings');
 const pwa = require('./pwa');
 const { createSessions } = require('./sessions');
+const { PlayerLifecycle } = require('./lifecycle');
+const { clearSessionCache } = require('./session-cache');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -148,6 +150,15 @@ const ts = new Tailscale({ port: config.port, cacheDir: path.join(ROOT, config.c
 const healthToken = randKey(24);
 let turnOk = false;
 let reachable = 'unknown';
+const lifecycle = new PlayerLifecycle({
+  closeGraceMs: Number(process.env.WP_STOP_AFTER_MS) || 15000,
+  idleMs: Number(process.env.WP_SERVER_IDLE_MS) || 5 * 60e3,
+});
+let serverStatus = 'stopped', serverError = null, networkTask = null, stopTask = null;
+let tailscaleStarted = false;
+const networkTimers = new Set(), networkJobs = new Set();
+const networkActive = () => serverStatus === 'starting' || serverStatus === 'running';
+const serverInfo = () => ({ status: serverStatus, idleMinutes: lifecycle.idleMs / 60e3, error: serverError });
 
 library.on('update', () => {
   room.refreshLibraryMovie();
@@ -180,6 +191,7 @@ const tailscaleBase = () => { const ip = tailscaleIp(); if (!ip) return null; re
 const funnelBase = () => (config.publicLink && ts.funnel.on && ts.funnel.url) ? ts.funnel.url : null;
 
 function publicBase() {
+  if (!networkActive()) return null;
   if (config.publicUrl) return config.publicUrl.replace(/\/+$/, '');
   if (funnelBase()) return funnelBase();
   if (tunnel && tunnel.url) return tunnel.url;
@@ -194,6 +206,7 @@ const joinUrl = () => { const b = publicBase(); return b ? `${b}/join/${room.roo
 const localBase = () => `http://127.0.0.1:${config.port}`;
 
 function lanJoinUrl() {
+  if (!networkActive()) return null;
   const ip = mapper.state.localIp || (localIPv4s()[0] || {}).address;
   return ip ? `${config.linkMode === 'plain' ? 'http' : 'https'}://${ip}:${config.port}/join/${room.roomKey}` : null;
 }
@@ -221,8 +234,9 @@ async function refreshCloudflareTurn() {
     cfTurn = { servers: list, at: Date.now(), error: null };
   } catch (e) { cfTurn = { servers: null, at: Date.now(), error: e.message }; }
 }
-setInterval(() => { if (config.cloudflareTurn) refreshCloudflareTurn().then(() => room.updateIce && room.updateIce()); }, 12 * 3600 * 1000);
+setInterval(() => { if (networkActive() && config.cloudflareTurn) runNetworkJob(() => refreshCloudflareTurn().then(() => room.updateIce())); }, 12 * 3600 * 1000);
 function iceServersFor(reqInfo) {
+  if (!networkActive()) return [];
   const out = [];
   const direct = directCams();
   if (turnOk && !reqInfo.funnel) {
@@ -237,16 +251,16 @@ function iceServersFor(reqInfo) {
 }
 
 async function info() {
-  if (ts.present && Date.now() - (info.lastTs || 0) > 5000) { info.lastTs = Date.now(); await ts.refresh().catch(() => {}); }
   const url = joinUrl();
   let qr = null;
   if (url) qr = await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
   return {
+    server: serverInfo(),
     joinUrl: url, lanJoinUrl: lanJoinUrl(), qr,
     linkMode: config.linkMode,
     network: {
       ...mapper.state, upnpEnabled: config.upnp, reachable, publicHost: config.publicHost, port: config.port,
-      tailscale: (tailscaleIp() || ts.present) ? { ip: tailscaleIp(), name: ts.name, url: tailscaleIp() ? `${tailscaleBase()}/join/${room.roomKey}` : null, inUse: !!tailscaleIp() && (joinUrl() || '').startsWith(tailscaleBase()),
+      tailscale: networkActive() && (tailscaleIp() || ts.present) ? { ip: tailscaleIp(), name: ts.name, url: tailscaleIp() ? `${tailscaleBase()}/join/${room.roomKey}` : null, inUse: !!tailscaleIp() && (joinUrl() || '').startsWith(tailscaleBase()),
         trusted: !!ts.cert, certError: ts.certError, app: ts.present, appPath: ts.bin, online: ts.online, statusError: ts.upError || ts.statusError, loginUrl: ts.loginUrl || null, searchNotes: ts.searchNotes,
         funnel: { wanted: !!config.publicLink, on: !!ts.funnel.on, url: ts.funnel.url, error: ts.funnel.error, enableLink: ts.funnel.enableLink || null, busy: !!ts.funnel.busy, inUse: !!funnelBase() } } : null,
       tcpExternal: tcpMapping() ? tcpMapping().external : null, udpExternal: udpMapping() ? udpMapping().external : null,
@@ -278,54 +292,57 @@ async function checkReachable() {
     req.on('timeout', () => req.destroy());
     req.on('error', () => resolve(false));
   });
-  reachable = ok ? 'yes' : 'unknown';
+  reachable = networkActive() && ok ? 'yes' : 'unknown';
   room.broadcastHosts({ type: 'network' });
 }
 
-async function startTailscale() {
+function runNetworkJob(work) {
+  if (!networkActive()) return Promise.resolve();
+  const job = Promise.resolve().then(() => networkActive() && work()).catch(e => console.log('  ! Network:', e.message));
+  networkJobs.add(job);
+  job.finally(() => networkJobs.delete(job));
+  return job;
+}
+function networkEvery(work, ms) {
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy || !networkActive()) return;
+    busy = true;
+    runNetworkJob(work).finally(() => { busy = false; });
+  }, ms);
+  networkTimers.add(timer);
+}
+async function setupTailscale() {
   if (!ts.present) return;
   await ts.refresh();
-  if (!ts.online && !startTailscale.tried) {
-    startTailscale.tried = true;
-    await ts.up(); // connect it now; it's disconnected again when Watch Party stops
+  if (!networkActive()) return;
+  if (!ts.online && !tailscaleStarted) {
+    tailscaleStarted = true;
+    await ts.up();
+    if (!networkActive()) return;
     await ts.refresh();
   }
-  if (!ts.online) {
-
-    const again = setInterval(async () => {
-      await ts.refresh().catch(() => {});
-      if (!ts.online) return;
-      clearInterval(again);
-      console.log('  Tailscale is connected now.');
-      room.broadcastHosts({ type: 'network' });
-      startTailscale().catch(e => console.log('  ! Tailscale:', e.message)).finally(() => printInvite());
-    }, 15000);
-    return;
-  }
+  if (!networkActive() || !ts.online) return;
   if (await ts.ensureCert()) useTrustedCert();
+  if (!networkActive()) return;
   await ts.refreshFunnel();
+  if (!networkActive()) return;
   if (!config.publicLink && ts.funnel.on) await ts.setFunnel(false); // switched off in the Room tab earlier
+  if (!networkActive()) return;
   room.broadcastHosts({ type: 'network' });
   printInvite();
   if (config.publicLink && !ts.funnel.on) await ts.setFunnel(true);
+  if (!networkActive()) return;
   room.broadcastHosts({ type: 'network' });
   room.updateIce();
   printInvite();
-
-  setInterval(async () => {
-    if (!config.publicLink || ts.funnel.on || ts.funnel.busy || !ts.funnel.error) return;
-    if (await ts.setFunnel(true)) { console.log('  Public link is on.'); room.broadcastHosts({ type: 'network' }); room.updateIce(); printInvite(); }
-  }, 15000);
-  // certificates last 90 days; check now and then
-  setInterval(async () => { await ts.refresh(); if (await ts.ensureCert()) useTrustedCert(); }, 6 * 3600 * 1000);
 }
 async function startNetwork() {
-  if (config.cloudflareTurn) refreshCloudflareTurn().then(() => room.updateIce()).catch(() => {});
-  // Tailscale runs alongside the router setup, so neither holds up the invite link
-  startTailscale().catch(e => console.log('  ! Tailscale:', e.message)).finally(() => printInvite());
+  if (config.cloudflareTurn) runNetworkJob(() => refreshCloudflareTurn().then(() => room.updateIce()));
   printInvite();
   if (!config.upnp) { mapper.set({ status: 'off' }); printInvite(); return; }
   await mapper.start([{ port: config.port, protocol: 'TCP' }, { port: config.port, protocol: 'UDP' }]);
+  if (!networkActive()) return;
   const ext = mapper.state.externalIp;
   if (ext && (!isPrivate(ext) || process.env.WP_TEST_PRIVATE_OK)) turn.setExternalIp(ext);
   room.broadcastHosts({ type: 'network' });
@@ -333,6 +350,69 @@ async function startNetwork() {
   printInvite();
 }
 mapper.on('change', () => room.broadcastHosts({ type: 'network' }));
+
+function startSharing() {
+  if (serverStatus !== 'stopped' || shuttingDown) return;
+  serverStatus = 'starting'; serverError = null;
+  lifecycle.touch();
+  room.broadcastHosts({ type: 'network' });
+  networkTask = (async () => {
+    try { await turn.start(); turnOk = true; } catch (e) { console.log('  ! Webcam relay:', e.message); }
+    if (!networkActive()) return;
+    if (tunnel) { tunnel.stopped = false; tunnel.start(); }
+    const setup = await Promise.allSettled([startNetwork(), setupTailscale()]);
+    const failure = setup.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    if (!networkActive()) return;
+    serverStatus = 'running';
+    room.updateIce();
+    // Retry offline Tailscale or a pending Funnel authorization only while sharing.
+    networkEvery(async () => {
+      if (!ts.online || (config.publicLink && !ts.funnel.on && !ts.funnel.busy)) await setupTailscale();
+    }, 15000);
+    networkEvery(setupTailscale, 6 * 3600e3);
+  })().catch(e => {
+    serverError = e.message;
+    console.log('  ! Server setup:', e.message);
+    // Do not wait on stopSharing here: it waits for this setup task to settle.
+    stopSharing();
+  }).finally(() => room.broadcastHosts({ type: 'network' }));
+}
+
+function stopSharing() {
+  if (stopTask) return stopTask;
+  if (serverStatus === 'stopped') return Promise.resolve();
+  serverStatus = 'stopping';
+  for (const timer of networkTimers) clearInterval(timer);
+  networkTimers.clear();
+  // Close guest sockets and in-flight remote media immediately, keeping the host player.
+  for (const c of [...room.clients.values()]) if (c.role !== 'host') { room.leave(c, true); c.ws.close(4010, 'server-stopped'); }
+  for (const [socket, local] of activeSockets) if (!local) socket.destroy();
+  room.broadcastPeople(true);
+  room.broadcastHosts({ type: 'network' });
+  stopTask = (async () => {
+    await networkTask;
+    await Promise.all([...networkJobs]);
+    if (tunnel) tunnel.stop();
+    turn.stop(); turnOk = false;
+    await Promise.all([
+      mapper.stop(),
+      (async () => {
+        if (ts.funnel.on) await ts.setFunnel(false);
+        if (tailscaleStarted) { await ts.down(); ts.online = false; }
+      })(),
+    ]);
+    tailscaleStarted = false;
+    mapper.set({ status: 'off', externalIp: null, localIp: null, mappings: [], error: null });
+    reachable = 'unknown'; lastPrinted = null;
+    room.updateIce();
+  })().catch(e => { serverError = e.message; }).finally(() => {
+    serverStatus = 'stopped'; stopTask = null;
+    room.broadcastHosts({ type: 'network' });
+  });
+  return stopTask;
+}
+if (tunnel) tunnel.on('change', () => { room.broadcastHosts({ type: 'network' }); if (networkActive() && tunnel.status === 'up') printInvite(); });
 
 function sendJson(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -399,6 +479,7 @@ function securityHeaders(req, res) {
 const safeEq = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 function mediaRole(req, key) {
   const role = room.roleForKey(key, isLocal(req));
+  if (role === 'guest' && !networkActive()) return null;
   return role === 'guest' && !room.hasAdmittedSession(sessions.read(req)) ? null : role;
 }
 
@@ -409,6 +490,12 @@ async function api(req, res, p) {
   if (req.method === 'POST' && !/^application\/json/.test(req.headers['content-type'] || '')) return sendJson(res, 415, { error: 'json only' });
   const body = req.method === 'POST' ? await readBody(req) : {};
   let m;
+  if (p === '/api/player/window' && req.method === 'POST') {
+    const ok = lifecycle.window(body);
+    return sendJson(res, ok ? 200 : 400, { ok });
+  }
+  if (p === '/api/server/start' && req.method === 'POST') { startSharing(); return sendJson(res, 200, serverInfo()); }
+  if (p === '/api/server/stop' && req.method === 'POST') { stopSharing(); return sendJson(res, 200, serverInfo()); }
   if (p === '/api/info') return sendJson(res, 200, await info());
   if (p === '/api/youtube/search') {
     const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
@@ -461,14 +548,16 @@ async function api(req, res, p) {
       const keyId = String(c.keyId || '').trim().replace(/[^A-Za-z0-9_-]/g, ''), token = String(c.token || '').trim().replace(/\s/g, '');
       config.cloudflareTurn = keyId && token ? { keyId, token } : null;
       save();
-      await refreshCloudflareTurn();
+      if (networkActive()) await runNetworkJob(refreshCloudflareTurn);
       room.updateIce();
     }
     if ('publicLink' in body) {
       config.publicLink = !!body.publicLink;
       save();
-      await ts.refresh();
-      await ts.setFunnel(config.publicLink);
+      if (networkActive()) await runNetworkJob(async () => {
+        await ts.refresh();
+        if (networkActive()) await ts.setFunnel(config.publicLink);
+      });
       room.broadcastHosts({ type: 'network' });
       room.updateIce();
       printInvite();
@@ -492,7 +581,10 @@ async function api(req, res, p) {
     return sendJson(res, 200, await info());
   }
   if (p === '/api/unblock' && req.method === 'POST') { guard.unblockAll(); return sendJson(res, 200, await info()); }
-  if (p === '/api/network/retry' && req.method === 'POST') { await mapper.stop(); mapper.state.mappings = []; startNetwork(); return sendJson(res, 200, { ok: true }); }
+  if (p === '/api/network/retry' && req.method === 'POST') {
+    if (!networkActive()) return sendJson(res, 409, { error: 'Start the server in People first.' });
+    await stopSharing(); startSharing(); return sendJson(res, 200, { ok: true });
+  }
   if (p === '/api/network/lookup-ip' && req.method === 'POST') {
     // Only runs when you click "Look up" in the app. Asks a public "what is my IP" service.
     try {
@@ -631,8 +723,10 @@ async function handler(req, res) {
   if ((viaTunnel(req) || viaFunnel(req)) && guard.isBlocked(clientIp(req))) { req.socket.destroy(); return; }
   securityHeaders(req, res);
   const local = isLocal(req);
+  activeSockets.set(req.socket, local);
   const secure = isSecure(req);
   try {
+    if (!networkActive() && (!local || p.startsWith('/join/'))) return notFound(req, res, 'server stopped');
     if (!['GET', 'HEAD', 'POST', 'DELETE'].includes(req.method)) return notFound(req, res, 'method');
     // Guests always use the encrypted https link (unless the host chose "plain" in config.json).
     if (!local && !secure && config.linkMode !== 'plain') {
@@ -717,6 +811,8 @@ for (const s of [httpServer, httpsServer]) {
 }
 
 function onFrontConnection(sock) {
+  activeSockets.set(sock, false);
+  sock.once('close', () => activeSockets.delete(sock));
   sock.on('error', () => {});
   if (!guard.admit(sock)) { sock.destroy(); return; }
   sock.setTimeout(15000, () => sock.destroy()); // silent connections are dropped
@@ -728,6 +824,7 @@ function onFrontConnection(sock) {
     process.nextTick(() => sock.resume());
   });
 }
+const activeSockets = new Map();
 const front = net.createServer(onFrontConnection);
 
 let localV6Note = null;
@@ -753,16 +850,17 @@ function onUpgrade(req, socket, head) {
   // the page must come from this same address (blocks other websites from connecting)
   let originOk = true;
   if (req.headers.origin) { try { const origin = new URL(req.headers.origin); originOk = origin.origin === `${isSecure(req) ? 'https' : 'http'}://${effectiveHost(req)}`; } catch { originOk = false; } }
-  if (u.pathname !== '/ws' || !role || (role === 'guest' && !session) || !originOk || guard.isBlocked(clientIp(req)) || (!local && !isSecure(req) && config.linkMode !== 'plain')) {
+  if (u.pathname !== '/ws' || !role || (role === 'guest' && (!networkActive() || !session)) || !originOk || guard.isBlocked(clientIp(req)) || (!local && !isSecure(req) && config.linkMode !== 'plain')) {
     if (!local && !room.hasAdmittedIp(clientIp(req))) guard.strike(clientIp(req), 'websocket');
     socket.destroy();
     return;
   }
+  activeSockets.set(socket, local);
   wss.handleUpgrade(req, socket, head, ws => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     const reqInfo = { host: req.headers.host, funnel: viaFunnel(req) };
-    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req), session });
+    room.onConnection(ws, u.searchParams.get('k'), { iceFor: () => iceServersFor(reqInfo), relayOnly: () => !directCams(), local, ip: clientIp(req), session, activity: () => lifecycle.touch() });
   });
 }
 httpServer.on('upgrade', onUpgrade);
@@ -787,12 +885,14 @@ setInterval(() => {
   try {
     fs.writeFileSync(path.join(ROOT, config.cacheDir || 'cache', 'status.json'), JSON.stringify({
       at: new Date().toISOString(), pid: process.pid, localV6: localV6Note || 'ok', inviteBase: (joinUrl() || '').split('/join/')[0] || null, router: mapper.state.status,
+      server: serverInfo(),
       tailscale: { tool: ts.bin, name: ts.name, online: ts.online, trusted: !!ts.cert, funnelWanted: !!config.publicLink, funnelOn: !!ts.funnel.on, funnelError: ts.funnel.error, statusError: ts.statusError },
       webcams: { mode: config.webcamMode, direct: directCams(), cloudflare: !!cfTurn.servers, cloudflareError: cfTurn.error },
     }, null, 2));
   } catch { /* ignore */ }
 }, 10000);
 async function printInvite() {
+  if (!networkActive()) return;
   const url = joinUrl();
   if (!url || url === lastPrinted) {
     if (!url && !['searching', 'idle'].includes(mapper.state.status)) {
@@ -842,19 +942,14 @@ front.listen(config.port, config.bind, async () => {
   console.log('   Watch Party is running');
   console.log('  ==============================================\n');
   console.log('  Your host page (keep this private):\n    ' + hostUrl + '\n');
-  console.log('  Watch Party runs in the background. It stops by itself a few seconds after you close its');
-  console.log('  page. Double-click WatchParty.exe again any time to reopen the page.\n');
+  console.log('  Private player: stays open until you close its window.\n');
+  console.log('  To invite guests, open People and choose Start server. An idle group stops sharing after 5 minutes; solo sessions stay open.\n');
   if (updatePending()) console.log('  ! An update is waiting but is not installed yet. Close this window and\n    double-click "refresh.bat" (not WatchParty.exe) to install it.\n');
   if (!bins.ffmpeg || !bins.ffprobe) console.log('  ! ffmpeg was not found in the "bin" folder. MKV files will not work.\n');
   openBrowser(hostUrl);
-  try { await turn.start(); turnOk = true; } catch (e) { console.log(`  ! Webcam relay could not start on UDP ${config.port}: ${e.message}`); }
-  if (tunnel) {
-    tunnel.on('change', () => { room.broadcastHosts({ type: 'network' }); if (tunnel.status === 'up') printInvite(); });
-    tunnel.start();
-  }
+  mapper.set({ status: 'off' });
   if (!config.keepPrepared) { const { freed, n } = library.clearPrepared(); if (n) console.log(`  Deleted ${n} leftover prepared file(s), ${sizeText(freed)} freed.`); }
   library.scan().catch(e => console.error('scan failed', e));
-  startNetwork().catch(e => console.error('network setup failed', e));
   toolState.encoders = await tools.detectEncoders(bins.ffmpeg);
 });
 tools.hasDoviStrip(bins.ffmpeg).then(v => { toolState.dovi = v; if (!v && bins.ffmpeg) console.log('  ! This ffmpeg can\'t remove Dolby Vision. Dolby Vision movies may show a black screen.'); });
@@ -870,19 +965,18 @@ let awake = null;
   try { awake = spawn('powershell', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { stdio: 'ignore', windowsHide: true }); awake.on('error', () => {}); } catch {}
 })();
 
-let hostSeen = false, noHostSince = Date.now(), longestGap = 0;
-const STOP_AFTER_MS = Number(process.env.WP_STOP_AFTER_MS) || 5000;
 setInterval(() => {
-  const host = [...room.clients.values()].some(c => c.role === 'host');
-  if (host) {
-    if (hostSeen && process.env.WP_DEBUG_GAPS) { const gap = Date.now() - noHostSince; if (gap > 600) { longestGap = Math.max(longestGap, gap); console.log(`  (host page was away ${gap} ms, longest ${longestGap} ms)`); } }
-    hostSeen = true; noHostSince = Date.now(); return;
-  }
-  if (library.running) { noHostSince = Date.now(); return; }
-  const limit = hostSeen ? STOP_AFTER_MS : 10 * 60 * 1000; // never opened at all: give it 10 minutes
-  if (!flag('--stay') && !shuttingDown && Date.now() - noHostSince > limit) {
-    console.log(hostSeen ? '  The host page was closed. Stopping.' : '  The host page was never opened. Stopping.');
+  if (shuttingDown) return;
+  if (!flag('--stay') && lifecycle.playerClosed()) {
+    console.log('  The player window was closed. Stopping.');
     shutdown();
+    return;
+  }
+  const watching = room.movie && room.state.playing && [...room.clients.values()].some(c => c.admitted);
+  lifecycle.observeRoom([...room.clients.values()], watching, library.running);
+  if (networkActive() && lifecycle.serverIdle()) {
+    console.log('  Sharing server is inactive. Returning to the private player.');
+    stopSharing();
   }
 }, 500);
 
@@ -892,19 +986,12 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   if (awake) { try { awake.kill(); } catch {} }
-  if (tunnel) tunnel.stop();
+  await stopSharing();
   library.shutdown();
   room.shutdown();
-  // prepared copies are big (often as big as the movie): delete them unless you asked to keep them
-  if (!config.keepPrepared) {
-    await new Promise(r => setTimeout(r, 600)); // let a stopped conversion let go of its file
-    const { freed, n } = library.clearPrepared();
-    if (n) console.log(`  Deleted ${n} prepared file(s), ${sizeText(freed)} freed.`);
-  }
-  turn.stop();
-
-  const tsOff = (ts.funnel.on ? ts.setFunnel(false).then(() => { ts.funnel.on = false; }) : Promise.resolve()).then(() => ts.down());
-  await Promise.race([Promise.all([mapper.stop(), ts.present ? tsOff : null]), new Promise(r => setTimeout(r, 6000))]);
+  await new Promise(r => setTimeout(r, 600)); // let stopped conversions release their files
+  clearSessionCache(library.cacheDir);
+  if (path.resolve(ROOT, 'cache') !== library.cacheDir) clearSessionCache(path.join(ROOT, 'cache'));
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

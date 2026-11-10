@@ -265,7 +265,17 @@
       </section>
 
       <section class="panel" data-panel="people">
-        <div class="panel-scroll" id="peopleList"></div>
+        <div class="panel-scroll">
+          <div class="server-controls host-only" aria-label="Watch party server">
+            <div class="section-label" id="serverStatus" role="status">Private player</div>
+            <p class="fine" id="serverDescription">Only you can watch. The player stays open until you close its window.</p>
+            <div class="server-actions">
+              <button class="btn sm primary" type="button" id="startServer" disabled>Start server</button>
+              <button class="btn sm danger-ghost" type="button" id="stopServer" disabled>Stop server</button>
+            </div>
+          </div>
+          <div id="peopleList"></div>
+        </div>
       </section>
 
       <section class="panel" data-panel="observatory">

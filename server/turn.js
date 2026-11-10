@@ -139,6 +139,7 @@ class TurnServer {
   isOurIp(ip) { return ip === this.externalIp || this.localIps.has(ip); }
 
   start() {
+    this.stopped = false;
     return new Promise((resolve, reject) => {
       const s = dgram.createSocket('udp4');
       this.sock = s;

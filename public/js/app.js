@@ -1,6 +1,7 @@
 import { createNotificationCenter } from './notifications.js';
 import './emoji-picker.js';
 import { Connection } from './net.js';
+import { trackPlayerWindow } from './player-window.js';
 import { animeResumeCard, animeSeriesFinished } from './anime-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
 import { createPlayerMenu } from './player-menu.js';
@@ -42,6 +43,7 @@ const mode = parts[0] === 'host' ? 'host' : parts[0] === 'join' ? 'guest' : null
 const key = parts[1] || '';
 const isHost = mode === 'host';
 if (isHost) app.classList.add('is-host');
+if (isHost) trackPlayerWindow(key, { id: randId() });
 
 const isTheater = new URLSearchParams(location.search).get('theater') === '1' && window.top !== window;
 const handoff = new URLSearchParams(location.hash.slice(1));
@@ -1673,6 +1675,7 @@ function refreshInfoSoon() { clearTimeout(infoTimer); infoTimer = setTimeout(ref
 async function refreshInfo() {
   if (!isHost) return;
   try { S.info = await api('/api/info'); } catch { return; }
+  renderServerControls();
   renderInvite();
   renderSettings();
   renderLibrary();
@@ -1682,7 +1685,33 @@ async function refreshInfo() {
     toast('An update is downloaded but not installed. Close the Watch Party window, then double-click "refresh.bat" (not WatchParty.exe).', { kind: 'error', timeout: 15000 });
   }
 }
+function renderServerControls() {
+  if (!isHost) return;
+  const server = S.info?.server;
+  const status = server?.status || 'stopped';
+  $('#startServer').disabled = !server || status !== 'stopped' || !!S.serverPending;
+  $('#stopServer').disabled = !server || !['starting', 'running'].includes(status) || !!S.serverPending;
+  $('#serverStatus').textContent = ({ stopped: 'Private player', starting: 'Starting server…', running: 'Server running', stopping: 'Stopping server…' })[status];
+  $('#serverDescription').textContent = server?.error ? `Server error: ${server.error}. You can keep watching privately.`
+    : status === 'stopped' ? 'Only you can watch. The player stays open until you close its window.'
+    : status === 'stopping' ? 'Disconnecting guests. Your private player stays open.'
+    : `Solo sessions stay open. With guests, sharing stops after ${server.idleMinutes} inactive minutes while playback, cameras and microphones are off. Your private player stays connected.`;
+}
+async function changeServer(action) {
+  S.serverPending = true;
+  renderServerControls();
+  try {
+    const server = await api(`/api/server/${action}`, { method: 'POST' });
+    S.info = { ...S.info, server };
+    await refreshInfo();
+  } catch (error) { toast(error.message, { kind: 'error' }); }
+  finally { S.serverPending = false; renderServerControls(); }
+}
+$('#startServer').addEventListener('click', () => changeServer('start'));
+$('#stopServer').addEventListener('click', () => changeServer('stop'));
 function netSummary(i) {
+  if (i.server?.status === 'stopped') return { tone: 'ok', text: 'Private player. Start the server in People when you want to invite guests.' };
+  if (i.server?.status === 'stopping') return { tone: 'wait', text: 'Stopping sharing. Your private player stays open.' };
   const n = i.network || {};
   const port = n.port;
   const t = n.tailscale;
@@ -1740,8 +1769,9 @@ function renderInvite() {
   const url = i.joinUrl;
   $('#inviteUrl').value = url || '';
   const n = i.network || {};
-  const searching = n.status === 'searching' || n.status === 'idle';
-  $('#inviteQr').innerHTML = i.qr || (searching ? '<div class="spinner"></div>' : 'No public link yet');
+  const privatePlayer = i.server && !['starting', 'running'].includes(i.server.status);
+  const searching = !privatePlayer && (n.status === 'searching' || n.status === 'idle');
+  $('#inviteQr').innerHTML = i.qr || (privatePlayer ? 'Start the server in People to invite guests' : searching ? '<div class="spinner"></div>' : 'No public link yet');
   // no browser warning to explain when the link has a real certificate (public link, or Tailscale with HTTPS on)
   const trustedLink = () => { const tt = (S.info?.network || {}).tailscale; return !!(tt && ((tt.funnel && tt.funnel.inUse) || (tt.inUse && tt.trusted))); };
   $('#guestNote').hidden = !url || trustedLink();
@@ -1835,6 +1865,10 @@ function renderSettings() {
   const i = S.info;
   const box = $('#netBox');
   if (!i || !box) return;
+  if (i.server && !['starting', 'running'].includes(i.server.status)) {
+    box.innerHTML = '<p class="fine">Private player. Open People and choose Start server to enable guest links and connection settings.</p>';
+    return;
+  }
   const n = i.network || {};
   const sum = netSummary(i);
   const needsManual = !i.joinUrl && !['searching', 'idle'].includes(n.status);

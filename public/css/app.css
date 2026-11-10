@@ -376,6 +376,9 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
 .panel.active { display: flex; view-transition-name: sidebar-panel; }
 .panel-scroll { flex: 1; overflow: auto; padding: 12px 14px 20px; }
+.server-controls { padding: 2px 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.server-controls .section-label { margin-top: 0; }
+.server-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
 /* chat */
 .chat-list { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }

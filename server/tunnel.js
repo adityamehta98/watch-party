@@ -14,15 +14,17 @@ class Tunnel extends EventEmitter {
     this.proc = null;
     this.stopped = false;
     this.backoff = 3000;
+    this.retryTimer = null;
   }
 
   start() {
-    if (!this.bin || this.stopped) return;
+    if (!this.bin || this.stopped || this.proc) return;
     this.status = 'starting';
     this.emit('change');
     const p = spawn(this.bin, ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${this.port}`], { windowsHide: true });
     this.proc = p;
     const onData = d => {
+      if (this.proc !== p || this.stopped) return;
       const text = String(d);
       for (const line of text.split(/\r?\n/)) {
         if (!line.trim()) continue;
@@ -44,12 +46,13 @@ class Tunnel extends EventEmitter {
     p.stderr.on('data', onData);
     p.on('error', e => { this.lastLog = String(e); });
     p.on('close', () => {
+      if (this.proc !== p) return;
       this.proc = null;
       this.url = null;
       if (this.stopped) return;
       this.status = 'down';
       this.emit('change');
-      setTimeout(() => this.start(), this.backoff);
+      this.retryTimer = setTimeout(() => this.start(), this.backoff);
       this.backoff = Math.min(this.backoff * 2, 60000);
     });
   }
@@ -60,7 +63,12 @@ class Tunnel extends EventEmitter {
 
   stop() {
     this.stopped = true;
-    if (this.proc) { try { this.proc.kill(); } catch {} }
+    clearTimeout(this.retryTimer);
+    const proc = this.proc;
+    this.proc = null;
+    if (proc) { try { proc.kill(); } catch {} }
+    this.url = null;
+    this.status = 'stopped';
   }
 }
 
