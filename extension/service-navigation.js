@@ -1,6 +1,6 @@
 // Keep a room destination through a profile/PIN gate without recreating the service document.
 var WpServiceNavigation = {
-  create({ here, signingIn, ready, navigate, failed = () => {}, now = Date.now, settleMs = 1500 }) {
+  create({ here, signingIn, ready, navigate, failed = () => {}, now = Date.now, settleMs = 250 }) {
     let target = '', stableAt = null, lastPage = '', attempted = false, attemptedAt = 0, reported = false;
     return {
       request(url) {

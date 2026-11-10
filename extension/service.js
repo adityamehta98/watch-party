@@ -165,7 +165,7 @@
     if (key === lastPage && Date.now() - lastPageAt < 5000) return;
     lastPage = key; lastPageAt = Date.now();
     send({ wp: 'page', service: SERVICE, ...info });
-  }, 1000);
+  }, 250);
 
   // viewer used the service's own buttons: share it with the room.
   // A jump is shared the moment it starts ("seeking"), not when the site has finished loading the new
@@ -211,7 +211,9 @@
     if (seekOurs && settling(now)) return;
     if (!pendingPP) pendingPP = { before: action !== 'pause', since: now };
     clearTimeout(pendingPP.timer);
-    pendingPP.timer = setTimeout(flushPlayPause, 350);
+    // Coalesce a player's brief pause/play blip without adding a noticeable
+    // delay to an intentional click. Seek/loading guards remain in the flush.
+    pendingPP.timer = setTimeout(flushPlayPause, 80);
   }
   // Pressing the site's own skip several times quickly: tell the room at once, then once more where
   // the burst ends (at most every 300 ms), so everyone else loads one spot instead of every one between.
@@ -231,7 +233,8 @@
     const now = performance.now();
     // right after a jump, a pause is usually the site loading the new spot: give it a few seconds to play on
     const loadingAfterJump = video && !seekOurs && video.paused && !p.before && now - seekStartAt < 3000;
-    if (video && (settling(now) || loadingAfterJump) && now - p.since < 8000) { p.timer = setTimeout(flushPlayPause, 200); return; }
+    const loading = video && video.paused && video.readyState < 3;
+    if (video && (settling(now) || loadingAfterJump || loading) && now - p.since < 8000) { p.timer = setTimeout(flushPlayPause, 200); return; }
     pendingPP = null;
     if (!video || isAd(video) || video.paused === p.before) return; // paused and played again: nothing changed
     landing = null;
@@ -316,7 +319,7 @@
     if (m.wp === 'navigate' && TOP && sender.id === chrome.runtime.id) {
       const url = wpSharedPageUrl(m.url);
       if (!url || wpServiceOf(new URL(url).hostname) !== SERVICE) return;
-      navigation.request(url); reply({ ok: true }); return;
+      navigation.request(url); navigation.tick(); reply({ ok: true }); return;
     }
     if (m.wp === 'cmd') apply(m.cmd);
     else if (!TOP) return;

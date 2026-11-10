@@ -740,27 +740,17 @@ $('#servicePanel').addEventListener('click', async e => {
   if (b && b.dataset.svc === 'theater') enterTheater();
 });
 
-let userActionTimer = null;
 function onRemoteUserAction(m) {
   if (kindOf(S.movie) !== 'service') return;
 
   if (m.url && canonicalUrl(m.url) !== canonicalUrl(S.movie.url) && !S.movie.browsing && performance.now() - (remote.urlChangedAt || -1e9) < 8000) return;
   if (!canControl()) { toast(isCustom() ? 'Only the host controls this site. Your video follows the host.' : 'Only people the host allows can play, pause or seek. Your tab will follow the room.', { timeout: 3500 }); return; }
+  if (remote.st?.ad || !['play', 'pause', 'seek'].includes(m.action)) return;
   const t = Number(m.t);
-
   if (m.action === 'seek' && Math.abs(t - player.expected()) <= (m.land ? 0.4 : 2)) return;
-  const at = conn.clock.now();
-  if (m.action === 'pause') predict({ playing: false, position: t, anchor: at });
-  else if (m.action === 'play') predict({ playing: true, position: t, anchor: at });
-  else predict({ position: t, anchor: at });
-
-  if (m.action === 'seek') { sendCmd('seek', t); return; }
-  clearTimeout(userActionTimer);
-  userActionTimer = setTimeout(() => {
-    if (remote.st && remote.st.ad) { if (S.serverState) { S.state = S.serverState; player.setState(S.state); } return; }
-    const pos = m.action === 'play' ? t + Math.max(0, conn.clock.now() - at) / 1000 : t;
-    sendCmd(m.action === 'seek' ? 'seek' : m.action, m.action === 'seek' ? t + Math.max(0, conn.clock.now() - at) / 1000 * (S.state.playing ? 1 : 0) : pos);
-  }, 700);
+  // The service already filters seek/loading blips. Forward the confirmed
+  // action immediately rather than debouncing it a second time here.
+  sendCmd(m.action, t);
 }
 
 // The host tells the room the real title and length once the player knows them.
@@ -2746,7 +2736,7 @@ function maybeFollowTab() {
     const msg = { type: 'select-url', url: m.service === 'custom' ? pageNow() : url, follow: true, advanceFrom, title: current.title || '', duration: current.dur || 0, position: remote.currentTime, playing: !current.paused || (!!current.hold && !!S.state && !!S.state.playing) };
     lastFollowUrl = url;
     conn.send(msg);
-  }, 1200);
+  }, 250);
 }
 window.addEventListener('message', e => {
   if (e.source !== window || !e.data || e.data.source !== 'wp-ext') return;
@@ -2759,7 +2749,7 @@ window.addEventListener('message', e => {
   const u = e.data.type === 'page' ? e.data.url : e.data.type === 'status' && e.data.st ? e.data.st.url : '';
   if (followBase && u && canonicalUrl(u) !== followBase) followBase = '';
   if (e.data.type === 'status') maybeFollowTab();
-  if (e.data.type === 'status' || e.data.type === 'page') setTimeout(settleServiceAdvance, 0);
+  if (e.data.type === 'status' || e.data.type === 'page') { keepOnTitle(); setTimeout(settleServiceAdvance, 0); }
 });
 // Guests: when the room's title changes on the service they have open, their tab is taken there.
 let lastMovieUrl = '', serviceAdvance = null;
@@ -3475,7 +3465,7 @@ $('#animeLangToggle').addEventListener('click', e => {
 });
 
 let keepOffSince = 0, keepLastGo = 0, reachedTitle = false;
-setInterval(() => {
+function keepOnTitle() {
   if (!remote || !remote.present || !S.movie || kindOf(S.movie) !== 'service' || S.movie.browsing) { keepOffSince = 0; return; }
   const want = canonicalUrl(S.movie.url);
   const here = canonicalUrl(remote.pageUrl);
@@ -3486,13 +3476,15 @@ setInterval(() => {
   const fresh = remote.page && performance.now() - remote.page.at < 6000;
   if (!want || !onService || !fresh || remote.signingIn || here === want || (remote.linked && remote.st && !remote.st.ad && canonicalUrl(remote.st.url) === want)) { keepOffSince = 0; return; }
   if (!keepOffSince) { keepOffSince = Date.now(); return; }
-  // settled somewhere else on the service for a few seconds (not mid-sign-in): go
-  if (Date.now() - keepOffSince < 3000 || Date.now() - keepLastGo < 15000) return;
+  // Confirm the unlocked page briefly, then queue the destination in the
+  // existing service document. Its own navigation guard checks the PIN again.
+  if (Date.now() - keepOffSince < 250 || Date.now() - keepLastGo < 15000) return;
   keepLastGo = Date.now(); keepOffSince = 0;
   toast(`Taking you to ${S.movie.title && S.movie.title !== serviceName(S.movie) ? `"${S.movie.title}"` : 'what the room is watching'}…`, { timeout: 4000 });
   if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url, custom: isCustom(), strict: isCustom() && !!S.movie.strict });
   else remote.navigate(S.movie.url);
-}, 1000);
+}
+setInterval(keepOnTitle, 250);
 
 // top bar camera / mic (the Watch Party window with Netflix & co: the movie controls are hidden there)
 $('#tbCam').addEventListener('click', () => $('#camBtn').click());

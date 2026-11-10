@@ -368,7 +368,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const LATEST_EXT_VERSION = '1.17.10';
+export const LATEST_EXT_VERSION = '1.17.11';
 // Updater-only releases must not prevent compatible Netflix players from opening.
 export const REQUIRED_EXT_VERSION = '1.17.8';
 export const extOutdated = (v, required = REQUIRED_EXT_VERSION) => { const a = String(v || '0').split('.').map(Number), b = required.split('.').map(Number); for (let i = 0; i < 4; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };

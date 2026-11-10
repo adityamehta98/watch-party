@@ -1,8 +1,18 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.10**. Minimum playback-compatible version: **1.17.8**.
+Installed extension version: **1.17.11**. Minimum playback-compatible version: **1.17.8**.
 
-The complete regression suite passed: **305 tests, zero failures**. Results are in `build/cache/extension-managed-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+The complete regression suite passed: **317 tests, zero failures**. Results are in `build/cache/netflix-latency-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+
+## Join and control latency
+
+The reported delay matched two stacked play/pause debounces: 350 ms in the service script plus 700 ms in the party page. The service now coalesces brief blips for 80 ms and the party forwards that confirmed action immediately. Seeking, buffering, ads and remote-command echo guards remain active. The room still broadcasts controls on receipt; it does not wait for a status or heartbeat interval.
+
+After profile unlock, page changes are checked every 250 ms rather than every second. The party's Home recovery wait is 250 ms instead of 3 seconds, and the native navigation guard waits 250 ms instead of 1.5 seconds. Both independently recheck sign-in/PIN state and keep the existing service document. New host titles are published after a 250 ms confirmation instead of 1.2 seconds.
+
+Twelve additional regression cases run the production content script, MAIN bridge, background report routing, RemoteMedia adapter, party control forwarding, Room and SyncPlayer together. The controlled clocks advance with simulated playback. In separate-tab and embedded cases, PIN recovery reaches the requested route within one second and play/pause reaches the other player within 100 ms with instantaneous transport. With 50 ms on each client/server network leg, pause reaches the guest within 200 ms. Other cases retain seek/buffering/blip suppression, reject command echoes, publish loaded titles within 750 ms, and wait if a PIN gate reappears. Five new latency assertions failed on the previous implementation before changing its timers. Logs: `build/cache/netflix-latency-before.log` and `build/cache/netflix-latency-after.log`.
+
+These are deterministic application-delay bounds, not measured Netflix loading or internet latency. Netflix's router/DRM startup, buffering, browser scheduling and the network still add time. The user's two-PC report confirms the earlier join fix works; this faster release still needs that real-device timing check.
 
 ## Follow-up: host playing while guest stays on Home
 
@@ -23,7 +33,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and enable Watch Party Sync **1.17.10** from `%LOCALAPPDATA%\WatchParty\SyncExtension`. Disable the old copy if it came from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
+1. On both PCs, follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and enable Watch Party Sync **1.17.11** from `%LOCALAPPDATA%\WatchParty\SyncExtension`. Disable the old copy if it came from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.

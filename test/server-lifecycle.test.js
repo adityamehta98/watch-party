@@ -185,7 +185,7 @@ test('native updater downloads and verifies the real extension package through t
   const f = await fixture(t);
   const { download, unpack } = require('../server/extension-install');
   const bytes = await download(`http://127.0.0.1:${f.port}`, '');
-  assert.equal(unpack(bytes).manifest.version, '1.17.10');
+  assert.equal(unpack(bytes).manifest.version, require('../extension/manifest.json').version);
   assert.notEqual((await f.request('/extension/update-info', { guest: true })).code, 200);
 });
 

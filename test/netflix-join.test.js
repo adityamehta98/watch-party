@@ -13,12 +13,16 @@ function screen({ gate = false, pathname = '/watch/12345', nativeLink = false, s
   let now = epoch, pin = gate, hardLoads = 0, navigationCount = 0, routerWorks = true, observer = () => {};
   let timerId = 0;
   const timeouts = new Map();
-  const intervals = [], messages = [], incoming = [], events = new Map();
+  const intervals = [], messages = [], incoming = [], events = new Map(), videoEvents = new Map();
   const location = new URL('https://www.netflix.com' + pathname);
   location.assign = () => { hardLoads++; pin = true; };
   const video = { readyState: 4, duration: 7200, currentTime: 480, paused, playbackRate: 1, volume: 1, muted: false,
-    getBoundingClientRect: () => ({ width: 1200, height: 700 }), addEventListener() {}, removeEventListener() {},
-    play: async () => { video.paused = false; }, pause: () => { video.paused = true; } };
+    getBoundingClientRect: () => ({ width: 1200, height: 700 }),
+    addEventListener(name, fn) { if (!videoEvents.has(name)) videoEvents.set(name, new Set()); videoEvents.get(name).add(fn); },
+    removeEventListener(name, fn) { videoEvents.get(name)?.delete(fn); },
+    play: async () => { if (video.paused) { video.paused = false; emitVideo('play'); } },
+    pause: () => { if (!video.paused) { video.paused = true; emitVideo('pause'); } } };
+  function emitVideo(type) { for (const fn of videoEvents.get(type) || []) fn({ type, target: video }); }
   const route = () => { navigationCount++; if (!routerWorks) location.pathname = '/browse'; };
   const window = {
     addEventListener(name, fn) { if (!events.has(name)) events.set(name, []); events.get(name).push(fn); },
@@ -70,16 +74,20 @@ function screen({ gate = false, pathname = '/watch/12345', nativeLink = false, s
     fromExtension(message) { window.postMessage({ source: 'wp-ext', ...message }); },
     get hardLoads() { return hardLoads; }, get navigations() { return navigationCount; },
     set routerWorks(value) { routerWorks = value; },
-    tick(ms = 1000) {
-      for (let elapsed = 0; elapsed < ms; elapsed += 250) {
-        now += 250;
+    tick(ms = 1000, step = 250) {
+      for (let elapsed = 0; elapsed < ms; elapsed += step) {
+        const delta = Math.min(step, ms - elapsed);
+        now += delta;
+        if (!pin && !video.paused && video.readyState >= 3) video.currentTime += delta / 1000 * video.playbackRate;
         for (const timer of intervals) if (now - timer.last >= timer.ms) { timer.last = now; timer.fn(); }
         for (const [id, timer] of timeouts) if (now >= timer.at) { timeouts.delete(id); timer.fn(); }
       }
     },
+    emitVideo,
     command(cmd) { for (const listener of incoming) listener({ wp: 'cmd', cmd }, { id: 'test-extension' }, () => {}); },
     navigate(url, sender = 'test-extension') { for (const listener of incoming) listener({ wp: 'navigate', url }, { id: sender }, () => {}); },
     unlock(destination = '/browse') { pin = false; location.pathname = destination; },
+    lock(destination = '/profiles') { pin = true; location.pathname = destination; },
   };
 }
 
@@ -88,7 +96,7 @@ for (const pinPath of ['/watch/12345', '/profiles', '/browse']) {
     for (const nativeLink of [false, true]) test(`host playing; guest PIN at ${pinPath}, ${loginDelay}ms delay, native link ${nativeLink}`, () => {
       const host = screen(), guest = screen({ gate: true, pathname: pinPath, nativeLink });
       host.tick();
-      const hostStatus = host.messages.find(message => message.wp === 'status').st;
+      const hostStatus = host.messages.filter(message => message.wp === 'status').at(-1).st;
       guest.navigate(hostStatus.url);
       guest.tick(loginDelay);
       assert.equal(guest.navigations, 0, 'never navigate while a password/PIN gate is visible');
@@ -132,11 +140,16 @@ for (const css of [{ opacity: '0' }, { visibility: 'hidden' }, { display: 'none'
   });
 }
 
-function roomFlow(t, { paused, spinner, embedded }) {
-  const epoch = Date.now(), host = screen({ paused, spinner, embedded, epoch }), guest = screen({ gate: true, embedded, epoch });
+function roomFlow(t, { paused, spinner, embedded, transportMs = 0 }) {
+  const epoch = Date.now();
+  // The real room and both service clocks advance together; only transport and
+  // Netflix decoding are instantaneous in this deterministic latency fixture.
+  t.mock.timers.enable({ apis: ['Date'], now: epoch });
+  const host = screen({ paused, spinner, embedded, epoch }), guest = screen({ gate: true, embedded, epoch });
   const room = new Room({ config: { roomKey: 'testroomsecret1234', room: { autoWait: false } }, library: {} });
   t.after(() => room.shutdown());
-  const participants = [], selections = [], navigationRequests = [], held = new Set();
+  const participants = [], selections = [], navigationRequests = [], held = new Set(), wire = [];
+  const deliver = fn => transportMs ? wire.push({ at: Date.now() + transportMs, fn }) : fn();
   const background = vm.createContext({ URL, Date, console, parties: participants, rebindDocks() {},
     post: (port, message) => port.postMessage(message) });
   vm.runInContext(read('extension/services.js'), background);
@@ -155,19 +168,25 @@ function roomFlow(t, { paused, spinner, embedded }) {
     const client = { id: index ? 'guestclient' : 'hostclient', name: index ? 'Guest' : 'Host', role: index ? 'guest' : 'host', admitted: true,
       perms: { playback: true }, ws: { readyState: 1, send(raw) {
         const message = JSON.parse(raw);
-        if (message.type === 'movie') { context.S.movie = message.movie; context.player.setMovie(message.movie); }
-        if (message.type === 'state') { context.S.state = message.state; context.player.setState(message.state); }
+        deliver(() => {
+          if (message.type === 'movie') { context.S.movie = message.movie; context.player.setMovie(message.movie); }
+          if (message.type === 'state') { context.S.state = message.state; context.player.setState(message.state); }
+        });
       } } };
     room.clients.set(client.id, client);
     Object.assign(context, { isHost: !index, isTheater: embedded, isCustom: () => false, kindOf: movie => movie?.kind, serviceName: () => 'Netflix',
-      S: { movie: null, state: null }, reachedTitle: false, PLATFORM: { device: 'desktop' }, toast() {},
+      canControl: () => true, noPerm() {}, renderNotice() {}, scheduleUi() {},
+      S: { movie: null, state: null }, reachedTitle: false, PLATFORM: { device: 'desktop' }, toast() {}, roomNow: () => Date.now(),
       theaterPost: message => { if (message.wpTheater === 'goto') { navigationRequests.push(message.url); page.navigate(message.url); } },
-      conn: { send(message) { if (message.type === 'select-url') selections.push({ index, message }); room.onMessage(client, message); } },
+      conn: { clock: { now: () => Date.now() }, send(message) { if (message.type === 'select-url') selections.push({ index, message }); deliver(() => room.onMessage(client, message)); } },
     });
     vm.runInContext(read('public/js/media.js').replace(/^export /gm, '') + '\nglobalThis.remote = new RemoteMedia({ onInfo() {} });', context);
     vm.runInContext(read('public/js/sync.js').replace(/^export /gm, ''), context);
     vm.runInContext(read('public/js/player.js').replace(/^import .*;$/gm, '').replace(/^export /gm, '') +
-      '\nglobalThis.player = new SyncPlayer({ video: remote, clock: { synced: true, now: Date.now, rtt: 0 }, onStatus() {} });', context);
+      '\nglobalThis.player = new SyncPlayer({ video: remote, clock: { synced: true, now: roomNow, rtt: 0 }, onStatus() {} });', context);
+    vm.runInContext(app.slice(app.indexOf('function predict('), app.indexOf('const staleOwnEcho =')) +
+      app.slice(app.indexOf('function onRemoteUserAction('), app.indexOf('// The host tells the room the real title')) +
+      '\nremote.onUser = onRemoteUserAction;', context);
     vm.runInContext(follow + '\n' + keep, context);
     context.window.addEventListener('message', event => {
       const message = event.data;
@@ -183,12 +202,101 @@ function roomFlow(t, { paused, spinner, embedded }) {
   room.selectUrl(room.clients.get('hostclient'), 'https://www.netflix.com/browse', true, { browsing: true });
   return { room, host, guest, selections, navigationRequests,
     holdHostReports(value) { if (value) held.add(0); else held.delete(0); },
-    tick(ms) { for (let at = 0; at < ms; at += 250) { host.tick(250); guest.tick(250); } } };
+    tick(ms, step = 250) {
+      for (let at = 0; at < ms; at += step) {
+        const delta = Math.min(step, ms - at); t.mock.timers.tick(delta);
+        host.tick(delta, step); guest.tick(delta, step);
+        for (const item of wire.filter(item => item.at <= Date.now())) { wire.splice(wire.indexOf(item), 1); item.fn(); }
+      }
+    } };
 }
+
+for (const embedded of [false, true]) {
+  test(`PIN recovery reaches the host title within one second (embedded ${embedded})`, t => {
+    const flow = roomFlow(t, { paused: true, spinner: false, embedded });
+    flow.tick(4000);
+    flow.guest.unlock(); flow.tick(1000, 10);
+    assert.equal(flow.guest.location.pathname, '/watch/12345');
+    assert.equal(flow.guest.navigations, 1);
+    flow.tick(60000);
+    assert.equal(flow.guest.navigations, 1, 'the shorter wait must not reintroduce a PIN redirect loop');
+  });
+
+  test(`native pause reaches the other player within 100ms (embedded ${embedded})`, t => {
+    const flow = roomFlow(t, { paused: false, spinner: false, embedded });
+    flow.tick(4000); flow.guest.unlock(); flow.tick(10000);
+    assert.equal(flow.guest.video.paused, false);
+    flow.host.video.pause(); flow.tick(100, 5);
+    assert.equal(flow.room.state.playing, false, 'the content script and party page must not stack debounce waits');
+    assert.equal(flow.guest.video.paused, true);
+  });
+
+  test(`native play reaches the other player within 100ms (embedded ${embedded})`, t => {
+    const flow = roomFlow(t, { paused: true, spinner: false, embedded });
+    flow.tick(4000); flow.guest.unlock(); flow.tick(10000);
+    assert.equal(flow.guest.video.paused, true);
+    flow.host.video.play(); flow.tick(100, 5);
+    assert.equal(flow.room.state.playing, true);
+    assert.equal(flow.guest.video.paused, false);
+  });
+}
+
+test('native play is published within 100ms and remote commands do not echo as user actions', () => {
+  const host = screen({ paused: true }); host.tick(3000);
+  host.video.play(); host.tick(100, 5);
+  assert.equal(host.messages.filter(m => m.wp === 'user' && m.action === 'play').length, 1);
+  host.command({ op: 'pause' }); host.tick(200);
+  assert.equal(host.messages.filter(m => m.wp === 'user' && m.action === 'pause').length, 0);
+});
+
+test('a brief pause/play blip and pauses caused by seeking are still filtered', () => {
+  const host = screen(); host.tick(3000);
+  host.video.pause(); host.tick(30, 5); host.video.play(); host.tick(150, 5);
+  assert.equal(host.messages.filter(m => m.wp === 'user').length, 0);
+  host.emitVideo('seeking'); host.video.pause(); host.tick(1000);
+  assert.equal(host.messages.filter(m => m.wp === 'user' && m.action === 'pause').length, 0);
+  host.video.play(); host.emitVideo('seeked'); host.tick(4000);
+  assert.equal(host.messages.filter(m => m.wp === 'user' && m.action === 'pause').length, 0);
+});
+
+test('a player pause during buffering is not published before it recovers', () => {
+  const host = screen(); host.tick(3000);
+  host.video.readyState = 2; host.video.pause(); host.tick(600, 10);
+  assert.equal(host.messages.filter(m => m.wp === 'user').length, 0);
+  host.video.readyState = 4; host.video.play(); host.tick(200, 10);
+  assert.equal(host.messages.filter(m => m.wp === 'user').length, 0);
+});
+
+test('the host publishes a newly loaded title within 750ms', t => {
+  const flow = roomFlow(t, { paused: true, spinner: false, embedded: true });
+  flow.tick(750, 10);
+  assert.equal(flow.room.movie.url, 'https://www.netflix.com/watch/12345');
+  assert.equal(flow.room.movie.browsing, false);
+});
+
+test('pause reaches the guest within 200ms with 50ms latency on each network leg', t => {
+  const flow = roomFlow(t, { paused: false, spinner: false, embedded: true, transportMs: 50 });
+  flow.tick(4000, 10); flow.guest.unlock(); flow.tick(10000, 10);
+  assert.equal(flow.guest.video.paused, false);
+  flow.host.video.pause(); flow.tick(175, 5);
+  assert.equal(flow.guest.video.paused, false, 'the fixture must include the network delivery delay');
+  flow.tick(25, 5);
+  assert.equal(flow.guest.video.paused, true);
+});
+
+test('a PIN gate that reappears during the shorter recovery wait still blocks navigation', t => {
+  const flow = roomFlow(t, { paused: true, spinner: false, embedded: true });
+  flow.tick(4000); flow.guest.unlock(); flow.tick(250);
+  flow.guest.lock(); flow.tick(2000);
+  assert.equal(flow.guest.navigations, 0);
+  flow.guest.unlock(); flow.tick(1000, 10);
+  assert.equal(flow.guest.navigations, 1);
+  assert.equal(flow.guest.location.pathname, '/watch/12345');
+});
 
 test('a transient host status loss retries publication instead of remaining in browse mode forever', t => {
   const flow = roomFlow(t, { paused: true, spinner: false, embedded: true });
-  flow.tick(500);
+  flow.tick(250);
   flow.holdHostReports(true); flow.host.context.remote.st = null;
   flow.tick(2000);
   assert.equal(flow.room.movie.browsing, true);

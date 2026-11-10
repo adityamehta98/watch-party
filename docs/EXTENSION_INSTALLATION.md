@@ -8,6 +8,8 @@ For example: `C:\Users\YourName\AppData\Local\WatchParty\SyncExtension`.
 There is no folder picker in the installer. Do not move or rename this folder.
 The helper lives beside it at `%LOCALAPPDATA%\WatchParty\ExtensionUpdater.exe`.
 
+The first Windows installer is about 85 MiB because it currently reuses the app's standalone Node executable. The Node runtime accounts for about 98% of that file; it contains no movie downloads. The extension ZIP is about 120 KB, and later extension updates download only that ZIP. A substantially smaller first installer would require a separate native updater rather than this shared runtime.
+
 ## First setup
 
 1. Choose Netflix or another streaming service in Watch Party.
@@ -16,7 +18,7 @@ The helper lives beside it at `%LOCALAPPDATA%\WatchParty\ExtensionUpdater.exe`.
 4. Turn on **Developer mode**: top right in Chrome/Brave, left side in Edge.
 5. If you previously installed Watch Party Sync from Downloads or another folder, turn that old entry **off**. Keep its old entry if you need to retain its browser-local data; do not run two enabled copies.
 6. Click **Load unpacked**. In the folder picker, paste `%LOCALAPPDATA%\WatchParty\SyncExtension` into its address bar and press Enter. Click **Select Folder**. Choose this exact folder, not its parent `WatchParty` folder. The app also has a **Copy folder** button; the host sees its fully expanded path.
-7. Return to Watch Party and click **Reload page**. If Netflix was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.10**.
+7. Return to Watch Party and click **Reload page**. If Netflix was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.11**.
 
 The initial browser step is required for an unpublished extension. The installer does not edit browser profiles, enable Developer mode, or force-install an extension. A future browser-store listing removes the Load unpacked step. The downloaded setup file can be deleted after installation; the helper and extension remain in AppData.
 
