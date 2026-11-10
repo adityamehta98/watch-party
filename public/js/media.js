@@ -159,6 +159,9 @@ export class RemoteMedia extends AdapterBase {
     this.onInfo = onInfo || (() => {});
     this.present = false;       // extension installed?
     this.version = null;
+    this.canUpdate = false;
+    this.updateRequests = new Map();
+    this.updateSequence = 0;
     this.st = null;             // last status from the streaming tab
     this.stAt = 0;
     this.linked = false;
@@ -184,7 +187,11 @@ export class RemoteMedia extends AdapterBase {
   onMessage(e) {
     if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-ext') return;
     const m = e.data;
-    if (m.type === 'hello') { this.present = true; this.version = m.version; this.onInfo(); }
+    if (m.type === 'hello') { this.present = true; this.version = m.version; this.canUpdate = m.updates === true; this.onInfo(); }
+    else if (m.type === 'extension-update-result') {
+      const request = this.updateRequests.get(m.id);
+      if (request) { clearTimeout(request.timer); this.updateRequests.delete(m.id); request.resolve(m.result || { status: 'error' }); }
+    }
     else if (m.type === 'catalog-launch-result') { if (this.movie?.launchId === m.id) this.onLaunchResult?.(m); }
     else if (m.type === 'ext-problem') { this.onProblem && this.onProblem(m); }
     else if (m.type === 'linked') {
@@ -261,6 +268,15 @@ export class RemoteMedia extends AdapterBase {
   get pageUrl() { return this.lastUrl || (this.st && this.st.url) || ''; } // the freshest: status and page reports both update lastUrl
   get signingIn() { return !!(this.page && this.page.signin && performance.now() - this.page.at < 8000); }
   openPanel() { this.post({ type: 'open-panel' }); }
+  updateExtension(op, required) {
+    if (!this.canUpdate) return Promise.resolve({ status: 'manual' });
+    const id = ++this.updateSequence;
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { this.updateRequests.delete(id); resolve({ status: 'error', error: 'The extension did not respond. Reload this page and try again.' }); }, 46000);
+      this.updateRequests.set(id, { resolve, timer });
+      this.post({ type: 'extension-update', id, op, required });
+    });
+  }
   overlay(item) { if (this.linked) this.post({ type: 'overlay', item }); }
   cmd(c) { this.post({ type: 'cmd', cmd: c }); }
 
@@ -333,7 +349,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const REQUIRED_EXT_VERSION = '1.17.8';
+export const REQUIRED_EXT_VERSION = '1.17.9';
 export const extOutdated = v => { const a = String(v || '0').split('.').map(Number), b = REQUIRED_EXT_VERSION.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };
 const SERVICE_HOSTS = {
   youtube: ['youtube.com', 'youtu.be'], netflix: ['netflix.com'], prime: ['primevideo.com', 'amazon.com'], hulu: ['hulu.com'], peacock: ['peacocktv.com'],

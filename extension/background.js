@@ -1,7 +1,11 @@
 // Watch Party Sync: connects a Watch Party page with a streaming tab (Netflix, Prime Video, ...),
 // and shows the party (chat, cameras, people, controls) in Chrome's side panel next to the video.
 // It never sees or touches the video stream itself, only play / pause / seek / volume.
-importScripts('services.js', 'ad-domains.js', 'playback-history.js');
+importScripts('services.js', 'ad-domains.js', 'playback-history.js', 'extension-update.js');
+const extensionUpdater = WPExtensionUpdate.create(chrome);
+chrome.runtime.onInstalled?.addListener(details => {
+  if (details.reason === 'update') extensionUpdater.restore().catch(() => {});
+});
 
 const parties = new Set(); // one entry per open Watch Party page
 const docks = new Set();   // one entry per open side panel
@@ -242,6 +246,13 @@ function onDockPort(port) {
 // Messages from the streaming tabs and the party pages.
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (!m || !m.wp || sender.id !== chrome.runtime.id) return;
+  if (m.wp === 'extension-update') {
+    if (!sender.tab || !partyPageUrl(sender.url) || ![...parties].some(p => p.tabId === sender.tab.id && p.port.sender.url === sender.url)) return;
+    const tabs = [sender.tab.id, ...[...parties].flatMap(p => [p.tabId, p.link?.tabId, p.pendingTab])];
+    const job = m.op === 'check' ? extensionUpdater.check(m.required) : m.op === 'apply' ? extensionUpdater.apply(tabs) : Promise.resolve({ status: 'error' });
+    job.then(reply, () => reply({ status: 'error', error: 'Could not apply the update. Please try again.' }));
+    return true;
+  }
   if (m.wp === 'giphy-search') {
     let url; try { url = new URL(m.url); } catch { return; }
     if (url.origin !== 'https://api.giphy.com' || url.username || url.password || !/^\/v1\/gifs\/(?:search|trending)$/.test(url.pathname)) return;

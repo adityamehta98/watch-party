@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server/index.js",
     "build:extensions": "node build/build-extensions.js",
+    "build:extension-store": "node build/build-extensions.js --store",
     "benchmark:sync": "node benchmark/sync-benchmark.js --write",
     "test": "node --test test/*.test.js",
     "audit:unused": "npx --yes knip@6.44.1 --config build/knip.json",

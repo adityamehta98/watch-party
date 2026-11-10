@@ -191,7 +191,9 @@ node build/build-windows.js /path/to/windows/node.exe /path/to/ffmpeg/bin
 
 Put `refresh.bat` next to the exe, zip the `build/output/WatchParty` folder and attach it to a GitHub release.
 
-Build the extension downloads alone with `npm run build:extensions`. When changing the extension, bump `version` in both manifests and `REQUIRED_EXT_VERSION` in `public/js/media.js` together.
+Build the extension downloads alone with `npm run build:extensions`. When changing the extension, bump `version` in `extension/manifest.json` and `REQUIRED_EXT_VERSION` in `public/js/media.js` together.
+
+For a Chrome Web Store upload, use `npm run build:extension-store`; it creates a separate ZIP with the manifest at the archive root. Account setup, listing drafts and remaining publication steps are in [CHROME_STORE_PUBLICATION.md](CHROME_STORE_PUBLICATION.md).
 
 ---
 
@@ -464,7 +466,7 @@ How it behaves:
 - **Safari, iPhone/iPad and Android:** open the streaming service separately and follow the live clock. Chat and reactions remain in the party page.
 - **Home-screen app:** tap **Install** (Chromium) or **Share → Add to Home Screen** (Safari). The installed shell keeps chat, reactions, controls, and manual sync together in a standalone window; external service playback opens separately.
 - **Brave + Netflix "Something went wrong":** turn Shields off for netflix.com.
-- **After each Watch Party update**, the host’s bundled extension files are updated in place. Click **Open extension settings** on an outdated service setup screen and click the extension’s reload arrow. Reload Watch Party afterward. Hosts do not need another ZIP; nobody needs to remove and re-add the extension. Guests still need to replace their extracted files before reloading until a browser-store release is available.
+- **Extension updates (1.17.9 onward):** when an update is needed, click **Update extension**, then **Reload page** when it is ready. Store installations use the browser's updater. The host's unpacked copy can reload files already replaced by an app update. Guests using unpacked copies still need new files locally until a store release exists; older builds need a one-time manual update to gain this flow. Chrome may report that a store update is not available yet or that checks are temporarily throttled.
 - The extension's sync script only runs in tabs a Watch Party is using: the "watch here" window, a service tab the party opened, and a custom site the host opened. Nothing runs on pages you open yourself. It synchronizes playback metadata and does not intentionally read login cookies or passwords. Its broad permissions still grant access to controlled page content; use trusted sites and see PRIVACY.md.
 
 ### Custom site (any website with a video)

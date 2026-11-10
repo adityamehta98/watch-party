@@ -14,7 +14,7 @@ function assertInside(root, target) {
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`unsafe build path: ${target}`);
 }
 
-function archiveDirectory(parent, folderName, output) {
+function archiveDirectory(parent, folderName, output, { includeFolder = true } = {}) {
   const base = path.join(parent, folderName), files = [];
   const visit = dir => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -39,7 +39,7 @@ function archiveDirectory(parent, folderName, output) {
   for (const file of files) {
     const data = fs.readFileSync(file), compressed = zlib.deflateRawSync(data, { level: 9 });
     const packed = compressed.length < data.length ? compressed : data, method = packed === compressed ? 8 : 0;
-    const name = Buffer.from(`${folderName}/${path.relative(base, file).split(path.sep).join('/')}`), crc = crc32(data);
+    const name = Buffer.from(`${includeFolder ? folderName + '/' : ''}${path.relative(base, file).split(path.sep).join('/')}`), crc = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x800, 6);
     local.writeUInt16LE(method, 8); local.writeUInt16LE(0, 10); local.writeUInt16LE(0x2821, 12);
@@ -58,11 +58,22 @@ function archiveDirectory(parent, folderName, output) {
   fs.writeFileSync(output, Buffer.concat([...locals, directory, end]));
 }
 
-function versions() {
-  const common = JSON.parse(fs.readFileSync(path.join(COMMON, 'manifest.json'), 'utf8')).version;
-  const media = fs.readFileSync(path.join(ROOT, 'public', 'js', 'media.js'), 'utf8');
+function versions(root = ROOT) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'extension', 'manifest.json'), 'utf8'));
+  if (!manifest.description || manifest.description.length > 132) throw new Error('extension description must be 1–132 characters');
+  const common = manifest.version;
+  const media = fs.readFileSync(path.join(root, 'public', 'js', 'media.js'), 'utf8');
   const page = /REQUIRED_EXT_VERSION = '([^']+)'/.exec(media)?.[1];
   if (!page || common !== page) throw new Error(`extension version mismatch: Chromium ${common}, page ${page || 'missing'}`);
+}
+
+function buildStore(root = ROOT) {
+  versions(root);
+  const output = path.join(root, 'build', 'output', 'extensions', 'watch-party-sync-chrome-store.zip');
+  assertInside(root, output);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  archiveDirectory(root, 'extension', output, { includeFolder: false });
+  return output;
 }
 
 function buildChromium() {
@@ -79,5 +90,5 @@ function buildChromium() {
   return CHROMIUM_OUTPUT;
 }
 
-if (require.main === module) console.log('built', buildChromium());
-module.exports = { archiveDirectory, buildChromium };
+if (require.main === module) console.log('built', process.argv.includes('--store') ? buildStore() : buildChromium());
+module.exports = { archiveDirectory, buildChromium, buildStore };

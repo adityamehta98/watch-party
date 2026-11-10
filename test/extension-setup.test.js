@@ -70,10 +70,10 @@ test('setup reports a browser launch failure and keeps a folder fallback when Ex
   assert.equal(result.folderOpened, false);
 });
 
-function panel({ host = true, version, brave = false, browserFound = true } = {}) {
+function panel({ host = true, version, brave = false, browserFound = true, update } = {}) {
   const element = { innerHTML: '' };
   const context = vm.createContext({
-    S: { movie: { kind: 'service', service: 'netflix', title: 'Netflix' },
+    S: { movie: { kind: 'service', service: 'netflix', title: 'Netflix' }, extUpdate: update,
       info: { extensionDir: 'C:/Watch Party/app/extension', extensionSetup: { browsers: browserFound ? ['chrome', 'edge', 'brave'] : [] } } },
     $: () => element, stage: { classList: { toggle() {} } },
     SERVICE_NAMES: { netflix: 'Netflix' }, remote: { present: !!version, version },
@@ -93,8 +93,12 @@ test('host setup and updates use the bundled folder without a download, with Bra
   assert.match(install, /C:\/Watch Party\/app\/extension/);
   assert.doesNotMatch(install, /href="\/ext\//);
   const update = panel({ version: '1.0.0' });
-  assert.match(update, /Open extension settings/);
+  assert.match(update, /Update extension/);
+  assert.doesNotMatch(update, /Developer mode|Load unpacked|Open extension settings/);
   assert.doesNotMatch(update, /href="\/ext\//);
+  const fallback = panel({ version: '1.0.0', update: { manual: true } });
+  assert.match(fallback, /Open extension settings/);
+  assert.match(panel({ version: '1.0.0', update: { ready: true, message: 'The update is ready.' } }), /Reload page/);
   const manual = panel({ brave: true, browserFound: false });
   assert.match(manual, /brave:\/\/extensions/);
   assert.doesNotMatch(manual, /data-svc="extension-setup"/);

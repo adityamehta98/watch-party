@@ -1,8 +1,8 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.8**.
+Installed extension version: **1.17.9**.
 
-The Windows executable and companion extension were rebuilt and installed locally. The installed executable's SHA-256 matches the release executable. The complete regression suite passed: **280 tests, zero failures**. Results are in `build/cache/netflix-host-final-tests.log`.
+The Windows executable and companion extension were rebuilt and installed locally. The installed executable's SHA-256 matches the release executable. The complete regression suite passed: **294 tests, zero failures**. Results are in `build/cache/extension-update-all-tests.log`. The new extension update flow and first-publication preparation are documented in [CHROME_STORE_PUBLICATION.md](CHROME_STORE_PUBLICATION.md); real store delivery remains untested until a store item exists.
 
 ## Follow-up: host playing while guest stays on Home
 
@@ -23,7 +23,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, reload Watch Party Sync **1.17.8** in Chrome or Edge, then reload Watch Party and the Netflix page. The host's installed extension folder is `app/extension`; the downloadable ZIP is `public/ext/watch-party-sync.zip`.
+1. On both PCs, reload Watch Party Sync **1.17.9** in Chrome or Edge, then reload Watch Party and the Netflix page. The host's installed extension folder is `app/extension`; the downloadable ZIP is `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.

@@ -192,7 +192,8 @@ test('a party that reconnects before theater registration can launch without any
     scripting:{executeScript:async()=>{}},
     declarativeNetRequest:{getSessionRules:async()=>[],updateSessionRules:async()=>{}},
   }});
-  for (const file of ['extension/services.js','extension/ad-domains.js','extension/background.js']) vm.runInContext(read(file),context);
+  context.importScripts = (...files) => { for (const file of files) vm.runInContext(read('extension/' + file), context); };
+  vm.runInContext(read('extension/background.js'), context);
   runtimeConnect.fire({name:'party',sender:{id:'ext',url:'http://127.0.0.1:8765/host/test',tab:{id:7,windowId:1},frameId:1},onMessage:partyMessage,onDisconnect:event(),postMessage(){}});
   partyMessage.fire({type:'watch',service:'netflix',url:'https://www.netflix.com/search?q=Latent',launchTitle:"India's Got Latent",launchId:'pick1'});
   runtimeMessage.fire({wp:'theater-hello',party:'http://127.0.0.1:8765/host/test'}, {id:'ext',url:'chrome-extension://ext/theater.html',frameId:0,tab:{id:7}},()=>{});

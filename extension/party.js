@@ -11,8 +11,9 @@
   function ask(msg, timeout = 4000) {
     return new Promise(resolve => {
       let done = false;
-      const finish = r => { if (!done) { done = true; resolve(r); } };
-      setTimeout(() => finish({ ok: false, error: 'no answer' }), timeout);
+      let timer;
+      const finish = r => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
+      timer = setTimeout(() => finish({ ok: false, error: 'no answer' }), timeout);
       try { chrome.runtime.sendMessage(msg).then(r => finish(r || { ok: true }), e => finish({ ok: false, error: String(e && e.message || e) })); }
       catch (e) { toPage({ type: 'ext-problem', kind: 'stale' }); finish({ ok: false, error: 'stale' }); }
     });
@@ -32,7 +33,12 @@
     window.addEventListener('message', e => {
       if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== 'wp-page') return;
       const { source, ...m } = e.data;
-      if (m.type === 'ping') { toPage({ type: 'hello', version }); return; }
+      if (m.type === 'ping') { toPage({ type: 'hello', version, updates: true }); return; }
+      if (m.type === 'extension-update') {
+        ask({ wp: 'extension-update', op: m.op, required: m.required }, 45000)
+          .then(result => toPage({ type: 'extension-update-result', id: m.id, result }));
+        return;
+      }
       // straight to the extension while the click still counts (Chrome only opens the panel after a click)
       if (m.type === 'theater') {
         ask({ wp: 'theater-open', url: m.url }, 6000).then(r => { if ((!r || !r.ok) && !(r && r.error === 'stale')) toPage({ type: 'ext-problem', kind: 'theater', error: r && r.error }); });
@@ -43,7 +49,7 @@
       if (m.type === 'unwatch') lastWatch = null;
       if (port) try { port.postMessage(m); } catch { /* reconnecting */ }
     });
-    toPage({ type: 'hello', version });
+    toPage({ type: 'hello', version, updates: true });
     // is the extension's background part running? (if not, nothing it does will work: say so)
     ask({ wp: 'ping' }).then(r => { if ((!r || !r.ok) && !(r && r.error === 'stale')) toPage({ type: 'ext-problem', kind: 'background', error: r && r.error }); });
     // links on the party page that open a new tab (sign-in pages, help): let them through

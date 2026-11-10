@@ -250,6 +250,28 @@ test('extension archives are byte-reproducible', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('store upload has a root manifest, exact extension files and reproducible bytes', () => {
+  const { buildStore } = require('../build/build-extensions');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-store-'));
+  try {
+    fs.mkdirSync(path.join(root, 'extension'));
+    fs.mkdirSync(path.join(root, 'public', 'js'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'extension', 'manifest.json'), JSON.stringify({ version: '1.0.0', description: 'Watch together.' }));
+    fs.writeFileSync(path.join(root, 'extension', 'background.js'), '// packaged code\n');
+    fs.writeFileSync(path.join(root, 'public', 'js', 'media.js'), "const REQUIRED_EXT_VERSION = '1.0.0';");
+    const output = buildStore(root), first = fs.readFileSync(output), entries = unzipEntries(output);
+    assert.deepEqual([...entries.keys()].sort(), ['background.js', 'manifest.json']);
+    for (const [name, bytes] of entries) assert.deepEqual(bytes, fs.readFileSync(path.join(root, 'extension', name)));
+    fs.utimesSync(path.join(root, 'extension', 'manifest.json'), new Date(), new Date());
+    buildStore(root);
+    assert.deepEqual(fs.readFileSync(output), first);
+    fs.writeFileSync(path.join(root, 'extension', 'manifest.json'), JSON.stringify({ version: '1.0.0', description: 'x'.repeat(133) }));
+    assert.throws(() => buildStore(root), /description/);
+    fs.writeFileSync(path.join(root, 'extension', 'manifest.json'), JSON.stringify({ version: '2.0.0', description: 'Watch together.' }));
+    assert.throws(() => buildStore(root), /version mismatch/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('iPad browser playback detection survives extension removal', async () => {
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(read('public/js/platform.js')).toString('base64')}`;
   const { detectPlatform } = await import(moduleUrl);
@@ -997,8 +1019,7 @@ test('custom-site extension installs scoped ad rules and preserves same-site pop
     webNavigation: { onCreatedNavigationTarget: event(), onDOMContentLoaded: event(), getAllFrames: async () => [] }, scripting: { executeScript: async () => {} }, windows: { get: async () => ({}), update: async () => {} },
     declarativeNetRequest: { getSessionRules: async () => [], updateSessionRules: async x => { updates.push(x); } },
   } });
-  vm.runInContext(read('extension/services.js'), context);
-  vm.runInContext(read('extension/ad-domains.js'), context);
+  context.importScripts = (...files) => { for (const file of files) vm.runInContext(read('extension/' + file), context); };
   vm.runInContext(read('extension/background.js'), context);
   assert.ok(context.self.WP_AD_DOMAINS.length >= 80);
   let reply;

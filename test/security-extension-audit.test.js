@@ -19,10 +19,14 @@ function event() {
 }
 
 async function background({ recovered = [], tabUrl = 'chrome-extension://audit/theater.html' } = {}) {
-  let rules = recovered;
+  let rules = recovered, updateChecks = 0;
+  const values = {};
+  const storage = { get: async key => ({ [key]: values[key] }), set: async data => Object.assign(values, data), remove: async key => { delete values[key]; } };
   const runtimeMessage = event(), connect = event(), before = event(), committed = event();
   const chrome = {
-    runtime: { id: 'audit', getURL: file => 'chrome-extension://audit/' + file, onMessage: runtimeMessage, onConnect: connect, sendMessage: async () => {} },
+    runtime: { id: 'audit', getURL: file => 'chrome-extension://audit/' + file, onMessage: runtimeMessage, onConnect: connect, sendMessage: async () => {},
+      requestUpdateCheck: async () => { updateChecks++; return { status: 'update_available', version: '1.18.0' }; } },
+    storage: { session: storage, local: storage }, management: { getSelf: async () => ({ version: '1.17.9', installType: 'normal' }) },
     sidePanel: { setPanelBehavior: async () => {} },
     tabs: { onRemoved: event(), onCreated: event(), query: async () => [], get: async id => ({ id, url: tabUrl }),
       update: async (id, changes) => ({ id, ...changes }), sendMessage: async () => {} },
@@ -42,9 +46,23 @@ async function background({ recovered = [], tabUrl = 'chrome-extension://audit/t
     await tick(); await tick();
     return result;
   };
-  return { context, sender, send, connect, before, committed, rules: () => rules,
+  return { context, sender, send, connect, before, committed, rules: () => rules, updateChecks: () => updateChecks,
     controlled: () => vm.runInContext('partyControlsTab(7)', context) };
 }
+
+test('extension updates require a connected party page from this extension', async () => {
+  const f = await background(), message = { wp: 'extension-update', op: 'check', required: '1.18.0' };
+  const from = { ...f.sender, url: 'https://party.example/join/room' };
+  await f.send(message);
+  await f.send(message, from); // URL alone does not establish a party connection
+  assert.equal(f.updateChecks(), 0);
+  f.connect.fire({ name: 'party', sender: from, disconnect() {}, onMessage: event(), onDisconnect: event(), postMessage() {} });
+  assert.equal((await f.send(message, from)).status, 'ready');
+  assert.equal(f.updateChecks(), 1);
+  await f.send(message, { ...from, id: 'other-extension' });
+  await f.send(message, { ...from, url: 'https://www.netflix.com/watch/123' });
+  assert.equal(f.updateChecks(), 1);
+});
 
 test('playback URLs redact account credentials, sign-in parameters and fragments before sharing', () => {
   const h = helpers();

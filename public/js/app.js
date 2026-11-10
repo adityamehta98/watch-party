@@ -14,7 +14,7 @@ import { StageFullscreen } from './fullscreen.js';
 import { SubtitleTracks } from './subtitles.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
-import { YouTubeMedia, RemoteMedia, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
+import { YouTubeMedia, RemoteMedia, REQUIRED_EXT_VERSION, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -142,8 +142,8 @@ function start(name) {
     finishCatalogServiceLaunch();
     if (remote.present && extOutdated(remote.version) && !S.extWarned) {
       S.extWarned = true;
-      const fix = `Open ${extensionBrowser()}://extensions and click its reload arrow, then reload this page. ${isHost ? 'Use the bundled extension folder; no new download is needed.' : 'First replace the files in your existing extension folder with the new download.'}`;
-      toast(`Your Watch Party Sync extension is out of date (${remote.version || '?'}). ${fix}`, { kind: 'error', timeout: 20000 });
+      toast('Your extension is old. Update it to keep watching together.', { kind: 'error', timeout: 20000,
+        actions: [{ label: 'Update extension', primary: true, run: () => updateExtension() }] });
     }
   } });
   remote.onProblem = p => { if (p.kind === 'theater') clearTimeout(enterTheater.timer); extProblem(p); };
@@ -575,6 +575,26 @@ function loadMovie(movie) {
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
 function extensionBrowser() { return /Edg\//.test(navigator.userAgent) ? 'edge' : navigator.brave ? 'brave' : 'chrome'; }
 
+async function updateExtension() {
+  if (S.extUpdate?.busy) return;
+  const applying = !!S.extUpdate?.ready;
+  S.extUpdate = { busy: true, message: applying ? 'Reloading…' : 'Checking for the new extension…' };
+  renderServicePanel();
+  const result = await remote.updateExtension(applying ? 'apply' : 'check', REQUIRED_EXT_VERSION);
+  if (result.status === 'reloading') return; // the new extension reloads the affected party and service tabs
+  const messages = {
+    ready: 'The update is ready. Reload this page to finish.',
+    throttled: 'The browser is checking too often. Please try again in a few minutes.',
+    no_update: 'The new extension is not available from the browser store yet. Please try again later.',
+    manual: 'This development copy needs a one-time manual update.',
+  };
+  S.extUpdate = { ready: result.status === 'ready', manual: result.status === 'manual',
+    message: messages[result.status] || result.error || 'Could not update the extension. Please try again.' };
+  renderServicePanel();
+  if (kindOf(S.movie) !== 'service') toast(S.extUpdate.message, { timeout: 15000,
+    actions: S.extUpdate.ready ? [{ label: 'Reload page', primary: true, run: () => updateExtension() }] : [] });
+}
+
 function renderServicePanel() {
   const panel = $('#servicePanel');
   const m = S.movie;
@@ -619,11 +639,11 @@ function renderServicePanel() {
       <p class="fine">Keep the extracted folder; the browser uses it from there. The extension synchronizes playback and does not intentionally read login cookies or passwords. Its site permissions grant access to controlled pages.</p>`;
     }
   } else if (extOutdated(remote.version)) {
-    status = `Your <b>Watch Party Sync</b> extension is out of date (${esc(remote.version || '?')}). This party needs the newer one.`;
-    button = isHost ? setupButton() : '';
-    help = isHost
-      ? `<p>Updated extension files are included with Watch Party. No download or extraction is needed.</p><ol class="svc-steps"><li>${button ? 'Click <b>Open extension settings</b> above.' : `Open <code>${addr}</code> ${copy(addr)}.`}</li><li>Click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol><p class="fine">The bundled folder is ${dir ? `<code>${esc(dir)}</code> ${copy(dir, 'Copy folder')}` : 'the <b>extension</b> folder included with Watch Party'}. If you originally loaded a downloaded copy elsewhere, use <b>Load unpacked</b> to select this folder once. Future app updates use this same folder.</p>`
-      : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder (replace the files).</li><li>Open <code>${addr}</code> ${copy(addr)} and click the round <b>reload</b> arrow on Watch Party Sync.</li><li>Reload this tab.</li></ol><p class="fine">Keep the same folder and extension entry. You do not need to remove and add it again.</p>`;
+    status = esc(S.extUpdate?.message || 'Your extension is old. Click below to get the new extension.');
+    button = `<button class="btn primary" type="button" data-svc="extension-update" ${S.extUpdate?.busy ? 'disabled' : ''}>${S.extUpdate?.busy ? 'Please wait…' : S.extUpdate?.ready ? 'Reload page' : 'Update extension'}</button>`;
+    if (S.extUpdate?.manual) help = isHost
+      ? `<div class="row" style="justify-content:center">${setupButton()}</div><ol class="svc-steps"><li>Open <code>${addr}</code> ${copy(addr)}.</li><li>Click the <b>reload</b> arrow on Watch Party Sync, then reload this page.</li></ol><p class="fine">Use the bundled folder ${dir ? `<code>${esc(dir)}</code> ${copy(dir, 'Copy folder')}` : 'included with Watch Party'}. If you loaded a copy elsewhere, select this folder with <b>Load unpacked</b> once.</p>`
+      : `<ol class="svc-steps"><li><a class="btn sm primary" href="/ext/watch-party-sync.zip" download>Download the new extension</a> and extract it over the old folder.</li><li>Open <code>${addr}</code> ${copy(addr)}, click the <b>reload</b> arrow on Watch Party Sync, then reload this page.</li></ol>`;
   } else if (!remote.linked || !st) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
     status = isHost || m.browsing
@@ -659,6 +679,7 @@ $('#servicePanel').addEventListener('click', async e => {
     return;
   }
   const b = e.target.closest('[data-svc]');
+  if (b && b.dataset.svc === 'extension-update') { await updateExtension(); return; }
   if (b && ['extension-setup', 'extension-settings'].includes(b.dataset.svc) && isHost) {
     b.disabled = true;
     try {
