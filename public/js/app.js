@@ -141,8 +141,9 @@ function start(name) {
     renderServicePanel(); maybeSendMeta();
     finishCatalogServiceLaunch();
     checkExtensionUpdate();
+    openNetflixInParty();
   } });
-  remote.onProblem = p => { if (p.kind === 'theater') clearTimeout(enterTheater.timer); extProblem(p); };
+  remote.onProblem = extProblem;
   remote.onLaunchResult = result => { if (result.error) toast(result.error, { kind: 'error', timeout: 12000 }); };
   remote.onUser = onRemoteUserAction;
   // the level set in Netflix & co's own player shows on the party's slider too (and is remembered)
@@ -510,6 +511,10 @@ function refreshFileSources(movie) {
 
 function loadMovie(movie) {
   const same = S.movie && movie && S.movie.id === movie.id && kindOf(S.movie) === kindOf(movie);
+  if (S.movie?.service === 'netflix' && movie?.service !== 'netflix') {
+    S.netflixExternal = S.netflixTheaterFailed = false;
+    clearTimeout(enterTheater.timer); enterTheater.timer = null;
+  }
   if (!same) S.observatory = null;
   S.movie = movie;
   if (!movie || kindOf(movie) === 'service') hideTuneIn(true);
@@ -538,6 +543,7 @@ function loadMovie(movie) {
       renderNotice();
     }
     finishCatalogServiceLaunch();
+    openNetflixInParty();
     return;
   }
   subtitles.reset(movie?.id);
@@ -568,10 +574,22 @@ function loadMovie(movie) {
   buildCcMenu();
   renderNotice();
   finishCatalogServiceLaunch();
+  openNetflixInParty();
   if (kindOf(movie) === 'anime') showTuneInForMovie(movie);
 }
 
 function serviceName(movie) { return (movie && (movie.serviceName || SERVICE_NAMES[movie.service])) || 'the service'; }
+function openNetflixInParty() {
+  if (S.movie?.service !== 'netflix' || isTheater || S.netflixExternal || S.netflixTheaterFailed ||
+      !remote?.present || extOutdated(remote.version) || (remote.access?.service === 'netflix' && remote.access.allowed === false)) return;
+  enterTheater();
+}
+function openNetflixSeparate() {
+  if (S.movie?.service !== 'netflix' || (!isTheater && !S.netflixTheaterFailed) || S.netflixExternal) return;
+  S.netflixExternal = true;
+  remote.openTab();
+  theaterReportSoon(); renderServicePanel();
+}
 function extensionBrowser() { return /Edg\//.test(navigator.userAgent) ? 'edge' : navigator.brave ? 'brave' : 'chrome'; }
 const extensionFolder = () => isHost && S.info?.extensionSetup?.managedDirectory || '%LOCALAPPDATA%\\WatchParty\\SyncExtension';
 function extensionTargetVersion() {
@@ -731,6 +749,9 @@ function renderServicePanel() {
     status = `Watch Party Sync needs site access to connect to ${esc(name)}.`;
     button = setupButton() + '<button class="btn" type="button" data-svc="extension-access">Check again</button>';
     help = `<p class="fine">In the extension’s <b>Site access</b> section, add <code>${esc(remote.access.origin)}</code> to the allowed sites. Then reload the ${esc(name)} page and click <b>Check again</b>. Access to localhost alone does not allow Netflix synchronization.</p>`;
+  } else if (m.service === 'netflix' && S.netflixTheaterFailed && !S.netflixExternal) {
+    status = 'Netflix could not open inside Watch Party.';
+    button = '<button class="btn primary" type="button" data-svc="theater">Retry in Watch Party</button><button class="btn" type="button" data-svc="netflix-separate">Open in separate tab</button>';
   } else if (!remote.linked || !st) {
     const hostName = (S.people.find(p => p.role === 'host') || {}).name || 'The host';
     status = isHost || m.browsing
@@ -738,6 +759,11 @@ function renderServicePanel() {
       : `${esc(hostName)} is watching <b>${esc(m.title && m.title !== name ? m.title : 'something')}</b> on ${esc(name)}. Open it and sign in with <b>your own</b> ${esc(name)} account if it asks. Once the video starts, it follows the room automatically, and the party sits in a panel next to it.`;
     button = isTheater ? '' : `<button class="btn primary" type="button" data-svc="theater">Watch here, in this window</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} in its own tab</button>`;
     help = `<p class="fine">Already have it open in another tab? Just press play there and it links up.</p>`;
+    if (m.service === 'netflix') {
+      if (!isTheater && !S.netflixExternal) status = 'Opening Netflix in Watch Party…';
+      button = S.netflixExternal ? '<button class="btn" type="button" data-svc="show">Show Netflix tab</button>' : '';
+      help = '';
+    }
     if (isCustom()) {
       // any website the host opened: it plays inside the Watch Party window, and only the host drives it
       status = isHost
@@ -753,6 +779,10 @@ function renderServicePanel() {
     if (st.blocked) status += `<br>Click play once inside the ${esc(name)} tab. The browser needs one click there.`;
     button = `<button class="btn primary" type="button" data-svc="panel">Show the party next to ${esc(name)}</button><button class="btn" type="button" data-svc="open">Open ${esc(name)} again</button>`;
     help = `<p class="fine">Watch in the ${esc(name)} tab. The party (chat, cameras, people and the play controls) sits in the panel on the right side of Chrome, next to the video. Closed it? Click the Watch Party icon in Chrome's toolbar, or the button above. Keep this tab open in the background: it's what keeps everyone connected.</p>`;
+    if (m.service === 'netflix') {
+      button = S.netflixExternal ? '<button class="btn" type="button" data-svc="show">Show Netflix tab</button>' : '';
+      help = '';
+    }
   }
   if (remote.present && !extOutdated(remote.version) && extOutdated(remote.version, extensionTargetVersion())) {
     help += `<p class="fine">${esc(S.extUpdate?.message || 'A newer extension is available. Your current version can keep watching.')} ${updateButton()} ${zip}</p>`;
@@ -796,7 +826,8 @@ async function onServiceAction(e) {
   if (b && b.dataset.svc === 'open') { togglePip({ keep: true, quiet: true }); remote.openPanel(); remote.openTab(); }
   if (b && b.dataset.svc === 'show') remote.showTab();
   if (b && b.dataset.svc === 'panel') remote.openPanel();
-  if (b && b.dataset.svc === 'theater') enterTheater();
+  if (b && b.dataset.svc === 'netflix-separate') openNetflixSeparate();
+  if (b && b.dataset.svc === 'theater') { S.netflixTheaterFailed = false; renderServicePanel(); enterTheater(); }
 }
 $('#servicePanel').addEventListener('click', onServiceAction);
 $('#extensionUpdateBody').addEventListener('click', onServiceAction);
@@ -1421,6 +1452,7 @@ window.addEventListener('message', e => {
     if (e.data.error) toast(String(e.data.error), { kind: 'error', timeout: 4500 });
     return;
   }
+  if (e.data.wpTheater === 'open-netflix-separate') { openNetflixSeparate(); return; }
   if (e.data.wpTheater !== 'toast-action') return;
   const actions = theaterToastActions.get(String(e.data.id || ''));
   const action = actions && actions[Number(e.data.index)];
@@ -2652,16 +2684,24 @@ async function onDockRtc(d) {
 }
 
 function enterTheater() {
-  if (!remote || !remote.present) return;
+  if (!remote?.present || isTheater || enterTheater.timer) return;
   const url = `${location.origin}${location.pathname}#wpcid=${encodeURIComponent(clientId)}&wpname=${encodeURIComponent(S.me?.name || S.name || '')}`;
   remote.post({ type: 'theater', url });
   // this page is replaced by the Watch Party window in a moment; still here after a few seconds = it didn't work
-  clearTimeout(enterTheater.timer);
   enterTheater.timer = setTimeout(() => extProblem({ kind: 'theater', error: 'nothing happened' }), 4000);
 }
 // The extension is installed but isn't answering: say what to do instead of silently doing nothing.
 function extProblem(p) {
-  if (p.kind === 'navigation') { toast(p.error || 'The service could not open the room title. Retry from its player.', { kind: 'error', timeout: 20000 }); return; }
+  if (p.kind === 'theater') {
+    clearTimeout(enterTheater.timer); enterTheater.timer = null;
+    if (!isTheater && S.movie?.service === 'netflix') { S.netflixTheaterFailed = true; renderServicePanel(); return; }
+  }
+  if (p.kind === 'navigation') {
+    const actions = isTheater && S.movie?.service === 'netflix' && !S.netflixExternal
+      ? [{ label: 'Open in separate tab', run: openNetflixSeparate }] : [];
+    toast(p.error || 'The service could not open the room title. Retry from its player.', { kind: 'error', timeout: 20000, actions });
+    return;
+  }
   const addr = /Edg\//.test(navigator.userAgent) ? 'edge://extensions' : /Brave/.test(navigator.userAgent) || navigator.brave ? 'brave://extensions' : 'chrome://extensions';
   if (p.kind === 'stale') {
     // the extension was reloaded after this page opened: reload the page once to reconnect
@@ -2675,7 +2715,7 @@ function extProblem(p) {
     { kind: 'error', timeout: 30000, actions: [{ label: 'Reload this page', primary: true, run: () => location.reload() }] });
 }
 try { if (sessionStorage.getItem('wp.staleReload') === '1') setTimeout(() => { try { sessionStorage.removeItem('wp.staleReload'); } catch {} }, 15000); } catch { /* private window */ }
-const theaterSvc = () => isTheater && kindOf(S.movie) === 'service';
+const theaterSvc = () => isTheater && kindOf(S.movie) === 'service' && !S.netflixExternal;
 function theaterPost(msg) {
   if (!isTheater) return;
   const origin = location.ancestorOrigins?.[0];
@@ -2737,6 +2777,15 @@ $('#svcGrid').addEventListener('click', e => {
   if (!b) return;
   const id = b.dataset.svcTile;
   if (id === 'youtube') { openYouTube(); return; }
+  if (id === 'netflix') {
+    setTab('chat');
+    if (!isHost && S.movie?.service === id && !S.movie.browsing) {
+      if (S.netflixExternal) remote?.showTab();
+      else if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url });
+      else openNetflixInParty();
+    } else conn.send({ type: 'select-url', url: SERVICE_HOMES[id], browsing: true });
+    return;
+  }
 
   if (!isHost && S.movie && kindOf(S.movie) === 'service' && S.movie.service === id && !S.movie.browsing) {
     setTab('chat');
@@ -2838,7 +2887,7 @@ function tryServiceAdvance(movie, previousUrl) {
     if (serviceAdvance !== pending || settleServiceAdvance()) return;
     serviceAdvance = null;
     theaterReportSoon();
-    if (!isTheater) remote.navigate(movie.url);
+    if (!isTheater || S.netflixExternal) remote.navigate(movie.url);
   }, 8000);
   theaterReportSoon();
   return true;
@@ -2850,9 +2899,10 @@ function bringAlong(movie) {
   if (prev !== movie.url) { followBase = remote ? canonicalUrl(remote.pageUrl || '') : ''; reachedTitle = false; clearTimeout(followTimer); followTimer = null; pendingFollowUrl = ''; lastFollowUrl = ''; }
 
   if (!remote || !remote.present || movie.browsing) return;
-  if (!prev || prev === movie.url) return; // first load: the panel's Open button handles it
+  if (movie.service === 'netflix' && !isTheater && !S.netflixExternal) return; // loadMovie opens it in Watch Party
+  if (!prev || prev === movie.url) return;
   if (tryServiceAdvance(movie, prev)) return;
-  if (isTheater) return; // other title changes are handled by the theater frame
+  if (isTheater && !S.netflixExternal) return; // other title changes are handled by the theater frame
   if (remote.signingIn) return; // they're signing in: keepOnTitle takes them there afterwards
   if (!(remote.linked && canonicalUrl(remote.pageUrl) === canonicalUrl(movie.url))) {
     remote.navigate(movie.url);
@@ -2991,7 +3041,7 @@ function launchCatalogService(id, item) {
   const url = SERVICE_SEARCH[id] ? SERVICE_SEARCH[id](encodeURIComponent(item.title)) : SERVICE_HOMES[id];
   if (!url) return;
   hideTuneIn(true);
-  const newTab = $('#svcNewTab').checked;
+  const newTab = id !== 'netflix' && $('#svcNewTab').checked;
   pendingCatalogService = { id, url, title: item.title, newTab, at: Date.now() };
   // Commit to the room first so the extension is watching the selected service when it opens.
   conn.send({ type: 'select-url', url, browsing: true, title: item.title, launchTitle: item.title, playbackRef: { title: item.title, tmdbId: item.tmdbId, type: item.type, year: item.year } });
@@ -3008,7 +3058,8 @@ function finishCatalogServiceLaunch() {
   if (kindOf(movie) !== 'service' || movie.service !== pending.id || key(movie.url) !== key(pending.url)) return;
   if (!remote?.present || extOutdated(remote.version)) return; // The service panel provides setup or update steps.
   pendingCatalogService = null;
-  if (isTheater) theaterPost({ wpTheater: 'goto', url: movie.url });
+  if (isTheater && !S.netflixExternal) theaterPost({ wpTheater: 'goto', url: movie.url });
+  else if (movie.service === 'netflix' && S.netflixExternal) remote.openTab();
   else if (pending.newTab) remote.post({ type: 'open', service: movie.service, url: movie.url });
   else enterTheater();
 }
@@ -3543,7 +3594,7 @@ function keepOnTitle() {
   if (Date.now() - keepOffSince < 250 || Date.now() - keepLastGo < 15000) return;
   keepLastGo = Date.now(); keepOffSince = 0;
   toast(`Taking you to ${S.movie.title && S.movie.title !== serviceName(S.movie) ? `"${S.movie.title}"` : 'what the room is watching'}…`, { timeout: 4000 });
-  if (isTheater) theaterPost({ wpTheater: 'goto', url: S.movie.url, custom: isCustom(), strict: isCustom() && !!S.movie.strict });
+  if (isTheater && !S.netflixExternal) theaterPost({ wpTheater: 'goto', url: S.movie.url, custom: isCustom(), strict: isCustom() && !!S.movie.strict });
   else remote.navigate(S.movie.url);
 }
 setInterval(keepOnTitle, 250);

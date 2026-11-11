@@ -69,10 +69,10 @@ test('setup keeps a copyable folder fallback when Explorer fails', async () => {
   assert.equal(result.folderOpened, false);
 });
 
-function panel({ host = true, version, brave = false, browserFound = true, update, access } = {}) {
+function panel({ host = true, version, brave = false, browserFound = true, update, access, theaterFailed = false } = {}) {
   const element = { innerHTML: '' };
   const context = vm.createContext({
-    S: { movie: { kind: 'service', service: 'netflix', title: 'Netflix', url: 'https://www.netflix.com/browse' }, extUpdate: update, people: [], extPackage: { helper: true },
+    S: { movie: { kind: 'service', service: 'netflix', title: 'Netflix', url: 'https://www.netflix.com/browse' }, extUpdate: update, people: [], extPackage: { helper: true }, netflixTheaterFailed: theaterFailed,
       info: { extensionDir: 'C:/Watch Party/app/extension', extensionSetup: { canInstall: true, managedDirectory: 'C:/Users/Viewer/AppData/Local/WatchParty/SyncExtension', browsers: browserFound ? ['chrome', 'edge', 'brave'] : [] } } },
     $: () => element, stage: { classList: { toggle() {} } },
     SERVICE_NAMES: { netflix: 'Netflix' }, remote: { present: !!version, version, access },
@@ -113,8 +113,12 @@ test('host and guest setup show the fixed user folder, precise browser steps and
   for (const version of ['1.17.8', '1.17.9', '1.17.10']) {
     const current = panel({ version });
     assert.doesNotMatch(current, /Your extension is old|development copy needs/);
-    assert.match(current, /Open Netflix in its own tab/);
+    assert.match(current, /Opening Netflix in Watch Party/);
+    assert.doesNotMatch(current, /separate tab|in its own tab/);
   }
+  const failed = panel({ version: '1.17.13', theaterFailed: true });
+  assert.match(failed, /Retry in Watch Party/);
+  assert.match(failed, /Open in separate tab/);
   const restricted = panel({ version: '1.17.10', access: { service: 'netflix', allowed: false, origin: 'https://www.netflix.com' } });
   assert.match(restricted, /needs site access/);
   assert.doesNotMatch(restricted, /Your extension is old/);

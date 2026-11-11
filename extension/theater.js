@@ -104,6 +104,7 @@ function load(url, custom, strict) {
   frameFailure = '';
   helpClosed = false;
   help.hidden = true;
+  document.getElementById('helpSeparate').hidden = true;
   const go = result => {
     if (seq !== loadSeq) return;
     if (!result || !result.ok) { showFrameFailure(result?.error || 'The extension could not prepare the player.'); return; }
@@ -153,8 +154,9 @@ function showFrameFailure(error) {
 }
 function checkStuck() {
   const m = lastStage;
-  const stuck = !!(m && m.show && !helpClosed && (frameFailure || (!m.linked && !m.browsing && waitingSince && Date.now() - waitingSince > 90000)));
+  const stuck = !!(m && m.show && !helpClosed && (frameFailure || (!m.linked && !m.browsing && !m.signin && waitingSince && Date.now() - waitingSince > 90000)));
   help.hidden = !stuck;
+  document.getElementById('helpSeparate').hidden = !stuck || svcOf(m.url) !== 'netflix';
   document.getElementById('helpText').textContent = frameFailure
     ? `Could not load the service here: ${frameFailure}` : 'Video has not connected yet. Retry inside Watch Party.';
   if (stuck && m.rect) Object.assign(help.style, { left: `${m.rect.x + 16}px`, top: `${m.rect.y + 16}px` });
@@ -162,6 +164,10 @@ function checkStuck() {
 setInterval(checkStuck, 2000);
 const help = document.getElementById('help');
 document.getElementById('helpX').addEventListener('click', () => { helpClosed = true; help.hidden = true; });
+document.getElementById('helpSeparate').addEventListener('click', () => {
+  if (help.hidden || document.getElementById('helpSeparate').hidden) return;
+  partyFrame.contentWindow.postMessage({ wpTheater: 'open-netflix-separate' }, partyOrigin());
+});
 document.getElementById('helpRetry').addEventListener('click', () => {
   if (!currentSvcUrl || !allowedServiceUrl(currentSvcUrl, !!customUrl)) return;
   waitingSince = Date.now();
@@ -203,7 +209,7 @@ window.addEventListener('message', e => {
     }
     if (!show && currentSvcUrl && !m.keep) { currentSvcUrl = ''; customUrl = ''; currentStrict = false; frameFailure = ''; loadSeq++; svc.src = 'about:blank'; }
     lastStage = { ...m, show };
-    if (show && !m.linked) { if (!waitingSince) waitingSince = Date.now(); } else waitingSince = 0;
+    if (show && !m.linked && !m.signin) { if (!waitingSince) waitingSince = Date.now(); } else waitingSince = 0;
     checkStuck();
   } else if (m.wpTheater === 'goto') {
     if (allowedServiceUrl(m.url, !!m.custom)) { navigateService(m.url, !!m.custom, !!m.strict); currentSvcUrl = m.url; }

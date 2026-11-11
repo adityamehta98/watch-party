@@ -1,8 +1,10 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.12**. Minimum playback-compatible version: **1.17.8**.
+Installed extension version: **1.17.13**. Minimum playback-compatible version: **1.17.8**.
 
-The complete regression suite passed: **327 tests, zero failures**. Results are in `build/cache/visible-updates-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+The complete regression suite passed: **333 tests, zero failures**. Results are in `build/cache/netflix-art-theater-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+
+Netflix opens inside Watch Party by default, including when joining or resuming a saved episode. The separate-tab option appears after the embedded player fails. The host fetches public Netflix title data for saved entries, matches the exact episode ID, and adds its artwork and episode label without changing the saved position. The current Akka entry was verified against Netflix's public title and image servers.
 
 ## Join and control latency
 
@@ -34,7 +36,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.12** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
+1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.13** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.

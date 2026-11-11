@@ -7,10 +7,31 @@ const vm = require('node:vm');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('Netflix launches in Watch Party once and the separate tab needs a failed launch', () => {
+  const app = read('public/js/app.js');
+  const requests = [], timers = new Map();
+  let external = 0;
+  const context = vm.createContext({ S: { movie: { service: 'netflix' }, name: 'Host' }, isTheater: false, clientId: 'hostid',
+    remote: { present: true, version: '1.17.13', post: msg => requests.push(msg), openTab() { external++; } }, extOutdated: () => false,
+    location: { origin: 'http://127.0.0.1:8765', pathname: '/host/test' }, theaterReportSoon() {}, renderServicePanel() {},
+    setTimeout(fn) { timers.set(1, fn); return 1; }, clearTimeout: id => timers.delete(id) });
+  vm.runInContext(app.slice(app.indexOf('function openNetflixInParty('), app.indexOf('function extensionBrowser(')) +
+    app.slice(app.indexOf('function enterTheater('), app.indexOf("try { if (sessionStorage.getItem('wp.staleReload')")), context);
+  context.openNetflixInParty(); context.openNetflixInParty(); context.openNetflixSeparate();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].type, 'theater');
+  assert.equal(external, 0);
+  timers.get(1)();
+  assert.equal(context.S.netflixTheaterFailed, true);
+  context.openNetflixSeparate(); context.openNetflixInParty();
+  assert.equal(external, 1);
+  assert.equal(requests.length, 1);
+});
+
 function theater() {
-  const elements = new Map(), messages = [], listeners = {}, runtime = [];
+  const elements = new Map(), messages = [], partyMessages = [], listeners = {}, runtime = [];
   const element = id => {
-    if (!elements.has(id)) elements.set(id, { hidden: true, style: {}, src: '', textContent: '', contentWindow: {},
+    if (!elements.has(id)) elements.set(id, { hidden: true, style: {}, src: '', textContent: '', contentWindow: { postMessage(...args) { partyMessages.push(args); } },
       addEventListener(type, fn) { this[type] = fn; }, removeAttribute() {} });
     return elements.get(id);
   };
@@ -25,7 +46,7 @@ function theater() {
   });
   vm.runInContext(read('extension/services.js'), context);
   vm.runInContext(read('extension/theater.js'), context);
-  return { context, element, messages,
+  return { context, element, messages, partyMessages,
     stage(url = 'https://www.netflix.com/search?q=Mashle', extra = {}) {
       listeners.message({ origin: 'http://127.0.0.1:8765', source: element('party').contentWindow, data: {
         wpTheater: 'stage', show: true, url, browsing: true, rect: { x: 0, y: 0, w: 1000, h: 700 }, ...extra,
@@ -87,13 +108,21 @@ test('frame errors appear during browsing and retry stays in the same Watch Part
   f.failure({ tabId: 8 });
   f.failure({}, { id: 'other-extension' });
   assert.equal(f.element('help').hidden, true);
+  assert.equal(f.element('helpSeparate').hidden, true);
+  f.element('helpSeparate').click();
+  assert.equal(f.partyMessages.length, 0);
   f.failure({});
   assert.equal(f.element('help').hidden, false);
   assert.match(f.element('helpText').textContent, /ERR_BLOCKED_BY_RESPONSE/);
+  assert.equal(f.element('helpSeparate').hidden, false);
+  f.element('helpSeparate').click();
+  assert.equal(f.partyMessages[0][0].wpTheater, 'open-netflix-separate');
+  assert.equal(f.partyMessages[0][1], 'http://127.0.0.1:8765');
   f.element('helpRetry').click();
   await tick();
   assert.equal(f.element('svc').src, 'https://www.netflix.com/search?q=Mashle');
   assert.equal(f.messages.at(-1).wp, 'theater-hello');
+  assert.equal(f.element('helpSeparate').hidden, true);
 });
 
 test('service helpers can be injected repeatedly after background reconnection', () => {

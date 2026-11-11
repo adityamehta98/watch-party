@@ -26,5 +26,5 @@ test('Chromium installation and linked controls remain available', () => {
   assert.match(panel({}), /watch-party-sync.zip/);
   const html = panel({}, { present: true, linked: true, version: '1.15.2', st: {} });
   assert.match(html, /Synced with your Netflix tab/);
-  assert.match(html, /Show the party next to Netflix/);
+  assert.doesNotMatch(html, /separate tab|Open Netflix again/);
 });
