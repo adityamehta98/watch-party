@@ -61,3 +61,35 @@ function wpSharedPageUrl(raw) {
   } catch { return ''; }
 }
 if (typeof self !== 'undefined') self.wpSharedPageUrl = wpSharedPageUrl;
+
+function wpPrimeAsset(raw) {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' && wpServiceOf(url.hostname) === 'prime' && !url.username && !url.password &&
+      /\/(?:detail|dp)\/[A-Za-z0-9]+(?:\/|$)/.test(url.pathname);
+  } catch { return false; }
+}
+function wpPrimeContentTitle(raw) {
+  const title = String(raw || '').replace(/\s+/g, ' ').trim();
+  return !!title && !/^(?:amazon(?:\.com)?\s*[:|–-]\s*)?(?:(?:amazon\s+)?prime\s+video)(?:\s*[:|–-]|$)/i.test(title) &&
+    !/^(?:home|ads?|advertisements?|commercial|trailer|teaser|preview)$/i.test(title);
+}
+function wpPrimeVisibleMarker(node) {
+    if (node.hidden || !String(node.textContent || '').trim()) return false;
+    if (node.checkVisibility) return node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+    if (node.getClientRects && !node.getClientRects().length) return false;
+    if (typeof getComputedStyle === 'function') for (let el = node; el; el = el.parentElement) {
+      const css = getComputedStyle(el);
+      if (css.display === 'none' || css.visibility === 'hidden' || css.opacity === '0') return false;
+    }
+    return true;
+}
+function wpPrimeAdActive(doc) {
+  const markers = doc.querySelectorAll('.atvwebplayersdk-adtimeindicator-text, [class*="atvwebplayersdk-ad-timer"], .atvwebplayersdk-ad-resume-message, .atvwebplayersdk-adcountdown, [data-testid="ad-countdown"]');
+  return [...markers].some(wpPrimeVisibleMarker);
+}
+function wpPrimePreviewActive(doc) {
+  return [...doc.querySelectorAll('.atvwebplayersdk-subtitle-text')].some(node =>
+    wpPrimeVisibleMarker(node) && /^(?:(?:official|season\s+\d+)\s+)?(?:trailer|teaser|preview)(?:\s*\d+)?$/i.test(String(node.textContent || '').trim()));
+}
+if (typeof module !== 'undefined') module.exports = { wpPrimeAsset, wpPrimeContentTitle };

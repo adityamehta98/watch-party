@@ -1,9 +1,10 @@
 'use strict';
 const services = require('./services');
 const { cleanNetflixMetadata } = require('./netflix-metadata');
+const { wpPrimeAsset, wpPrimeContentTitle } = require('../extension/services');
 
 function cleanPlayback(value) {
-  if (!value || !['file', 'service', 'youtube', 'catalog'].includes(value.kind) || !/^[a-z0-9]{1,80}$/i.test(value.id || '') ||
+  if (!value || value.ad || value.preview || !['file', 'service', 'youtube', 'catalog'].includes(value.kind) || !/^[a-z0-9]{1,80}$/i.test(value.id || '') ||
       !Number.isFinite(value.position) || value.position < 0 || !Number.isFinite(value.duration) || value.duration <= 0) return null;
   let identity = {};
   if (value.kind === 'service' || value.kind === 'youtube') {
@@ -11,6 +12,7 @@ function cleanPlayback(value) {
     const info = services.identify(value.url);
     if (!info || info.service !== value.service || value.browsing) return null;
     if (info.service === 'netflix' && !/^https:\/\/[^/]+\/watch\/\d+$/.test(info.url)) return null;
+    if (info.service === 'prime' && (!wpPrimeAsset(info.url) || !wpPrimeContentTitle(value.title))) return null;
     identity = { url: info.url, service: info.service, serviceName: info.name };
     const netflix = info.service === 'netflix' && cleanNetflixMetadata(value.netflix);
     if (netflix) identity.netflix = netflix;

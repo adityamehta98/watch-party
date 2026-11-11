@@ -95,6 +95,7 @@
     }
   });
   function player() {
+    if (service === 'prime' && (wpPrimeAdActive(document) || wpPrimePreviewActive(document) || !wpPrimeAsset(location.href))) return null;
     const videos = [...document.querySelectorAll('video')];
     const walk = root => { for (const el of root.querySelectorAll('*')) if (el.shadowRoot) { videos.push(...el.shadowRoot.querySelectorAll('video')); walk(el.shadowRoot); } };
     if (!videos.length) walk(document);
@@ -116,6 +117,7 @@
   function saveProgress(v, force = false) {
     const identity = WPPlayback.asset(location.href, service);
     if (!history || !identity || !restored || v.seeking || v.readyState < 2 || window.__wpPlaybackAd || unavailable || Date.now() < trackAfter) return;
+    if (service === 'prime' && (wpPrimeAdActive(document) || wpPrimePreviewActive(document) || !wpPrimeContentTitle(intent?.title))) return;
     if (saved && identity.assetId !== saved.assetId && !titleMatchesPlayer()) return;
     if (!titleMatchesPlayer() && saved?.assetId !== identity.assetId && verifiedAsset !== identity.assetId) return;
     if (!force && Date.now() - lastSaved < 5000) return;

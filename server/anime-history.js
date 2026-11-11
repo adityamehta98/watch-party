@@ -24,9 +24,11 @@ class AnimeHistory {
     try {
       const data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (!Array.isArray(data.episodes)) throw new Error('Invalid anime history');
+      let removedInvalidPlayback = false;
       for (const value of Array.isArray(data.playback) ? data.playback : []) {
         const entry = cleanPlayback(value);
         if (entry) this.playbackEntries.set(entry.id, entry);
+        else removedInvalidPlayback = true;
       }
       for (const id of Array.isArray(data.hiddenAnime) ? data.hiddenAnime : []) {
         if (Number.isSafeInteger(id) && id > 0) this.hiddenAnime.add(id);
@@ -38,6 +40,7 @@ class AnimeHistory {
           this.updatedAt = Math.max(this.updatedAt, entry.updatedAt);
         }
       }
+      if (removedInvalidPlayback) { this.dirty = true; this.flush(); }
     } catch (error) {
       if (error.code !== 'ENOENT') this.onError(error);
     }

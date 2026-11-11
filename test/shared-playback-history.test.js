@@ -36,7 +36,7 @@ test('Netflix viewing survives return Home, process restart, and resumes the exa
 test('guest, stale-title, preview, seek and unsettled reports cannot overwrite real progress', t => {
   const f = fixture(t); f.progress();
   f.progress(f.guest, { position: 1 });
-  for (const invalid of [{ movieId: 'old' }, { seq: -1 }, { ready: false }, { loaded: false }, { seeking: true }, { blocked: true }, { error: 4 }, { position: NaN }, { duration: 0 }]) f.progress(f.host, { position: 1, ...invalid });
+  for (const invalid of [{ movieId: 'old' }, { seq: -1 }, { ready: false }, { loaded: false }, { seeking: true }, { blocked: true }, { ad: true }, { preview: true }, { error: 4 }, { position: NaN }, { duration: 0 }]) f.progress(f.host, { position: 1, ...invalid });
   f.progress(f.host, { position: 1 }, 'https://www.netflix.com/browse');
   assert.equal(f.history.playbackList()[0].position, 726);
 });

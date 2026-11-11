@@ -69,6 +69,9 @@
   }
 
   function isAd(v) {
+    // Prerolls arrive before maxDur knows the feature length. Prime also plays
+    // previews on browse pages; neither may select a room title or save progress.
+    if (SERVICE === 'prime') return wpPrimeAdActive(document) || wpPrimePreviewActive(document) || !wpPrimeAsset(location.href) || !wpPrimeContentTitle(title());
     if (SERVICE === 'youtube' && document.querySelector('.ad-showing')) return true;
     const d = v.duration;
     // a much shorter video suddenly playing in place of the movie is almost always an ad break
@@ -101,7 +104,7 @@
     let t = (og && og.content) || document.title || '';
     t = t.replace(/\s*[|\-–]\s*(Netflix|Prime Video|Amazon\.com.*|Hulu|Peacock|Crunchyroll|Paramount\+|Max|HBO Max|Disney\+|Apple TV\+|YouTube)\s*$/i, '');
     t = t.replace(/^(Watch|Stream)\s+/i, '').trim();
-    if (/^(Netflix|Prime Video|Hulu|Peacock|Crunchyroll|Paramount\+|Max|Disney\+|Apple TV\+|Home)$/i.test(t)) t = '';
+    if (/^(Netflix|Prime Video|Hulu|Peacock|Crunchyroll|Paramount\+|Max|Disney\+|Apple TV\+|Home)$/i.test(t) || (SERVICE === 'prime' && !wpPrimeContentTitle(t))) t = '';
     return t.slice(0, 140);
   }
 

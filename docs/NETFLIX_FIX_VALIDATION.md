@@ -1,8 +1,10 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.13**. Minimum playback-compatible version: **1.17.8**.
+Installed extension version: **1.17.14**. Minimum playback-compatible version: **1.17.8**.
 
-The complete regression suite passed: **345 tests, zero failures**. Results are in `build/cache/netflix-finale-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+The complete regression suite passed: **350 tests, zero failures**. Results are in `build/cache/prime-history-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+
+Prime's reported false rows used `/addons`, `/movie`, and a detail-page video with the generic Prime landing-page title. History validation now rejects these entries on record/import/load, removing the three false saved rows. The service and catalog scripts detect visible Prime ad countdowns before a main-video duration exists, ignore browse previews and trailer metadata, and avoid overwriting the show's timestamp during ad breaks. Hidden ad controls do not suppress normal playback. Tests also retain genuine short named content; duration alone does not identify an ad. These are simulated player/DOM tests, not a live signed-in Prime ad session.
 
 Netflix opens inside Watch Party by default, including when joining or resuming a saved episode. The separate-tab option appears after the embedded player fails. The host fetches public Netflix title data for saved entries, matches the exact episode ID, and adds its artwork and episode label without changing the saved position. The current Akka entry was verified against Netflix's public title and image servers.
 
@@ -10,7 +12,7 @@ The previously missing images were reproduced against the live public Netflix pa
 
 A Netflix series leaves Continue watching within five minutes of its verified final episode, capped at half the runtime for short episodes, matching anime. The final episode is identified only from complete, unpaginated season and episode lists; a later season prevents the previous finale from completing the series. Unknown finality stays visible. The saved timestamps remain intact. Older metadata is refreshed to add the final-episode marker, and subsequent lookups refresh after six hours so new seasons can be recognized.
 
-Dismissal hides the current card, not future viewing. Selecting the same local movie, Netflix title, YouTube video or catalog title again restores its card while retaining progress and Netflix artwork. Old imports and ordinary playback reports cannot undo a dismissal. Continue watching, the player, library durations and side panel use `h:mm:ss` for hour-long media and `m:ss` below an hour. These app changes retain extension version 1.17.13; existing users only need to reload Watch Party.
+Dismissal hides the current card, not future viewing. Selecting the same local movie, Netflix title, YouTube video or catalog title again restores its card while retaining progress and Netflix artwork. Old imports and ordinary playback reports cannot undo a dismissal. Continue watching, the player, library durations and side panel use `h:mm:ss` for hour-long media and `m:ss` below an hour.
 
 ## Join and control latency
 
@@ -42,7 +44,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.13** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
+1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.14** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.

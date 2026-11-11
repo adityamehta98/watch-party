@@ -425,6 +425,8 @@ export class SyncPlayer {
       buffering,
       ready: loaded && this.clock.synced && v.readyState >= 3 && !v.seeking && nearTarget,
       blocked: this.blocked,
+      ad: !!(v.isAdapter && v.st?.ad),
+      preview: !!(v.isAdapter && v.st?.preview),
       ahead, health, rtt: Math.round(this.clock.rtt || 0),
       drift: Math.round(this.drift * 1000),
       seq: s ? s.seq : -1,

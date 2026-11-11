@@ -730,7 +730,7 @@ class Room {
         if (!isHost || !this.animeHistory || !Array.isArray(msg.entries)) return;
         const entries = msg.entries.slice(0, 500).flatMap(value => {
           const info = services.identify(value?.url);
-          if (!info || info.service !== value.service) return [];
+          if (!info || info.service !== value.service || value.ad || value.preview) return [];
           return [{ id: 'u' + crypto.createHash('sha1').update(info.url).digest('hex').slice(0, 11), kind: 'service',
             service: info.service, url: info.url, title: value.title, position: value.position, duration: value.duration,
             updatedAt: Math.min(Date.now(), Number(value.lastWatched) || 0) }];
@@ -741,7 +741,7 @@ class Room {
       case 'playback-progress': {
         const st = msg.status || {}, movie = this.movie;
         if (!isHost || !this.animeHistory || !movie || movie.kind === 'anime' || movie.browsing || st.movieId !== movie.id || st.seq !== this.state.seq ||
-          !st.loaded || !st.ready || st.seeking || st.error || st.blocked) return;
+          !st.loaded || !st.ready || st.seeking || st.error || st.blocked || st.ad || st.preview) return;
         if (movie.kind === 'service' && services.identify(msg.url)?.url !== movie.url) return;
         if (this.animeHistory.recordPlayback(movie, st.position, st.duration)) this.sendPlaybackHistory();
         if (movie.service === 'netflix') this.fillNetflixCards(movie.id);

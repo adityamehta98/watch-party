@@ -31,6 +31,7 @@ var WPPlayback = (() => {
     return { season: match ? Number(match[1]) : null, episode: match ? Number(match[2]) : null };
   }
   function clean(entry, service) {
+    if (entry?.ad || entry?.preview || (service === 'prime' && !wpPrimeContentTitle(entry?.title))) return null;
     const identity = entry && asset(entry.url, service);
     if (!identity || identity.assetId !== entry.assetId
       || !Number.isFinite(entry.position) || entry.position < 0 || !Number.isFinite(entry.duration) || entry.duration <= 0
