@@ -1078,7 +1078,8 @@ class Room {
     if (!this.netflixMetadata || !this.animeHistory || this.fillingNetflixCards) return;
     const entries = id ? [this.animeHistory.playbackEntries.get(id)] : this.animeHistory.playbackList();
     const now = Date.now();
-    const missing = entries.filter(entry => entry?.service === 'netflix' && !entry.hidden && !entry.netflix?.poster &&
+    const missing = entries.filter(entry => entry?.service === 'netflix' && !entry.hidden &&
+      (!entry.netflix?.poster || (entry.netflix.episode && typeof entry.netflix.finalEpisode !== 'boolean') || now - (entry.netflix.checkedAt || 0) > 6 * 3600e3) &&
       now - (this.netflixCardAttempts.get(entry.url) ?? -Infinity) > 15 * 60e3).slice(0, 6);
     if (!missing.length) return;
     this.fillingNetflixCards = true;

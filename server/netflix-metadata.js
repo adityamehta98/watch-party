@@ -22,6 +22,8 @@ function cleanNetflixMetadata(value) {
   const episode = Number.isSafeInteger(value.episode) && value.episode > 0 && value.episode < 10000 ? value.episode : null;
   return { title, poster: posterUrl(value.poster), episode, episodeTitle: episode ? label(value.episodeTitle) : '',
     ...(/^\d{1,12}$/.test(String(value.seriesId || '')) && episode ? { seriesId: String(value.seriesId) } : {}),
+    ...(episode && typeof value.finalEpisode === 'boolean' ? { finalEpisode: value.finalEpisode } : {}),
+    ...(Number.isFinite(value.checkedAt) && value.checkedAt > 0 ? { checkedAt: value.checkedAt } : {}),
     season: episode && Number.isSafeInteger(value.season) && value.season > 0 && value.season < 1000 ? value.season : null };
 }
 
@@ -63,21 +65,32 @@ function parseNetflixTitle(html, titleId, watchId, collectEpisode = () => {}) {
       const seasons = show?.seasons?.edges;
       if (!Array.isArray(seasons)) continue;
       let matched = null;
+      const inventory = [];
+      let complete = show.seasons.pageInfo?.hasNextPage === false && show.seasons.totalCount === seasons.length && seasons.length > 0;
+      const seasonNumbers = new Set();
       for (const edge of seasons) {
         const season = edge?.node;
         const episodes = season?.episodes?.edges;
-        if (!Array.isArray(episodes)) continue;
+        if (!Array.isArray(episodes)) { complete = false; continue; }
         const seasonNumber = /^(?:Season\s+)?(\d+)$/i.exec(season.numberLabelV2 || season.shortTitle || season.title || '');
+        const number = seasonNumber ? Number(seasonNumber[1]) : 0;
+        if (!number || seasonNumbers.has(number) || !episodes.length || season.episodes.pageInfo?.hasNextPage !== false) complete = false;
+        seasonNumbers.add(number);
         for (const edge of episodes) {
           const episode = edge?.node;
-          if (!episode || !/^\d{1,12}$/.test(String(episode.videoId))) continue;
+          if (!episode || !/^\d{1,12}$/.test(String(episode.videoId))) { complete = false; continue; }
           const metadata = cleanNetflixMetadata({ title: show.title || schema.name, seriesId: titleId, episode: episode.number, episodeTitle: episode.title,
             season: seasonNumber ? Number(seasonNumber[1]) : null,
             poster: posterUrl(show.boxshot300?.url) || posterUrl(schema.image) || posterUrl(episode.merchStill300?.url) });
-          if (!metadata?.episode) continue;
-          collectEpisode(String(episode.videoId), metadata);
+          if (!metadata?.episode) { complete = false; continue; }
+          inventory.push({ id: String(episode.videoId), metadata });
           if (String(episode.videoId) === watchId) matched = metadata;
         }
+      }
+      const last = complete ? [...inventory].sort((a, b) => b.metadata.season - a.metadata.season || b.metadata.episode - a.metadata.episode)[0] : null;
+      for (const { id, metadata } of inventory) {
+        if (last) metadata.finalEpisode = id === last.id;
+        collectEpisode(id, metadata);
       }
       if (matched) return matched;
     }
@@ -116,6 +129,7 @@ async function fetchNetflixMetadata(watchUrl, { request = fetch } = {}) {
     const episodes = [];
     const metadata = parseNetflixTitle(Buffer.concat(chunks).toString('utf8'), titlePath.exec(url.pathname)[1], watchId,
       (id, value) => episodes.push({ id, value }));
+    if (metadata) for (const value of [metadata, ...episodes.map(episode => episode.value)]) value.checkedAt = Date.now();
     if (request === fetch && metadata) {
       for (const { id, value } of [{ id: watchId, value: metadata }, ...episodes]) {
         cache.set(id, { value, until: Date.now() + 6 * 3600e3 });

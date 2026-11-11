@@ -4,13 +4,21 @@ const assert = require('node:assert/strict');
 const { cleanNetflixMetadata, fetchNetflixMetadata, parseNetflixTitle } = require('../server/netflix-metadata');
 
 const poster = 'https://occ-1.nflxso.net/dnm/api/v6/official.jpg?r=6b3';
-function page(field = 'data') {
+function page(field = 'data', { complete = false, secondSeason = false } = {}) {
   const show = { __typename: 'Show', videoId: 81772075, title: 'Akka', seasons: { edges: [{ node: {
     title: 'Season 1', episodes: { edges: [
       { node: { videoId: 82006998, number: 1, title: 'The Sisterhood' } },
       { node: { videoId: 82006999, number: 2, title: 'Wounds and Scars' } },
     ] },
   } }] } };
+  if (secondSeason) show.seasons.edges.unshift({ node: { title: 'Season 2', episodes: { edges: [
+    { node: { videoId: 82008001, number: 1, title: 'New season' } },
+  ] } } });
+  if (complete) {
+    show.seasons.totalCount = show.seasons.edges.length;
+    show.seasons.pageInfo = { hasNextPage: false };
+    for (const edge of show.seasons.edges) edge.node.episodes.pageInfo = { hasNextPage: false };
+  }
   const context = { models: { graphqlClcs: { data: { result: { clcsHookV2: { result: { screen: {
     componentTree: { nodes: [{ [field]: { videos: [show] } }] },
   } } } } } } } };
@@ -46,6 +54,36 @@ test('the shelf shows only the last watched episode, even if it has a lower epis
   assert.deepEqual(playbackResumeEntries([{ ...first, updatedAt: 30 }, fifth]).map(e => e.id), ['ep1']);
   assert.equal(playbackResumeEntries([first, { ...fifth, hidden: true }]).length, 0);
   assert.equal(playbackResumeEntries([first, { ...fifth, position: 999 }]).length, 0);
+});
+
+test('the final episode is verified across all seasons, never from an incomplete page', () => {
+  const last = parseNetflixTitle(page('data', { complete: true }), '81772075', '82006999');
+  assert.equal(last.finalEpisode, true);
+  assert.equal(cleanNetflixMetadata(last).finalEpisode, true);
+  assert.equal(parseNetflixTitle(page('data', { complete: true }), '81772075', '82006998').finalEpisode, false);
+  assert.equal(parseNetflixTitle(page(), '81772075', '82006999').finalEpisode, undefined);
+  const paginated = page('data', { complete: true }).replace('"hasNextPage":false', '"hasNextPage":true');
+  assert.equal(parseNetflixTitle(paginated, '81772075', '82006999').finalEpisode, undefined);
+});
+
+test('a later available season prevents the previous season finale from completing the series', () => {
+  const html = page('webLoggedOutDetailPage_data', { complete: true, secondSeason: true });
+  assert.equal(parseNetflixTitle(html, '81772075', '82006999').finalEpisode, false);
+  assert.equal(parseNetflixTitle(html, '81772075', '82008001').finalEpisode, true);
+});
+
+test('the known series finale hides within five minutes without exposing an older episode', async () => {
+  const { playbackResumeEntries } = await import('../public/js/playback-resume.js');
+  const final = { id: 'final', service: 'netflix', position: 2100, duration: 2400, updatedAt: 20,
+    netflix: { seriesId: '123', title: 'Series', episode: 5, finalEpisode: true } };
+  const prior = { ...final, id: 'prior', updatedAt: 10, netflix: { ...final.netflix, episode: 4, finalEpisode: false } };
+  assert.equal(playbackResumeEntries([prior, final]).length, 0);
+  assert.equal(playbackResumeEntries([prior, { ...final, position: 2099 }])[0].id, 'final');
+  for (const finalEpisode of [undefined, false]) {
+    assert.equal(playbackResumeEntries([{ ...final, netflix: { ...final.netflix, finalEpisode } }]).length, 1);
+  }
+  assert.equal(playbackResumeEntries([{ ...final, position: 50, duration: 240 }]).length, 1, 'do not mark a short episode finished near its start');
+  assert.equal(final.position, 2100, 'shelf filtering preserves saved progress');
 });
 
 test('Netflix movies get artwork without an episode number', () => {

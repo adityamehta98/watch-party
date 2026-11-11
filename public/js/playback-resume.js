@@ -14,7 +14,11 @@ export function playbackResumeEntries(entries) {
   }
   // Filter after grouping: hiding/completing the latest episode must not expose
   // an older episode of that series as a new Continue watching card.
-  return [...groups.values()].filter(entry => !entry.hidden && entry.position < entry.duration - Math.min(30, entry.duration * .02));
+  return [...groups.values()].filter(entry => {
+    const seriesFinished = entry.service === 'netflix' && entry.netflix?.finalEpisode === true && entry.position > 0 &&
+      entry.duration - entry.position <= Math.min(300, entry.duration / 2);
+    return !entry.hidden && !seriesFinished && entry.position < entry.duration - Math.min(30, entry.duration * .02);
+  });
 }
 export function playbackResumeCard(entry, canDismiss) {
   const percent = Math.max(0, Math.min(100, entry.position / entry.duration * 100));
