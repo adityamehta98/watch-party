@@ -72,6 +72,31 @@ test('old extension progress imports once and preserves newer host progress and 
   assert.equal(f.history.playbackList()[0].position, 90);
   assert.doesNotMatch(fs.readFileSync(f.file, 'utf8'), /trackId|secret/);
 });
+
+for (const kind of ['file', 'netflix', 'youtube', 'catalog']) test(`a dismissed ${kind} card returns on a new selection, retains progress and survives restart`, t => {
+  const f = fixture(t);
+  f.room.library = { playable: id => ({ id, title: 'Local movie', duration: 7200, subs: [] }) };
+  f.room.catalog = { resolve: () => ({ ref: { type: 'movie', tmdbId: 99 }, sourceId: 'test', duration: 7200 }) };
+  const select = () => {
+    if (kind === 'file') f.room.selectMovie(f.host, 'localmovie1');
+    else if (kind === 'catalog') f.room.selectCatalog(f.host, { ref: { type: 'movie', tmdbId: 99 }, title: 'Catalog movie' });
+    else f.room.selectUrl(f.host, kind === 'netflix' ? 'https://www.netflix.com/watch/12345' : 'https://www.youtube.com/watch?v=abcdefghijk', kind === 'netflix');
+  };
+  f.room.selectMovie(f.host, null); select(); f.progress();
+  const id = f.room.movie.id;
+  const netflixArtwork = { title: 'Akka', episode: 1, episodeTitle: 'The Sisterhood', poster: 'https://occ-1.nflxso.net/dnm/api/v6/original-netflix.jpg?r=123' };
+  if (kind === 'netflix') f.history.setNetflixMetadata(id, f.room.movie.url, netflixArtwork);
+  f.history.dismissPlayback(id);
+  f.progress(f.host, { position: 727 });
+  assert.equal(f.history.playbackEntries.get(id).hidden, true, 'ordinary status cannot undo the cross button');
+  f.room.selectMovie(f.host, null); select();
+  const restored = new AnimeHistory(f.file).playbackEntries.get(id);
+  assert.equal(restored.hidden, false);
+  assert.equal(restored.position, 727);
+  if (kind === 'netflix') assert.equal(restored.netflix.poster, netflixArtwork.poster, 'replay must retain the same Netflix thumbnail');
+  f.progress(f.host, { position: 800 });
+  assert.equal(new AnimeHistory(f.file).playbackEntries.get(id).hidden, false);
+});
 test('cache cleanup removes generated data and preserves progress, settings, certificates and unrelated files', t => {
   const f = fixture(t); f.progress();
   for (const name of ['config.json', 'https-cert.json', 'notes.txt', 'probe-cache.json', 'status.json', '123456abcdef.mp4']) fs.writeFileSync(path.join(f.root, name), name);

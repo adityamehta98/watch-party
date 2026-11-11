@@ -12,7 +12,8 @@ export function animeSeriesFinished(entries) {
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const time = value => {
   const seconds = Math.floor(Math.max(0, Number(value) || 0));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
+  return `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
 function animeResumeAction(entry) {

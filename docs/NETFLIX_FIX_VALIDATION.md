@@ -2,9 +2,11 @@
 
 Installed extension version: **1.17.13**. Minimum playback-compatible version: **1.17.8**.
 
-The complete regression suite passed: **333 tests, zero failures**. Results are in `build/cache/netflix-art-theater-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+The complete regression suite passed: **340 tests, zero failures**. Results are in `build/cache/history-replay-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
 
 Netflix opens inside Watch Party by default, including when joining or resuming a saved episode. The separate-tab option appears after the embedded player fails. The host fetches public Netflix title data for saved entries, matches the exact episode ID, and adds its artwork and episode label without changing the saved position. The current Akka entry was verified against Netflix's public title and image servers.
+
+Dismissal hides the current card, not future viewing. Selecting the same local movie, Netflix title, YouTube video or catalog title again restores its card while retaining progress and Netflix artwork. Old imports and ordinary playback reports cannot undo a dismissal. Continue watching, the player, library durations and side panel use `h:mm:ss` for hour-long media and `m:ss` below an hour. These app changes retain extension version 1.17.13; existing users only need to reload Watch Party.
 
 ## Join and control latency
 

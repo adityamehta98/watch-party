@@ -29,7 +29,7 @@ function fmtTime(t) {
   const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = Math.floor(t % 60);
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
-function fmtDur(t) { if (t < 60) return `${Math.round(t)}s`; const h = Math.floor(t / 3600), m = Math.round((t % 3600) / 60); return h ? `${h}h ${m}m` : `${m}m`; }
+function fmtDur(t) { return fmtTime(t); }
 function fmtEta(s) { if (s == null) return ''; if (s < 60) return `${s}s left`; const m = Math.round(s / 60); return m < 60 ? `${m} min left` : `${Math.floor(m / 60)}h ${m % 60}m left`; }
 function hue(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 const avatar = (name, cls = 'av') => `<span class="${cls}" style="background:hsl(${hue(name)} 70% 68%)">${esc((name || '?').trim().charAt(0).toUpperCase())}</span>`;

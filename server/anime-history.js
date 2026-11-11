@@ -84,6 +84,11 @@ class AnimeHistory {
     if (!entry || entry.hidden) return false;
     entry.hidden = true; this.schedule(); this.flush(); return true;
   }
+  restorePlayback(id) {
+    const entry = this.playbackEntries.get(id);
+    if (!entry?.hidden) return false;
+    entry.hidden = false; this.schedule(); this.flush(); return true;
+  }
 
   dismiss(id) {
     if (!Number.isSafeInteger(id) || !this.list().some(entry => entry.anilistId === id) || this.hiddenAnime.has(id)) return false;

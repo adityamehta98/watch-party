@@ -494,6 +494,7 @@ class Room {
     }
     const p = this.library.playable(id);
     if (!p) { this.toast(client, 'That movie needs to be prepared first.', 'error'); return; }
+    if (this.animeHistory?.restorePlayback(id)) this.sendPlaybackHistory();
     this.movie = { ...p, kind: 'file' };
     this.broadcast({ type: 'movie', movie: this.publicMovie() });
     // Start playing right away so the host doesn't have to click Play after Show in room.
@@ -532,6 +533,7 @@ class Room {
       return;
     }
     const browsing = !!opts.browsing; // the service's front page: the host is picking something
+    if (!browsing && this.animeHistory?.restorePlayback(id)) { this.sendPlaybackHistory(); this.fillNetflixCards(id); }
     const title = String(opts.title || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140);
     const requestedFrom = opts.follow && opts.advanceFrom ? services.identify(opts.advanceFrom) : null;
     const advanceFrom = requestedFrom && previous && previous.kind === 'service' && previous.service === 'netflix' && info.service === 'netflix'
@@ -625,6 +627,7 @@ class Room {
     const position = sameTitle ? this.currentPosition() : 0;
     const id = 'c' + crypto.createHash('sha1').update(`${refKey}:${resolved.sourceId}`).digest('hex').slice(0, 11);
     if (this.movie && this.movie.id === id) return;
+    if (this.animeHistory?.restorePlayback(id)) this.sendPlaybackHistory();
     this.movie = { id, kind: 'catalog', service: 'catalog', serviceName: 'Movies & TV', title,
       duration: resolved.duration, hlsPath: resolved.hlsPath, urlPath: resolved.urlPath, subtitles: resolved.subtitles,
       language: resolved.language, languageLabel: resolved.languageLabel, languages: resolved.languages, quality: resolved.quality,
@@ -907,7 +910,9 @@ class Room {
           } else {
             const label = String(msg.label || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 80);
             const position = Math.round(this.currentPosition() * 10) / 10;
-            this.bookmarks.push({ id: randKey(8), movieId: this.movie.id, position, label: label || `Scene at ${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`, from: client.id, name: client.name, ts: Date.now() });
+            const hours = Math.floor(position / 3600), minutes = Math.floor(position / 60) % 60;
+            const time = `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(Math.floor(position % 60)).padStart(2, '0')}`;
+            this.bookmarks.push({ id: randKey(8), movieId: this.movie.id, position, label: label || `Scene at ${time}`, from: client.id, name: client.name, ts: Date.now() });
             if (this.bookmarks.length > 40) this.bookmarks.shift();
           }
           this.broadcast({ type: 'bookmarks', bookmarks: this.bookmarks });

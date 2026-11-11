@@ -1,5 +1,9 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const time = value => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
+const time = value => {
+  const seconds = Math.floor(Math.max(0, Number(value) || 0));
+  const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
+  return `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
+};
 export function playbackResumeCard(entry, canDismiss) {
   const percent = Math.max(0, Math.min(100, entry.position / entry.duration * 100));
   const stamp = `${time(entry.position)} / ${time(entry.duration)}`;
