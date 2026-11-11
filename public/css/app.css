@@ -672,6 +672,57 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .yt-card .m { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
 .yt-open { position: absolute; left: 14px; top: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 99px; border: 0; background: rgba(0,0,0,.65); color: #fff; font-weight: 700; cursor: pointer; backdrop-filter: blur(6px); }
 .yt-open svg { width: 16px; height: 16px; }
+.yt-browser { background: #0f0f0f; color: #f1f1f1; }
+.yt-browser[hidden] { display: none; }
+.yt-top { padding: 18px 24px; border-bottom: 0; gap: 20px; }
+.yt-logo { background: transparent; font-size: 20px; letter-spacing: -.8px; }
+.yt-logo::before { content: '▶'; display: inline-grid; place-items: center; width: 32px; height: 23px; margin-right: 5px; background: #ff0033; border-radius: 7px; font-size: 13px; vertical-align: middle; }
+.yt-search { max-width: 680px; margin: auto; gap: 0; }
+.yt-search input { height: 42px; border-radius: 24px 0 0 24px; background: #121212; border-color: #333; padding-left: 20px; }
+.yt-search button { border-radius: 0 24px 24px 0; padding: 0 22px; background: #272727; border: 1px solid #333; color: white; }
+.yt-nav { display: flex; gap: 8px; padding: 0 24px 12px; border-bottom: 1px solid #292929; }
+.yt-nav button { background: transparent; border: 0; color: #aaa; border-radius: 8px; padding: 10px 16px; font: inherit; cursor: pointer; }
+.yt-nav button:hover, .yt-nav button.selected { background: #272727; color: #fff; }
+.yt-view-heading { font-size: 21px; font-weight: 700; margin: 22px 24px 6px; }
+.yt-chips { flex-wrap: nowrap; overflow-x: auto; flex: none; padding: 12px 24px; }
+.yt-chips button { white-space: nowrap; border: 0; border-radius: 8px; background: #272727; font-weight: 600; }
+.yt-results { padding: 16px 24px 28px; gap: 28px 18px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.yt-card .t { font-size: 15px; line-height: 1.45; }
+.yt-card .m { color: #aaa; line-height: 1.5; }
+.yt-card:focus-visible { outline: 2px solid #fff; outline-offset: 5px; }
+@media (max-width: 1099px) {
+  .yt-browser { position: fixed; top: var(--topbar); bottom: 0; left: 0; right: 0; z-index: 35; }
+}
+@media (min-width: 1100px) {
+  .youtube-browse-watch { --yt-rail: 300px; }
+  .youtube-browse-watch .yt-host, .youtube-browse-watch .click-layer { right: var(--yt-rail); }
+  .youtube-browse-watch .controls { right: var(--yt-rail); }
+  .youtube-browse-watch .controls #camBtn, .youtube-browse-watch .controls #micBtn,
+  .youtube-browse-watch .controls #pipBtn, .youtube-browse-watch .controls #ambientBtn,
+  .youtube-browse-watch .controls #ecoBtn { display: none; }
+  .youtube-browse-watch .controls .compact-more { display: block; }
+  .youtube-browse-watch .controls .ctrl { width: 34px; min-width: 34px; }
+  .youtube-browse-watch .controls .time { font-size: 11px; }
+  .youtube-browse-watch .controls .volume input { width: 65px; }
+  .youtube-browse-watch .yt-browser { left: auto; width: var(--yt-rail); border-left: 1px solid #292929; }
+  .youtube-browse-watch .yt-top { padding: 12px; gap: 8px; flex-wrap: wrap; }
+  .youtube-browse-watch .yt-logo { font-size: 17px; }
+  .youtube-browse-watch .yt-search { order: 3; flex-basis: 100%; }
+  .youtube-browse-watch .yt-top > .icon-btn { margin-left: auto; }
+  .youtube-browse-watch .yt-nav { padding: 8px; gap: 0; }
+  .youtube-browse-watch .yt-nav button { font-size: 11px; padding: 8px; }
+  .youtube-browse-watch .yt-view-heading { margin: 16px 12px 0; font-size: 17px; }
+  .youtube-browse-watch .yt-chips { display: none; }
+  .youtube-browse-watch .yt-results { display: flex; flex-direction: column; padding: 12px; gap: 18px; }
+  .youtube-browse-watch .yt-card { width: 100%; }
+}
+@media (max-width: 600px) {
+  .yt-top { flex-wrap: wrap; padding: 12px; gap: 10px; }
+  .yt-top .yt-search { order: 3; flex-basis: 100%; }
+  .yt-top > .icon-btn { margin-left: auto; }
+  .yt-results { grid-template-columns: 1fr; padding: 12px; }
+  .yt-nav { padding-left: 12px; }
+}
 .stage[data-idle="true"] .yt-open { opacity: 0; pointer-events: none; }
 /* camera and mic up top while a streaming service's own player fills the movie area */
 .tb-media { display: none; gap: 2px; }

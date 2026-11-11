@@ -525,6 +525,11 @@ function loadMovie(movie) {
   stage.classList.toggle('has-movie', !!movie);
   $('#app').classList.toggle('at-home', !movie);
   stage.dataset.kind = kindOf(movie);
+  if (!same && movie?.kind === 'youtube') {
+    if (matchMedia('(min-width: 1100px)').matches) openYouTube();
+    else closeYouTube();
+  }
+  if (movie?.kind !== 'youtube') stage.classList.remove('youtube-browse-watch');
   renderAnimeOverlay();
   $('#ytOpen').hidden = kindOf(movie) !== 'youtube';
   renderNowPlaying();
@@ -2962,24 +2967,41 @@ const YT_CHIPS = ['Music', 'Movie trailers', 'Bollywood songs', 'Comedy', 'Crick
 function openYouTube() {
   $('#ytChips').innerHTML = YT_CHIPS.map(c => `<button type="button" data-yq="${esc(c)}">${esc(c)}</button>`).join('');
   $('#ytBrowser').hidden = false;
+  stage.classList.toggle('youtube-browse-watch', S.movie?.kind === 'youtube');
   setTab('chat');
   const q = $('#ytQuery');
   setTimeout(() => q.focus(), 30);
-  if (!$('#ytResults').childElementCount) ytSearch(YT_CHIPS[0]);
+  if (S.movie?.kind === 'youtube') ytBrowse(ytActivePlaylist ? 'playlist' : 'related', ytActivePlaylist);
+  else if (!$('#ytResults').childElementCount) ytSearch(YT_CHIPS[0]);
 }
-function closeYouTube() { $('#ytBrowser').hidden = true; }
+function closeYouTube() { $('#ytBrowser').hidden = true; stage.classList.remove('youtube-browse-watch'); }
 let ytSeq = 0;
-async function ytSearch(q) {
+let ytView = 'search';
+let ytActivePlaylist = '';
+function ytBrowse(mode, id = '') {
+  ytActivePlaylist = mode === 'playlist' ? id : '';
+  if (mode === 'home') { ytSearch('Popular videos'); return; }
+  if (mode === 'related' && !S.movie?.videoId) { $('#ytStatus').textContent = 'Play a video to see more like it.'; return; }
+  ytSearch(mode === 'related' ? S.movie.title : mode === 'playlist' ? 'Playlist' : $('#ytQuery').value || S.movie?.title || 'Popular playlists', { mode, id: id || (mode === 'related' ? S.movie.videoId : '') });
+}
+async function ytSearch(q, options = {}) {
   q = String(q || '').trim();
   if (!q) return;
   // a pasted link plays straight away
-  if (/^https?:\/\//i.test(q) || /youtu\.?be/i.test(q)) { conn.send({ type: 'select-url', url: q }); closeYouTube(); $('#ytQuery').value = ''; return; }
+  if (!options.mode && (/^https?:\/\//i.test(q) || /^(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(q))) {
+    try { const link = new URL(q); if (/(^|\.)(youtube\.com|youtu\.be)$/.test(link.hostname) && link.searchParams.has('list')) { ytBrowse('playlist', link.searchParams.get('list')); return; } } catch {}
+    conn.send({ type: 'select-url', url: q }); closeYouTube(); $('#ytQuery').value = ''; return;
+  }
   const seq = ++ytSeq;
+  ytView = options.mode || 'search';
+  $('#ytViewHeading').textContent = ({ related: 'More like this', playlist: 'Playlist videos', playlists: 'Playlists' })[ytView] || `Results for ${q}`;
+  for (const b of $$('.yt-nav button')) b.classList.toggle('selected', b.dataset.ytView === ytView);
+  $('#ytResults').innerHTML = '';
   $('#ytStatus').textContent = `Searching for "${q}"…`;
   // Guests search through the host's PC too (over the room connection).
-  if (!isHost) { ytPendingQ = q; conn.send({ type: 'yt-search', q }); return; }
+  if (!isHost) { ytPendingQ = q; conn.send({ type: 'yt-search', q, ...options, request: seq }); return; }
   try {
-    const r = await api(`/api/youtube/search?q=${encodeURIComponent(q)}`);
+    const r = await api(`/api/youtube/search?${new URLSearchParams({ q, ...options })}`);
     if (seq !== ytSeq) return;
     showYtResults(q, r.results || []);
   } catch (e) {
@@ -2988,14 +3010,14 @@ async function ytSearch(q) {
 }
 let ytPendingQ = null;
 function onYtResults(m) {
-  if (isHost || m.q !== ytPendingQ) return;
+  if (isHost || m.q !== ytPendingQ || m.request != null && m.request !== ytSeq) return;
   if (m.error) { $('#ytStatus').textContent = m.error; return; }
   showYtResults(m.q, m.results || []);
 }
 function showYtResults(q, list) {
   {
-    $('#ytStatus').textContent = list.length ? '' : `Nothing found for "${q}".`;
-    $('#ytResults').innerHTML = list.map(v => `<button type="button" class="yt-card" data-yid="${esc(v.id)}" title="${esc(v.title)}">
+    $('#ytStatus').textContent = list.length ? `${list.length} ${ytView === 'playlists' ? 'playlists' : 'videos'}` : `No ${ytView === 'playlists' ? 'public playlists' : 'videos'} available. Try another search.`;
+    $('#ytResults').innerHTML = list.map(v => `<button type="button" class="yt-card" ${v.playlist ? 'data-yplaylist' : 'data-yid'}="${esc(v.id)}" title="${esc(v.title)}">
       <div class="th"><img src="${esc(v.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">${v.live ? '<span class="dur live">LIVE</span>' : v.duration ? `<span class="dur">${esc(v.duration)}</span>` : ''}</div>
       <div class="t">${esc(v.title)}</div><div class="m">${esc([v.channel, v.views, v.when].filter(Boolean).join(' · '))}</div></button>`).join('');
     $('#ytResults').scrollTop = 0;
@@ -3004,11 +3026,14 @@ function showYtResults(q, list) {
 $('#ytSearchForm').addEventListener('submit', e => { e.preventDefault(); ytSearch($('#ytQuery').value); });
 $('#ytChips').addEventListener('click', e => { const b = e.target.closest('[data-yq]'); if (b) { $('#ytQuery').value = b.dataset.yq; ytSearch(b.dataset.yq); } });
 $('#ytResults').addEventListener('click', e => {
+  const playlist = e.target.closest('[data-yplaylist]');
+  if (playlist) { ytBrowse('playlist', playlist.dataset.yplaylist); return; }
   const b = e.target.closest('[data-yid]');
   if (!b) return;
   conn.send({ type: 'select-url', url: `https://www.youtube.com/watch?v=${b.dataset.yid}` });
-  closeYouTube();
+  if (ytView !== 'playlist') closeYouTube();
 });
+$('.yt-nav').addEventListener('click', e => { const b = e.target.closest('[data-yt-view]'); if (b) ytBrowse(b.dataset.ytView); });
 $('#ytClose').addEventListener('click', closeYouTube);
 $('#ytOpen').addEventListener('click', openYouTube);
 $('#ytBrowser').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeYouTube(); } });

@@ -954,8 +954,8 @@ class Room {
           const run = () => {
             client.ytTimer = null; client.lastYt = Date.now();
             if (client.closed) return;
-            this.limitedTask(client, 'yt-search', () => this.ytSearch(q).then(results => this.send(client.ws, { type: 'yt-results', q, results }))
-              .catch(e => this.send(client.ws, { type: 'yt-results', q, error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` })));
+            this.limitedTask(client, 'yt-search', () => this.ytSearch(q, { mode: msg.mode, id: msg.id }).then(results => this.send(client.ws, { type: 'yt-results', q, results, request: msg.request }))
+              .catch(e => this.send(client.ws, { type: 'yt-results', q, request: msg.request, error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` })));
           };
           clearTimeout(client.ytTimer);
           const wait = client.lastYt ? 1000 - (Date.now() - client.lastYt) : 0;

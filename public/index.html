@@ -127,9 +127,11 @@
         <div class="yt-browser" id="ytBrowser" hidden>
           <div class="yt-top">
             <span class="yt-logo">YouTube</span>
-            <form class="yt-search" id="ytSearchForm" autocomplete="off"><input id="ytQuery" placeholder="Search YouTube, or paste a video link" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
+            <form class="yt-search" id="ytSearchForm" autocomplete="off"><input id="ytQuery" aria-label="Search YouTube" placeholder="Search videos, playlists, or paste a link" spellcheck="false"><button class="btn sm" type="submit">Search</button></form>
             <button class="icon-btn" id="ytClose" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
           </div>
+          <nav class="yt-nav" aria-label="YouTube browsing"><button type="button" data-yt-view="home">Home</button><button type="button" data-yt-view="related">More like this</button><button type="button" data-yt-view="playlists">Playlists</button></nav>
+          <div class="yt-view-heading" id="ytViewHeading">Discover</div>
           <div class="yt-chips" id="ytChips"></div>
           <div class="yt-status fine" id="ytStatus"></div>
           <div class="yt-results" id="ytResults"></div>

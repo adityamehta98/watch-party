@@ -142,7 +142,7 @@ const toolState = { ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, encoders: null }
 const library = new Library({ config, tools: toolState, save });
 // YouTube search for guests with control (the host's page asks through /api/youtube/search)
 const ytFetch = process.env.WP_TEST_YT_HTML ? async () => ({ ok: true, text: () => fs.promises.readFile(process.env.WP_TEST_YT_HTML, 'utf8') }) : undefined;
-const ytSearchFn = q => youtube.search(q, ytFetch);
+const ytSearchFn = (q, options) => youtube.search(q, ytFetch, options);
 anime.init(config.adminKey); // sign the anime proxy links with the admin key
 remoteMedia.init(config.adminKey);
 const catalog = new Catalog({ config, remoteMedia });
@@ -517,7 +517,8 @@ async function api(req, res, p) {
   if (p === '/api/youtube/search') {
     const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
     try {
-      return sendJson(res, 200, { results: await ytSearchFn(q) });
+      const params = new URL(req.url, 'http://x').searchParams;
+      return sendJson(res, 200, { results: await ytSearchFn(q, { mode: params.get('mode'), id: params.get('id') }) });
     } catch (e) { return sendJson(res, 502, { error: `Couldn't search YouTube right now (${e.message}). You can still paste a video link.` }); }
   }
   if (p === '/api/anime/search') {
