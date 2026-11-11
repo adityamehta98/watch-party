@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { cleanNetflixMetadata, fetchNetflixMetadata, parseNetflixTitle } = require('../server/netflix-metadata');
 
 const poster = 'https://occ-1.nflxso.net/dnm/api/v6/official.jpg?r=6b3';
-function page() {
+function page(field = 'data') {
   const show = { __typename: 'Show', videoId: 81772075, title: 'Akka', seasons: { edges: [{ node: {
     title: 'Season 1', episodes: { edges: [
       { node: { videoId: 82006998, number: 1, title: 'The Sisterhood' } },
@@ -12,17 +12,40 @@ function page() {
     ] },
   } }] } };
   const context = { models: { graphqlClcs: { data: { result: { clcsHookV2: { result: { screen: {
-    componentTree: { nodes: [{ data: { videos: [show] } }] },
+    componentTree: { nodes: [{ [field]: { videos: [show] } }] },
   } } } } } } } };
   return `<script type="application/ld+json">${JSON.stringify({ '@type': 'TVSeries', url: 'https://www.netflix.com/title/81772075', name: 'Akka', image: poster })}</script>
     <script>netflix.reactContext = ${JSON.stringify(context).replaceAll('The Sisterhood', 'The\\x20Sisterhood')};</script>`;
 }
 
 test('official title pages match the watched episode ID and use the show artwork', () => {
-  assert.deepEqual(parseNetflixTitle(page(), '81772075', '82006998'), { title: 'Akka', poster, episode: 1, episodeTitle: 'The Sisterhood', season: 1 });
+  assert.deepEqual(parseNetflixTitle(page(), '81772075', '82006998'), { title: 'Akka', seriesId: '81772075', poster, episode: 1, episodeTitle: 'The Sisterhood', season: 1 });
   assert.equal(parseNetflixTitle(page(), '81772075', '82006999').episode, 2);
   assert.equal(parseNetflixTitle(page(), '81772075', '00000000'), null);
   assert.equal(parseNetflixTitle(page(), '11111111', '82006998'), null);
+});
+
+test('Netflix component variants still resolve artwork and collect every verified episode identity', () => {
+  for (const field of ['data', 'webLoggedOutDetailPage_data']) {
+    const episodes = new Map();
+    const result = parseNetflixTitle(page(field), '81772075', '82006999', (id, metadata) => episodes.set(id, metadata));
+    assert.equal(result.poster, poster);
+    assert.equal(result.seriesId, '81772075');
+    assert.equal(result.episode, 2);
+    assert.equal(episodes.get('82006998').episode, 1);
+    assert.equal(episodes.get('82006998').poster, result.poster);
+  }
+});
+
+test('the shelf shows only the last watched episode, even if it has a lower episode number', async () => {
+  const { playbackResumeEntries } = await import('../public/js/playback-resume.js');
+  const first = { id: 'ep1', service: 'netflix', position: 50, duration: 1000, updatedAt: 10, netflix: { seriesId: '123', title: 'Same name', episode: 1 } };
+  const fifth = { ...first, id: 'ep5', updatedAt: 20, netflix: { ...first.netflix, episode: 5 } };
+  const other = { ...first, id: 'other', netflix: { ...first.netflix, seriesId: '456' } };
+  assert.deepEqual(playbackResumeEntries([first, fifth, other]).map(e => e.id), ['ep5', 'other']);
+  assert.deepEqual(playbackResumeEntries([{ ...first, updatedAt: 30 }, fifth]).map(e => e.id), ['ep1']);
+  assert.equal(playbackResumeEntries([first, { ...fifth, hidden: true }]).length, 0);
+  assert.equal(playbackResumeEntries([first, { ...fifth, position: 999 }]).length, 0);
 });
 
 test('Netflix movies get artwork without an episode number', () => {

@@ -4,6 +4,18 @@ const time = value => {
   const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
   return `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
 };
+export function playbackResumeEntries(entries) {
+  const groups = new Map();
+  for (const entry of [...entries].sort((a, b) => b.updatedAt - a.updatedAt)) {
+    const series = entry.service === 'netflix' && entry.netflix?.episode
+      ? `netflix:${entry.netflix.seriesId || entry.netflix.title.normalize('NFKC').toLowerCase()}`
+      : entry.kind === 'catalog' && entry.catalogRef?.type === 'tv' ? `catalog:${entry.catalogRef.tmdbId}` : `asset:${entry.id}`;
+    if (!groups.has(series)) groups.set(series, entry);
+  }
+  // Filter after grouping: hiding/completing the latest episode must not expose
+  // an older episode of that series as a new Continue watching card.
+  return [...groups.values()].filter(entry => !entry.hidden && entry.position < entry.duration - Math.min(30, entry.duration * .02));
+}
 export function playbackResumeCard(entry, canDismiss) {
   const percent = Math.max(0, Math.min(100, entry.position / entry.duration * 100));
   const stamp = `${time(entry.position)} / ${time(entry.duration)}`;

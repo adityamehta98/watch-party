@@ -47,13 +47,14 @@ test('enriching a saved Netflix episode keeps its position, order, and resume UR
   let calls = 0;
   f.room.netflixMetadata = async url => {
     calls++; assert.equal(url, before.url);
-    return { title: 'Akka', episode: 1, episodeTitle: 'The Sisterhood', poster: 'https://occ-1.nflxso.net/dnm/api/v6/art.jpg' };
+    return { title: 'Akka', seriesId: '81772075', episode: 1, episodeTitle: 'The Sisterhood', poster: 'https://occ-1.nflxso.net/dnm/api/v6/art.jpg' };
   };
   await Promise.all([f.room.fillNetflixCards(), f.room.fillNetflixCards()]);
   assert.equal(calls, 1);
   const restored = new AnimeHistory(f.file).playbackList()[0];
   assert.deepEqual({ ...restored, netflix: undefined }, { ...before, netflix: undefined });
   assert.equal(restored.netflix.episode, 1);
+  assert.equal(restored.netflix.seriesId, '81772075');
   f.progress(f.host, { position: 800 });
   const updated = new AnimeHistory(f.file).playbackList()[0];
   assert.equal(updated.position, 800);

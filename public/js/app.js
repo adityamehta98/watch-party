@@ -3,7 +3,7 @@ import './emoji-picker.js';
 import { Connection } from './net.js';
 import { trackPlayerWindow } from './player-window.js';
 import { animeResumeCard, animeSeriesFinished } from './anime-resume.js';
-import { playbackResumeCard } from './playback-resume.js';
+import { playbackResumeCard, playbackResumeEntries } from './playback-resume.js';
 import { createCameraGallery } from './camera-gallery.js';
 import { createPlayerMenu } from './player-menu.js';
 import { SyncPlayer, DEVICE } from './player.js';
@@ -3319,7 +3319,7 @@ function renderAnimeHistory() {
   }
   const visible = [...groups.values()].filter(entries => !S.animeContinueHidden.includes(entries[0].anilistId) && !animeSeriesFinished(entries));
   const cards = visible.map(entries => ({ at: entries[0].updatedAt, html: animeResumeCard({ ...entries[0], canDismiss: isHost, poster: entries.find(entry => entry.poster)?.poster || '' }) }));
-  for (const entry of S.playbackHistory) if (!entry.hidden && entry.position < entry.duration - Math.min(30, entry.duration * .02)) {
+  for (const entry of playbackResumeEntries(S.playbackHistory)) {
     cards.push({ at: entry.updatedAt, html: playbackResumeCard(entry, isHost) });
   }
   cards.sort((a, b) => b.at - a.at);

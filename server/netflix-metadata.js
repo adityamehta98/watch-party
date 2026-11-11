@@ -3,6 +3,7 @@
 const SITE = 'https://www.netflix.com';
 const titlePath = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/(\d{1,12})\/?$/i;
 const label = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) : '';
+const cache = new Map();
 
 function posterUrl(value) {
   if (typeof value !== 'string' || value.length > 1200) return '';
@@ -20,10 +21,11 @@ function cleanNetflixMetadata(value) {
   if (!title) return null;
   const episode = Number.isSafeInteger(value.episode) && value.episode > 0 && value.episode < 10000 ? value.episode : null;
   return { title, poster: posterUrl(value.poster), episode, episodeTitle: episode ? label(value.episodeTitle) : '',
+    ...(/^\d{1,12}$/.test(String(value.seriesId || '')) && episode ? { seriesId: String(value.seriesId) } : {}),
     season: episode && Number.isSafeInteger(value.season) && value.season > 0 && value.season < 1000 ? value.season : null };
 }
 
-function parseNetflixTitle(html, titleId, watchId) {
+function parseNetflixTitle(html, titleId, watchId, collectEpisode = () => {}) {
   let schema = null;
   for (const [, json] of html.matchAll(/<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     try {
@@ -48,21 +50,36 @@ function parseNetflixTitle(html, titleId, watchId) {
   for (const data of Object.values(models?.graphqlClcs?.data || {})) {
     const nodes = data?.clcsHookV2?.result?.screen?.componentTree?.nodes;
     if (!Array.isArray(nodes)) continue;
-    for (const node of nodes) {
-      const show = Array.isArray(node?.data?.videos) && node.data.videos.find(video => video?.__typename === 'Show' && String(video.videoId) === titleId);
+    // Netflix varies the component data field across page renditions. Search
+    // the bounded JSON tree for the exact series ID instead of a UI field name.
+    const pending = nodes.map(value => ({ value, depth: 0 }));
+    while (pending.length) {
+      const { value: show, depth } = pending.pop();
+      if (!show || typeof show !== 'object' || depth > 32) continue;
+      if (show.__typename !== 'Show' || String(show.videoId) !== titleId) {
+        for (const value of Object.values(show)) if (value && typeof value === 'object') pending.push({ value, depth: depth + 1 });
+        continue;
+      }
       const seasons = show?.seasons?.edges;
       if (!Array.isArray(seasons)) continue;
+      let matched = null;
       for (const edge of seasons) {
         const season = edge?.node;
         const episodes = season?.episodes?.edges;
         if (!Array.isArray(episodes)) continue;
-        const episode = episodes.find(edge => String(edge?.node?.videoId) === watchId)?.node;
-        if (!episode) continue;
         const seasonNumber = /^(?:Season\s+)?(\d+)$/i.exec(season.numberLabelV2 || season.shortTitle || season.title || '');
-        return cleanNetflixMetadata({ title: show.title || schema.name, episode: episode.number, episodeTitle: episode.title,
-          season: seasonNumber ? Number(seasonNumber[1]) : null,
-          poster: posterUrl(show.boxshot300?.url) || posterUrl(schema.image) || posterUrl(episode.merchStill300?.url) });
+        for (const edge of episodes) {
+          const episode = edge?.node;
+          if (!episode || !/^\d{1,12}$/.test(String(episode.videoId))) continue;
+          const metadata = cleanNetflixMetadata({ title: show.title || schema.name, seriesId: titleId, episode: episode.number, episodeTitle: episode.title,
+            season: seasonNumber ? Number(seasonNumber[1]) : null,
+            poster: posterUrl(show.boxshot300?.url) || posterUrl(schema.image) || posterUrl(episode.merchStill300?.url) });
+          if (!metadata?.episode) continue;
+          collectEpisode(String(episode.videoId), metadata);
+          if (String(episode.videoId) === watchId) matched = metadata;
+        }
       }
+      if (matched) return matched;
     }
   }
   return null;
@@ -72,6 +89,8 @@ async function fetchNetflixMetadata(watchUrl, { request = fetch } = {}) {
   const watch = new URL(watchUrl);
   const watchId = /^\/watch\/(\d{1,12})$/.exec(watch.pathname)?.[1];
   if (![SITE, 'https://netflix.com'].includes(watch.origin) || watch.username || watch.password || !watchId) return null;
+  const saved = request === fetch && cache.get(watchId);
+  if (saved && saved.until > Date.now()) return saved.value;
   let url = new URL(`/title/${watchId}`, SITE);
   const signal = AbortSignal.timeout(12000);
   for (let hop = 0; hop < 4; hop++) {
@@ -94,7 +113,16 @@ async function fetchNetflixMetadata(watchUrl, { request = fetch } = {}) {
       if (size > maxBytes) return null;
       chunks.push(Buffer.from(chunk));
     }
-    return parseNetflixTitle(Buffer.concat(chunks).toString('utf8'), titlePath.exec(url.pathname)[1], watchId);
+    const episodes = [];
+    const metadata = parseNetflixTitle(Buffer.concat(chunks).toString('utf8'), titlePath.exec(url.pathname)[1], watchId,
+      (id, value) => episodes.push({ id, value }));
+    if (request === fetch && metadata) {
+      for (const { id, value } of [{ id: watchId, value: metadata }, ...episodes]) {
+        cache.set(id, { value, until: Date.now() + 6 * 3600e3 });
+        if (cache.size > 500) cache.delete(cache.keys().next().value);
+      }
+    }
+    return metadata;
   }
   return null;
 }
