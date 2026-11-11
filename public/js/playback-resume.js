@@ -24,14 +24,15 @@ export function playbackResumeCard(entry, canDismiss) {
   const percent = Math.max(0, Math.min(100, entry.position / entry.duration * 100));
   const stamp = `${time(entry.position)} / ${time(entry.duration)}`;
   const netflix = entry.service === 'netflix' ? entry.netflix : null;
+  const poster = netflix?.poster || entry.poster || '';
   const episode = netflix?.episode ? `${netflix.season > 1 ? `S${netflix.season} ` : ''}Ep ${netflix.episode}${netflix.episodeTitle ? ` — ${netflix.episodeTitle}` : ''}` : '';
   const title = netflix?.title || entry.title;
   const accessibleTitle = episode ? `${title} · ${episode}` : title;
   return `<article class="anime-resume-card playback-resume-card">
     <button type="button" class="anime-resume-open" data-playback-play="${esc(entry.id)}" aria-label="${esc(accessibleTitle)} · Resume at ${esc(stamp)}">
       <span class="anime-resume-art"><span class="anime-resume-placeholder" aria-hidden="true"><svg><use href="#i-film"/></svg></span>
-        ${netflix?.poster ? `<img class="playback-resume-poster" src="${esc(netflix.poster)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
-        <span class="playback-resume-title${netflix?.poster ? ' with-poster' : ''}"><small>${esc(entry.serviceName || (entry.kind === 'file' ? 'Your library' : 'Movies & TV'))}</small><strong>${esc(title)}</strong>${episode ? `<span class="playback-resume-episode">${esc(episode)}</span>` : ''}<small>${esc(stamp)}</small></span>
+        ${poster ? `<img class="playback-resume-poster" src="${esc(poster)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
+        <span class="playback-resume-title${poster ? ' with-poster' : ''}"><small>${esc(entry.serviceName || (entry.kind === 'file' ? 'Your library' : 'Movies & TV'))}</small><strong>${esc(title)}</strong>${episode ? `<span class="playback-resume-episode">${esc(episode)}</span>` : ''}<small>${esc(stamp)}</small></span>
       </span>
       <span class="anime-resume-progress" role="progressbar" aria-label="Playback progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(1)}" aria-valuetext="${esc(stamp)}"><span style="width:${percent.toFixed(3)}%"></span></span>
     </button>

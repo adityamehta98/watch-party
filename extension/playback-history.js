@@ -43,7 +43,7 @@ var WPPlayback = (() => {
     if (Number.isSafeInteger(entry.catalog?.tmdbId) && entry.catalog.tmdbId > 0) catalog.tmdbId = entry.catalog.tmdbId;
     if (/^(?:19|20)\d{2}$/.test(String(entry.catalog?.year || ''))) catalog.year = Number(entry.catalog.year);
     return { ...identity, showId: String(entry.showId || identity.assetId).slice(0, 100),
-      title: String(entry.title || '').slice(0, 140), catalog,
+      title: String(entry.title || '').slice(0, 140), poster: wpPlaybackPoster(entry.poster, service), catalog,
       position: Math.min(entry.position, entry.duration), duration: entry.duration, lastWatched: entry.lastWatched,
       season: Number.isInteger(entry.season) && entry.season >= 0 ? entry.season : null,
       episode: Number.isInteger(entry.episode) && entry.episode > 0 ? entry.episode : null };

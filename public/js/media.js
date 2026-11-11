@@ -43,7 +43,7 @@ function loadYouTubeApi() {
 }
 
 export class YouTubeMedia extends AdapterBase {
-  constructor(host) {
+  constructor(host, { captionPreference = () => ({}), onCaptionsChange = () => {} } = {}) {
     super();
     this.host = host;          // element the player is placed in
     this.p = null;
@@ -54,6 +54,13 @@ export class YouTubeMedia extends AdapterBase {
     this.seekStarted = 0;
     this._muted = false;
     this._volume = 1;
+    this.captionPreference = captionPreference;
+    this.onCaptionsChange = onCaptionsChange;
+    this.captionTracks = [];
+    this.captionsAvailable = null;
+    this.captionsEnabled = false;
+    this.captionLanguage = '';
+    this.captionError = '';
     // YouTube only supports a few fixed speeds, so the engine corrects drift with small jumps instead
     this.syncProfile = { hardSeek: 0.5, rate: false, pausedEps: 0.3 };
     this.poll = setInterval(() => this.tick(), 250);
@@ -64,6 +71,9 @@ export class YouTubeMedia extends AdapterBase {
     this.error = null;
     this.src = `yt:${movie.videoId}`;
     this.ready = false;
+    const captions = this.captionPreference() || {};
+    this.captionsEnabled = captions.enabled === true;
+    this.captionLanguage = String(captions.language || '');
     const generation = this.generation;
     try { await loadYouTubeApi(); } catch (e) { if (generation === this.generation) { this.error = { code: 2, message: e.message }; this.emit('error'); } return; }
     if (generation !== this.generation) return;
@@ -74,17 +84,20 @@ export class YouTubeMedia extends AdapterBase {
       videoId: movie.videoId,
       host: 'https://www.youtube-nocookie.com',
       width: '100%', height: '100%',
-      playerVars: { controls: 0, disablekb: 1, rel: 0, playsinline: 1, iv_load_policy: 3, fs: 0, autoplay: 0 },
+      playerVars: { controls: 0, disablekb: 1, rel: 0, playsinline: 1, iv_load_policy: 3, fs: 0, autoplay: 0,
+        cc_load_policy: 1, ...(this.captionLanguage ? { cc_lang_pref: this.captionLanguage } : {}) },
       events: {
         onReady: () => {
           if (generation !== this.generation) return;
           this.ready = true;
           if (this._muted) this.p.mute();
           this.p.setVolume(Math.round(this._volume * 100));
+          this.readCaptions();
           this.emit('loadedmetadata'); this.emit('canplay');
         },
-        onStateChange: e => this.onState(e.data),
-        onError: e => { this.error = { code: 4, yt: e.data }; this.emit('error'); },
+        onApiChange: () => { if (generation === this.generation) this.readCaptions(); },
+        onStateChange: e => { if (generation === this.generation) this.onState(e.data); },
+        onError: e => { if (generation === this.generation) { this.error = { code: 4, yt: e.data }; this.emit('error'); } },
       },
     });
   }
@@ -93,7 +106,65 @@ export class YouTubeMedia extends AdapterBase {
     this.generation++;
     if (this.p && this.p.destroy) { try { this.p.destroy(); } catch {} }
     this.p = null; this.ready = false; this.state = -1; this.src = '';
+    this.captionTracks = []; this.captionsAvailable = null; this.captionError = '';
+    this.captionApplied = '';
+    this.onCaptionsChange();
     if (this.host) this.host.innerHTML = '';
+  }
+
+  readCaptions() {
+    if (!this.ready || !this.p) return;
+    try {
+      const modules = this.p.getOptions?.() || [];
+      if (modules.includes('captions')) {
+        const active = this.p.getOption?.('captions', 'track');
+        // YouTube may recreate its caption module after playback starts. Apply
+        // Off again if it restored a track, even when our preference is unchanged.
+        if (!this.captionsEnabled && active?.languageCode) this.captionApplied = '';
+        const tracks = this.p.getOption?.('captions', 'tracklist');
+        if (Array.isArray(tracks)) {
+          this.captionTracks = tracks.filter(t => /^[a-zA-Z0-9-]{2,35}$/.test(t.languageCode || '')).map(t => ({
+            language: t.languageCode, label: String(t.displayName || t.languageName || t.languageCode).slice(0, 100),
+          }));
+          this.captionsAvailable = this.captionTracks.length > 0;
+        }
+        this.applyCaptions();
+      }
+    } catch { this.captionError = 'YouTube captions are unavailable for this video.'; }
+    this.onCaptionsChange();
+  }
+
+  setCaptions(enabled, language = this.captionLanguage) {
+    this.captionsEnabled = !!enabled;
+    this.captionLanguage = String(language || '');
+    this.captionApplied = ''; this.captionError = '';
+    if (this.ready) {
+      try {
+        if (enabled && !(this.p.getOptions?.() || []).includes('captions')) {
+          if (typeof this.p.loadModule === 'function') this.p.loadModule('captions');
+          else this.captionError = 'YouTube captions are unavailable for this video.';
+        }
+      } catch { this.captionError = 'YouTube captions are unavailable for this video.'; }
+      this.readCaptions();
+    }
+    this.onCaptionsChange();
+  }
+
+  applyCaptions() {
+    if (!this.p || !this.ready) return;
+    const choice = this.captionsEnabled ? this.captionLanguage || 'auto' : 'off';
+    if (this.captionApplied === choice) return;
+    this.captionApplied = choice;
+    if (!this.captionsEnabled) {
+      // YouTube renders captions inside its iframe. Unload only that module;
+      // changing caption preference must never reload or seek the video.
+      this.p.setOption?.('captions', 'track', {});
+      if (typeof this.p.unloadModule === 'function') this.p.unloadModule('captions');
+    } else {
+      const track = this.captionTracks.find(t => t.language === this.captionLanguage) || this.captionTracks[0];
+      if (track) this.p.setOption?.('captions', 'track', { languageCode: track.language });
+      this.p.setOption?.('captions', 'reload', true);
+    }
   }
 
   onState(s) {
@@ -368,7 +439,7 @@ export const SERVICE_SEARCH = {
   appletv: q => `https://tv.apple.com/search?term=${q}`,
 };
 // The extension version this page was built for (the build checks it matches extension/manifest.json).
-export const LATEST_EXT_VERSION = '1.17.14';
+export const LATEST_EXT_VERSION = '1.17.15';
 // Updater-only releases must not prevent compatible Netflix players from opening.
 export const REQUIRED_EXT_VERSION = '1.17.8';
 export const extOutdated = (v, required = REQUIRED_EXT_VERSION) => { const a = String(v || '0').split('.').map(Number), b = required.split('.').map(Number); for (let i = 0; i < 4; i++) { if ((a[i] || 0) < b[i]) return true; if ((a[i] || 0) > b[i]) return false; } return false; };

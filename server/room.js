@@ -2,6 +2,7 @@
 // The watch party room: who is here, what they may do, and the shared playback timeline.
 const crypto = require('crypto');
 const services = require('./services');
+const { wpPlaybackPoster } = require('../extension/services');
 const anime = require('./anime');
 
 const PERMS = ['playback', 'chat', 'react', 'camera'];
@@ -646,6 +647,8 @@ class Room {
     const dur = Number(msg.duration);
     let changed = false;
     if (title && title !== m.title) { m.title = title; changed = true; }
+    const poster = wpPlaybackPoster(msg.poster, m.service || (m.kind === 'catalog' ? 'catalog' : ''));
+    if (poster && poster !== m.poster) { m.poster = poster; changed = true; }
     if (dur > 0 && dur < 86400 && Math.abs((m.duration || 0) - dur) > 1) { m.duration = dur; changed = true; }
     if (changed) this.broadcast({ type: 'movie', movie: this.publicMovie() });
   }
@@ -732,7 +735,7 @@ class Room {
           const info = services.identify(value?.url);
           if (!info || info.service !== value.service || value.ad || value.preview) return [];
           return [{ id: 'u' + crypto.createHash('sha1').update(info.url).digest('hex').slice(0, 11), kind: 'service',
-            service: info.service, url: info.url, title: value.title, position: value.position, duration: value.duration,
+            service: info.service, url: info.url, title: value.title, poster: value.poster, position: value.position, duration: value.duration,
             updatedAt: Math.min(Date.now(), Number(value.lastWatched) || 0) }];
         });
         if (this.animeHistory.importPlayback(entries)) { this.sendPlaybackHistory(); this.fillNetflixCards(); }

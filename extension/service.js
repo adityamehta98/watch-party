@@ -126,7 +126,7 @@
     return {
       service: SERVICE, t: ad ? lastContent.t : v.currentTime, paused: ad ? false : v.paused, rate: ad ? lastContent.rate : v.playbackRate, dur: ad ? maxDur : d,
       buffering: !v.paused && v.readyState < 3, ad, blocked, title: TOP ? title() : '', area: area(v), root: TOP, url: TOP ? sharedPageUrl() : '',
-      vol: v.volume, muted: v.muted, hold: userBusy(),
+      vol: v.volume, muted: v.muted, hold: userBusy(), poster: TOP && !ad ? wpPagePoster(document, SERVICE, v) : '',
       advanceFrom: TOP && nextEpisodeIntent && Date.now() - nextEpisodeIntent.at < 20000 ? nextEpisodeIntent.url : '',
     };
   }

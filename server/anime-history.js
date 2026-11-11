@@ -67,8 +67,9 @@ class AnimeHistory {
     if (!entry || !position) return false;
     const old = this.playbackEntries.get(entry.id);
     entry.hidden = !!old?.hidden;
+    if (!entry.poster && old?.poster && old.url === entry.url) entry.poster = old.poster;
     if (old?.url === entry.url && old?.netflix) entry.netflix = old.netflix;
-    if (old && old.position === entry.position && old.duration === entry.duration && old.title === entry.title) return false;
+    if (old && old.position === entry.position && old.duration === entry.duration && old.title === entry.title && old.poster === entry.poster) return false;
     this.playbackEntries.set(entry.id, entry);
     const keep = this.playbackList().slice(0, 500);
     this.playbackEntries = new Map(keep.map(item => [item.id, item]));

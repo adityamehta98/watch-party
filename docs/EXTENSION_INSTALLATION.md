@@ -18,7 +18,7 @@ The first Windows installer is about 85 MiB because it currently reuses the app'
 4. Turn on **Developer mode**: top right in Chrome/Brave, left side in Edge.
 5. If you previously installed Watch Party Sync from Downloads or another folder, turn that old entry **off**. Keep its old entry if you need to retain its browser-local data; do not run two enabled copies.
 6. Click **Load unpacked**. In the folder picker, paste `%LOCALAPPDATA%\WatchParty\SyncExtension` into its address bar and press Enter. Click **Select Folder**. Choose this exact folder, not its parent `WatchParty` folder. The app also has a **Copy folder** button; the host sees its fully expanded path.
-7. Return to Watch Party and click **Reload page**. If a streaming service was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.14**.
+7. Return to Watch Party and click **Reload page**. If a streaming service was already open, reload its page too. Check the extension details page if needed: the installed version for this release is **1.17.15**.
 
 The initial browser step is required for an unpublished extension. The installer does not edit browser profiles, enable Developer mode, or force-install an extension. A future browser-store listing removes the Load unpacked step. The downloaded setup file can be deleted after installation; the helper and extension remain in AppData.
 

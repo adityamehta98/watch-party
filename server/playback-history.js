@@ -1,7 +1,7 @@
 'use strict';
 const services = require('./services');
 const { cleanNetflixMetadata } = require('./netflix-metadata');
-const { wpPrimeAsset, wpPrimeContentTitle } = require('../extension/services');
+const { wpPrimeAsset, wpPrimeContentTitle, wpPlaybackPoster } = require('../extension/services');
 
 function cleanPlayback(value) {
   if (!value || value.ad || value.preview || !['file', 'service', 'youtube', 'catalog'].includes(value.kind) || !/^[a-z0-9]{1,80}$/i.test(value.id || '') ||
@@ -14,6 +14,8 @@ function cleanPlayback(value) {
     if (info.service === 'netflix' && !/^https:\/\/[^/]+\/watch\/\d+$/.test(info.url)) return null;
     if (info.service === 'prime' && (!wpPrimeAsset(info.url) || !wpPrimeContentTitle(value.title))) return null;
     identity = { url: info.url, service: info.service, serviceName: info.name };
+    const poster = info.service === 'youtube' ? `https://i.ytimg.com/vi/${info.videoId}/hqdefault.jpg` : wpPlaybackPoster(value.poster, info.service);
+    if (poster) identity.poster = poster;
     const netflix = info.service === 'netflix' && cleanNetflixMetadata(value.netflix);
     if (netflix) identity.netflix = netflix;
   }
@@ -23,6 +25,8 @@ function cleanPlayback(value) {
     identity = { catalogRef: { type: ref.type, tmdbId: Number(ref.tmdbId) || 0,
       season: Number(ref.season) || 1, episode: Number(ref.episode) || 1, freeId: String(ref.freeId || '').slice(0, 100) },
       language: String(value.language || '').slice(0, 20), catalogTitle: String(value.catalogTitle || value.title || '').slice(0, 140) };
+    const poster = wpPlaybackPoster(value.poster, 'catalog');
+    if (poster) identity.poster = poster;
   }
   return { id: value.id, kind: value.kind, ...identity,
     title: String(value.title || 'Movie').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 140),

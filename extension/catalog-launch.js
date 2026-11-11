@@ -125,7 +125,7 @@
     const metadata = [...document.querySelectorAll('[data-uia="video-title"], .atvwebplayersdk-subtitle-text, .PlayerMetadata__subTitle, [data-testid="player-ux-asset-subtitle"], .subtitle-field')].map(e => e.textContent).join(' ');
     const ep = WPPlayback.episode(metadata);
     const old = history.entries[identity.assetId];
-    const entry = { ...identity, showId: selectedId || saved?.showId || identity.assetId, title: intent.title,
+    const entry = { ...identity, showId: selectedId || saved?.showId || identity.assetId, title: intent.title, poster: wpPagePoster(document, service, v) || old?.poster || '',
       catalog: intent.meta || {}, season: ep.season ?? old?.season ?? null, episode: ep.episode ?? old?.episode ?? null,
       position: v.currentTime, duration: v.duration, lastWatched: Date.now() };
     history.record(entry).catch(() => { unavailable = true; report('Progress could not be saved. Check extension storage before closing this tab.'); });

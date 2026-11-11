@@ -136,7 +136,10 @@ function start(name) {
     onRemoteStream: (id, stream) => { S.remoteStreams.set(id, stream); renderCams(); },
     onPeerGone: id => { S.remoteStreams.delete(id); renderCams(); },
   });
-  ytMedia = new YouTubeMedia($('#ytHost'));
+  ytMedia = new YouTubeMedia($('#ytHost'), {
+    captionPreference: () => store.get('wp.youtubeCaptions', { enabled: false, language: '' }),
+    onCaptionsChange: () => { if (S.movie?.kind === 'youtube') buildCcMenu(); },
+  });
   remote = new RemoteMedia({ onInfo: () => {
     renderServicePanel(); maybeSendMeta();
     finishCatalogServiceLaunch();
@@ -852,11 +855,13 @@ function maybeSendMeta() {
   if (!(isHost || (m && m.by && m.by === (S.me && S.me.name))) || !m || kindOf(m) === 'file' || !M.isAdapter) return;
   const title = (M === remote ? remote.st && remote.st.title : ytMedia.ready && ytMedia.p.getVideoData && ytMedia.p.getVideoData().title) || '';
   const duration = M.duration || 0;
-  const key2 = `${m.id}|${title}|${Math.round(duration)}`;
+  if (M === remote && (remote.st?.ad || remote.st?.preview)) return;
+  const poster = M === remote ? remote.st?.poster || '' : '';
+  const key2 = `${m.id}|${title}|${Math.round(duration)}|${poster}`;
   if (!duration && !title) return;
   if (S.metaSent === key2) return;
   S.metaSent = key2;
-  conn.send({ type: 'movie-meta', id: m.id, title, duration });
+  conn.send({ type: 'movie-meta', id: m.id, title, duration, poster });
 }
 setInterval(maybeSendMeta, 3000);
 
@@ -1327,6 +1332,20 @@ function subtitleTimingKey(movie = S.movie) {
 
 function buildCcMenu() {
   const pop = $('#ccPop');
+  if (S.movie?.kind === 'youtube') {
+    const enabled = !!ytMedia?.captionsEnabled;
+    const available = ytMedia?.captionsAvailable;
+    pop.innerHTML = '<div class="menu-label">YouTube captions</div>' +
+      `<button type="button" data-yt-cc="off" class="${!enabled ? 'sel' : ''}">Off</button>` +
+      `<button type="button" data-yt-cc="on" class="${enabled ? 'sel' : ''}" ${available === false ? 'disabled' : ''}>On · Automatic</button>` +
+      (ytMedia?.captionTracks || []).map(track => `<button type="button" data-yt-lang="${esc(track.language)}" class="${enabled && ytMedia.captionLanguage === track.language ? 'sel' : ''}">${esc(track.label)}</button>`).join('') +
+      (ytMedia?.captionError ? `<div class="menu-note">${esc(ytMedia.captionError)}</div>` :
+        available === false ? '<div class="menu-note">This video has no captions.</div>' :
+          available === null ? '<div class="menu-note">Caption availability is checked when the video starts.</div>' : '');
+    $('#ccBtn').classList.toggle('on', enabled && available !== false);
+    $('#ccBtn').setAttribute('aria-pressed', String(enabled && available !== false));
+    return;
+  }
   const subs = S.movie?.subs || [];
   const active = subtitles.selected;
   let html = '<div class="menu-label">Subtitles</div>';
@@ -1344,6 +1363,7 @@ function buildCcMenu() {
   if (!subs.length) html += S.movie?.kind === 'anime' ? '<div class="menu-note">No captions came with this stream. Find alternative subtitles above.</div>' : '<div class="menu-note">No text subtitles for this movie. Blu-ray image subtitles (PGS) can\'t be shown in browsers. Put a .srt file next to the movie with the same name to add one.</div>';
   pop.innerHTML = html;
   $('#ccBtn').classList.toggle('on', !!active);
+  $('#ccBtn').setAttribute('aria-pressed', String(!!active));
 }
 function selectSub(k, remember = true) {
   subtitles.select(k);
@@ -1356,6 +1376,13 @@ function selectSub(k, remember = true) {
 }
 $('#ccBtn').addEventListener('click', e => { e.stopPropagation(); buildCcMenu(); togglePop('#ccPop'); });
 $('#ccPop').addEventListener('click', e => {
+  const youtube = e.target.closest('[data-yt-cc], [data-yt-lang]');
+  if (youtube && S.movie?.kind === 'youtube' && !youtube.disabled) {
+    const enabled = youtube.dataset.ytCc !== 'off', language = youtube.dataset.ytLang || '';
+    ytMedia.setCaptions(enabled, language);
+    store.set('wp.youtubeCaptions', { enabled, language });
+    closePops(); return;
+  }
   const find = e.target.closest('[data-find-sub]');
   if (find) { requestSubtitles(find.dataset.findSub, true); return; }
   const timing = e.target.closest('[data-sub-shift]');

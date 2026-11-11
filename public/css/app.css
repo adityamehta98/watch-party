@@ -238,7 +238,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .svc-ok { color: var(--ok); font-weight: 700; }
 .svc-steps { text-align: left; margin: 12px auto 0; max-width: 460px; color: var(--muted); display: grid; gap: 10px; padding-left: 20px; }
 .svc-steps b { color: var(--text); }
-.stage[data-kind="service"] #ccBtn, .stage[data-kind="service"] #fsBtn, .stage[data-kind="youtube"] #ccBtn { display: none; }
+.stage[data-kind="service"] #ccBtn, .stage[data-kind="service"] #fsBtn { display: none; }
 
 .anime-actions { position: absolute; left: 12px; top: 12px; z-index: 12; display: none; align-items: center; gap: 4px; }
 /* Native anime uses the normal video controls; it still shows the Next-episode button. */

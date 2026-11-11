@@ -92,4 +92,34 @@ function wpPrimePreviewActive(doc) {
   return [...doc.querySelectorAll('.atvwebplayersdk-subtitle-text')].some(node =>
     wpPrimeVisibleMarker(node) && /^(?:(?:official|season\s+\d+)\s+)?(?:trailer|teaser|preview)(?:\s*\d+)?$/i.test(String(node.textContent || '').trim()));
 }
-if (typeof module !== 'undefined') module.exports = { wpPrimeAsset, wpPrimeContentTitle };
+var WP_ARTWORK_HOSTS = {
+  youtube: ['i.ytimg.com', 'img.youtube.com'],
+  netflix: ['nflxso.net', 'nflximg.net'],
+  prime: ['m.media-amazon.com', 'images-na.ssl-images-amazon.com', 'images-eu.ssl-images-amazon.com', 'images-fe.ssl-images-amazon.com', 'aiv-cdn.net'],
+  hulu: ['hulu.com', 'huluim.com', 'huluimcache.com'],
+  peacock: ['peacocktv.com'], crunchyroll: ['crunchyroll.com', 'crunchyrollcdn.com'],
+  paramount: ['paramountplus.com', 'cbsig.net'], max: ['discomax.com', 'hbomax.com'],
+  disney: ['disney-plus.net', 'disneyplus.com', 'bamgrid.com'], appletv: ['mzstatic.com'],
+  catalog: ['image.tmdb.org', 'archive.org'],
+};
+function wpPlaybackPoster(raw, service) {
+  if (typeof raw !== 'string' || raw.length > 2000) return '';
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'https:' || u.username || u.password || u.port ||
+      !(WP_ARTWORK_HOSTS[service] || []).some(host => u.hostname === host || u.hostname.endsWith('.' + host)) ||
+      /(?:^|[\/_-])(?:logo|favicon)(?:[\/_.-]|$)/i.test(u.pathname) || /\.svg$/i.test(u.pathname)) return '';
+    // Retain image transforms, never account tokens or arbitrary tracking queries.
+    for (const key of [...u.searchParams.keys()]) if (!/^(?:r|width|height|w|h|quality|q|format|fit|resize|scale|region)$/i.test(key)) u.searchParams.delete(key);
+    u.hash = ''; return u.href;
+  } catch { return ''; }
+}
+function wpPagePoster(doc, service, video) {
+  const candidates = [video?.poster];
+  for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]', '.atvwebplayersdk-poster-image img', '.atvwebplayersdk-poster img', 'img[data-testid="player-poster"]']) {
+    const el = doc.querySelector(selector);
+    if (el) candidates.push(el.content || el.currentSrc || el.src);
+  }
+  return candidates.map(raw => wpPlaybackPoster(raw, service)).find(Boolean) || '';
+}
+if (typeof module !== 'undefined') module.exports = { wpPrimeAsset, wpPrimeContentTitle, wpPlaybackPoster, WP_ARTWORK_HOSTS };
