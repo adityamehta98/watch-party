@@ -72,7 +72,7 @@ test('a later available season prevents the previous season finale from completi
   assert.equal(parseNetflixTitle(html, '81772075', '82008001').finalEpisode, true);
 });
 
-test('the known series finale hides within five minutes without exposing an older episode', async () => {
+test('Netflix episodes hide within five minutes without exposing older episodes or requiring finale metadata', async () => {
   const { playbackResumeEntries } = await import('../public/js/playback-resume.js');
   const final = { id: 'final', service: 'netflix', position: 2100, duration: 2400, updatedAt: 20,
     netflix: { seriesId: '123', title: 'Series', episode: 5, finalEpisode: true } };
@@ -80,7 +80,7 @@ test('the known series finale hides within five minutes without exposing an olde
   assert.equal(playbackResumeEntries([prior, final]).length, 0);
   assert.equal(playbackResumeEntries([prior, { ...final, position: 2099 }])[0].id, 'final');
   for (const finalEpisode of [undefined, false]) {
-    assert.equal(playbackResumeEntries([{ ...final, netflix: { ...final.netflix, finalEpisode } }]).length, 1);
+    assert.equal(playbackResumeEntries([{ ...final, netflix: { ...final.netflix, finalEpisode } }]).length, 0);
   }
   assert.equal(playbackResumeEntries([{ ...final, position: 50, duration: 240 }]).length, 1, 'do not mark a short episode finished near its start');
   assert.equal(final.position, 2100, 'shelf filtering preserves saved progress');
