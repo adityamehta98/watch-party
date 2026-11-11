@@ -64,12 +64,20 @@ class AnimeHistory {
     if (!entry || !position) return false;
     const old = this.playbackEntries.get(entry.id);
     entry.hidden = !!old?.hidden;
+    if (old?.url === entry.url && old?.netflix) entry.netflix = old.netflix;
     if (old && old.position === entry.position && old.duration === entry.duration && old.title === entry.title) return false;
     this.playbackEntries.set(entry.id, entry);
     const keep = this.playbackList().slice(0, 500);
     this.playbackEntries = new Map(keep.map(item => [item.id, item]));
     this.schedule();
     return true;
+  }
+  setNetflixMetadata(id, url, netflix) {
+    const entry = this.playbackEntries.get(id);
+    if (entry?.service !== 'netflix' || entry.url !== url) return false;
+    const updated = cleanPlayback({ ...entry, netflix });
+    if (!updated?.netflix || JSON.stringify(entry.netflix) === JSON.stringify(updated.netflix)) return false;
+    this.playbackEntries.set(id, updated); this.schedule(); this.flush(); return true;
   }
   dismissPlayback(id) {
     const entry = this.playbackEntries.get(id);

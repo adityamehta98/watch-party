@@ -19,6 +19,8 @@ stays on while the app is open, including during inactivity. Closing all host
 windows shuts down the app and its sharing setup. A Tailscale connection that was already
 running before sharing is left connected when sharing stops.
 
+For Netflix cards, the host requests public title details by Netflix video ID. These requests do not use Netflix account credentials, cookies, or viewing timestamps. The saved card retains the public artwork URL and episode label with its existing progress.
+
 The host and admitted viewers receive room names, chat, reactions, playback state,
 watch history and media the host makes available. Saved playback history is shared
 with admitted viewers by design. Camera/microphone sharing starts through the

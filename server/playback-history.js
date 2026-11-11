@@ -1,5 +1,6 @@
 'use strict';
 const services = require('./services');
+const { cleanNetflixMetadata } = require('./netflix-metadata');
 
 function cleanPlayback(value) {
   if (!value || !['file', 'service', 'youtube', 'catalog'].includes(value.kind) || !/^[a-z0-9]{1,80}$/i.test(value.id || '') ||
@@ -11,6 +12,8 @@ function cleanPlayback(value) {
     if (!info || info.service !== value.service || value.browsing) return null;
     if (info.service === 'netflix' && !/^https:\/\/[^/]+\/watch\/\d+$/.test(info.url)) return null;
     identity = { url: info.url, service: info.service, serviceName: info.name };
+    const netflix = info.service === 'netflix' && cleanNetflixMetadata(value.netflix);
+    if (netflix) identity.netflix = netflix;
   }
   if (value.kind === 'catalog') {
     const ref = value.catalogRef;

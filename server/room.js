@@ -20,7 +20,7 @@ const cleanName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, '').trim().
 const cleanId = n => (/^[A-Za-z0-9_-]{6,40}$/.test(String(n || '')) ? String(n) : null);
 
 class Room {
-  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog, captions, subtitleSearch, animeHistory, animePoster }) {
+  constructor({ config, library, save, ytSearch, animeSearch, animeResolve, catalog, captions, subtitleSearch, animeHistory, animePoster, netflixMetadata }) {
     this.config = config;
     this.library = library;
     this.save = save;
@@ -31,6 +31,8 @@ class Room {
     this.captions = captions || null;
     this.subtitleSearch = subtitleSearch || null;
     this.animeHistory = animeHistory || null;
+    this.netflixMetadata = netflixMetadata;
+    this.netflixCardAttempts = new Map();
     this.animePoster = animePoster || anime.poster;
     this.posterLookups = new Set();
     this.jobOwner = new Map(); // movie id -> who started preparing it
@@ -157,7 +159,7 @@ class Room {
       ...(this.animeHistory ? { animeHistory: this.animeHistory.list(), animeContinueHidden: this.animeHistory.hidden(), playbackHistory: this.animeHistory.playbackList() } : {}),
       iceServers: client.iceFor(), relayOnly: client.relayOnlyFor(), reactions: REACTIONS, serverTime: Date.now(),
     });
-    if (client.role === 'host') this.fillAnimePosters();
+    if (client.role === 'host') { this.fillAnimePosters(); this.fillNetflixCards(); }
     this.broadcast({ type: 'peer-join', peer: { id: client.id, name: client.name, media: client.media } }, client);
     if (this.recentLeft.has(client.id)) { clearTimeout(this.recentLeft.get(client.id)); this.recentLeft.delete(client.id); isReconnect = true; }
     if (!isReconnect) this.system(`${client.name} joined`);
@@ -730,7 +732,7 @@ class Room {
             service: info.service, url: info.url, title: value.title, position: value.position, duration: value.duration,
             updatedAt: Math.min(Date.now(), Number(value.lastWatched) || 0) }];
         });
-        if (this.animeHistory.importPlayback(entries)) this.sendPlaybackHistory();
+        if (this.animeHistory.importPlayback(entries)) { this.sendPlaybackHistory(); this.fillNetflixCards(); }
         return;
       }
       case 'playback-progress': {
@@ -739,6 +741,7 @@ class Room {
           !st.loaded || !st.ready || st.seeking || st.error || st.blocked) return;
         if (movie.kind === 'service' && services.identify(msg.url)?.url !== movie.url) return;
         if (this.animeHistory.recordPlayback(movie, st.position, st.duration)) this.sendPlaybackHistory();
+        if (movie.service === 'netflix') this.fillNetflixCards(movie.id);
         if (msg.flush) this.animeHistory.flush();
         return;
       }
@@ -1065,6 +1068,26 @@ class Room {
   }
 
   sendPlaybackHistory() { this.broadcast({ type: 'playback-history', entries: this.animeHistory.playbackList() }); }
+
+  async fillNetflixCards(id) {
+    if (!this.netflixMetadata || !this.animeHistory || this.fillingNetflixCards) return;
+    const entries = id ? [this.animeHistory.playbackEntries.get(id)] : this.animeHistory.playbackList();
+    const now = Date.now();
+    const missing = entries.filter(entry => entry?.service === 'netflix' && !entry.hidden && !entry.netflix?.poster &&
+      now - (this.netflixCardAttempts.get(entry.url) ?? -Infinity) > 15 * 60e3).slice(0, 6);
+    if (!missing.length) return;
+    this.fillingNetflixCards = true;
+    try {
+      for (const entry of missing) {
+        this.netflixCardAttempts.set(entry.url, Date.now());
+        if (this.netflixCardAttempts.size > 500) this.netflixCardAttempts.delete(this.netflixCardAttempts.keys().next().value);
+        try {
+          const metadata = await this.netflixMetadata(entry.url);
+          if (metadata && this.animeHistory.setNetflixMetadata(entry.id, entry.url, metadata)) this.sendPlaybackHistory();
+        } catch { /* The saved episode remains playable if Netflix artwork is unavailable. */ }
+      }
+    } finally { this.fillingNetflixCards = false; }
+  }
 
   async fillAnimePosters() {
     if (!this.animeHistory) return;

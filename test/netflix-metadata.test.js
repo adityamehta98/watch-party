@@ -1,0 +1,65 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { cleanNetflixMetadata, fetchNetflixMetadata, parseNetflixTitle } = require('../server/netflix-metadata');
+
+const poster = 'https://occ-1.nflxso.net/dnm/api/v6/official.jpg?r=6b3';
+function page() {
+  const show = { __typename: 'Show', videoId: 81772075, title: 'Akka', seasons: { edges: [{ node: {
+    title: 'Season 1', episodes: { edges: [
+      { node: { videoId: 82006998, number: 1, title: 'The Sisterhood' } },
+      { node: { videoId: 82006999, number: 2, title: 'Wounds and Scars' } },
+    ] },
+  } }] } };
+  const context = { models: { graphqlClcs: { data: { result: { clcsHookV2: { result: { screen: {
+    componentTree: { nodes: [{ data: { videos: [show] } }] },
+  } } } } } } } };
+  return `<script type="application/ld+json">${JSON.stringify({ '@type': 'TVSeries', url: 'https://www.netflix.com/title/81772075', name: 'Akka', image: poster })}</script>
+    <script>netflix.reactContext = ${JSON.stringify(context).replaceAll('The Sisterhood', 'The\\x20Sisterhood')};</script>`;
+}
+
+test('official title pages match the watched episode ID and use the show artwork', () => {
+  assert.deepEqual(parseNetflixTitle(page(), '81772075', '82006998'), { title: 'Akka', poster, episode: 1, episodeTitle: 'The Sisterhood', season: 1 });
+  assert.equal(parseNetflixTitle(page(), '81772075', '82006999').episode, 2);
+  assert.equal(parseNetflixTitle(page(), '81772075', '00000000'), null);
+  assert.equal(parseNetflixTitle(page(), '11111111', '82006998'), null);
+});
+
+test('Netflix movies get artwork without an episode number', () => {
+  const html = `<script type="application/ld+json">${JSON.stringify({ '@type': 'Movie', url: 'https://www.netflix.com/title/12345', name: 'A Movie', image: poster })}</script>`;
+  assert.deepEqual(parseNetflixTitle(html, '12345', '12345'), { title: 'A Movie', poster, episode: null, episodeTitle: '', season: null });
+});
+
+test('metadata lookup follows only public Netflix title redirects and discards tracking data', async () => {
+  const calls = [];
+  const result = await fetchNetflixMetadata('https://www.netflix.com/watch/82006999?trackId=private', { request: async (url, options) => {
+    calls.push(url);
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.headers.cookie, undefined);
+    return calls.length === 1 ? Response.redirect('https://www.netflix.com/in/title/81772075?track=discard') : new Response(page());
+  } });
+  assert.equal(result.episode, 2);
+  assert.deepEqual(calls, ['https://www.netflix.com/title/82006999', 'https://www.netflix.com/in/title/81772075']);
+  let redirects = 0;
+  const blocked = await fetchNetflixMetadata('https://www.netflix.com/watch/82006999', { request: async () => {
+    redirects++; return Response.redirect('https://www.netflix.com.evil.example/title/81772075');
+  } });
+  assert.equal(blocked, null);
+  assert.equal(redirects, 1);
+  for (const value of ['http://occ-1.nflxso.net/dnm/api/evil.jpg', 'https://evil.example/dnm/api/evil.jpg', 'https://u:p@occ-1.nflxso.net/dnm/api/evil.jpg']) {
+    assert.equal(cleanNetflixMetadata({ title: 'Akka', poster: value }).poster, '');
+  }
+  assert.equal(cleanNetflixMetadata({ title: 'Akka', poster: `${poster}&secret=hidden#data` }).poster, poster);
+});
+
+test('Continue watching renders the show, episode, artwork, and original resume time', async () => {
+  const { playbackResumeCard } = await import('../public/js/playback-resume.js');
+  const html = playbackResumeCard({ service: 'netflix', id: 'oldid', title: 'AkkaE1The Sisterhood', position: 899, duration: 2797,
+    netflix: parseNetflixTitle(page(), '81772075', '82006998') }, true);
+  assert.match(html, /<strong>Akka<\/strong>/);
+  assert.match(html, /Ep 1 — The Sisterhood/);
+  assert.match(html, /class="playback-resume-poster".*official\.jpg/);
+  assert.match(html, /Resume at 14:59 \/ 46:37/);
+  assert.match(html, /data-playback-play="oldid"/);
+  assert.doesNotMatch(html, /AkkaE1The/);
+});
