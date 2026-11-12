@@ -1363,6 +1363,7 @@ function buildCcMenu() {
   let html = '<div class="menu-label">Subtitles</div>';
   html += `<button type="button" data-sub="" title="Hide all captions." class="${!active ? 'sel' : ''}">Off</button>`;
   for (const s of subs) html += `<button type="button" data-sub="${esc(s.key)}" class="${active === s.key ? 'sel' : ''}">${esc(s.label)}${s.automatic ? ' (alternative)' : s.local ? ' (saved)' : ''}${subtitles.status(s.key) === 'error' ? ' — unavailable' : ''}</button>`;
+  if (!subs.length) html += '<div class="menu-note">No Local Subtitles</div>';
   if (S.movie?.kind === 'anime') {
     const lang = subtitleLanguage(subtitles.sources.get(active));
     const search = S.movie.subtitleSearch?.[lang];
