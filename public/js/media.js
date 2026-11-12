@@ -173,6 +173,7 @@ export class YouTubeMedia extends AdapterBase {
     if (s === 1) { this.emit('playing'); if (this.seekingTarget != null) this.finishSeek(); }
     else if (s === 2) { this.emit('pause'); if (this.seekingTarget != null) this.finishSeek(); }
     else if (s === 3) this.emit('waiting');
+    else if (s === 0 && was !== 0) this.emit('ended');
     if (was !== s) this.emit('timeupdate');
   }
 
@@ -186,9 +187,10 @@ export class YouTubeMedia extends AdapterBase {
 
   get readyState() { if (!this.ready) return 0; return this.state === 3 ? 2 : 4; }
   get paused() { return !this.ready || this.state !== 1 && this.state !== 3; }
+  get ended() { return this.ready && this.state === 0; }
   get seeking() { return this.seekingTarget != null; }
   get duration() { return this.ready ? this.p.getDuration() || 0 : 0; }
-  get currentTime() { return this.ready ? this.p.getCurrentTime() || 0 : 0; }
+  get currentTime() { return this.ended ? this.duration : this.ready ? this.p.getCurrentTime() || 0 : 0; }
   set currentTime(t) {
     if (!this.ready) return;
     this.seekingTarget = t; this.seekStarted = performance.now();

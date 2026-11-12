@@ -124,6 +124,12 @@
         <div class="click-layer" id="clickLayer"></div>
         <div class="service-panel" id="servicePanel" hidden></div>
         <button class="yt-open" id="ytOpen" type="button" hidden><svg><use href="#i-film"/></svg>Search YouTube</button>
+        <section class="yt-end-screen" id="ytEndScreen" aria-label="Video finished" hidden>
+          <div class="yt-end-heading"><h2>What to watch next</h2><button type="button" class="btn sm" id="ytReplay">Replay</button></div>
+          <p id="ytEndStatus" class="fine" role="status">Finding related videos…</p>
+          <div class="yt-end-grid" id="ytEndVideos"></div>
+          <button type="button" class="btn sm" id="ytEndBrowse">Browse YouTube</button>
+        </section>
         <div class="yt-browser" id="ytBrowser" hidden>
           <div class="yt-top">
             <span class="yt-logo">YouTube</span>

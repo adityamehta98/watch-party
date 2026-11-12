@@ -196,6 +196,18 @@ test('new state cancels a scheduled play before its timer can restart paused vid
   assert.equal(f.video.plays, 0);
 });
 
+test('an ended player never retries playback against a lagging room clock, but explicit replay works', async () => {
+  const f = await playerFixture();
+  f.video.duration = 1000; f.time(100); f.state(); f.finishSeek();
+  f.video.ended = true; f.video.paused = true; f.time(1000); f.video.emit('ended');
+  const plays = f.video.plays, seeks = f.video.seeks.length;
+  for (let i = 0; i < 50; i++) { f.advance(200, false); f.player.correct(); }
+  f.player.tryPlay();
+  assert.equal(f.video.plays, plays); assert.equal(f.video.seeks.length, seeks);
+  f.state({ position: 0, seq: 2 });
+  assert.ok(f.video.seeks.at(-1) <= .3, 'explicit replay seeks to the start with bounded latency compensation');
+});
+
 function subtitleVideo() {
   const video = new Events();
   video.children = [];

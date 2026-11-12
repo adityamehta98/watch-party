@@ -88,3 +88,14 @@ test('Off clears captions that YouTube restores when recreating its module', asy
   assert.deepEqual(Object.keys(player.track), []);
   assert.equal(media.captionsEnabled, false);
 });
+
+test('YouTube completion emits once and reports the final timestamp even if its API clock resets', async () => {
+  const { media, players } = await fixture();
+  let ended = 0; media.addEventListener('ended', () => ended++);
+  players[0].time = 0;
+  players[0].options.events.onStateChange({ data: 0 });
+  players[0].options.events.onStateChange({ data: 0 });
+  assert.equal(ended, 1); assert.equal(media.ended, true); assert.equal(media.currentTime, 900);
+  players[0].options.events.onStateChange({ data: 1 });
+  assert.equal(media.ended, false);
+});

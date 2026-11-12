@@ -815,6 +815,15 @@ class Room {
       case 'cmd': return this.command(client, msg);
       case 'status': {
         const st = msg.status || {};
+        if (isHost && this.movie?.kind === 'youtube' && st.movieId === this.movie.id && st.seq === this.state.seq &&
+            st.loaded && st.ready && st.ended && !st.seeking && !st.ad && !st.blocked && !st.error &&
+            Number.isFinite(st.duration) && st.duration > 0 && st.duration < 86400 && Number.isFinite(st.position) &&
+            st.position >= st.duration - 1 && st.position <= st.duration + 1 &&
+            (!this.movie.duration || Math.abs(this.movie.duration - st.duration) < 2) && (this.state.playing || this.state.waiting)) {
+          this.movie.duration = st.duration;
+          if (this.animeHistory?.recordPlayback(this.movie, st.duration, st.duration)) { this.animeHistory.flush(); this.sendPlaybackHistory(); }
+          this.setState({ playing: false, position: st.duration, anchor: Date.now(), waiting: false, waitingFor: [] }, { action: 'ended' });
+        }
         const previous = client.status || {};
         const now = Date.now();
         const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));

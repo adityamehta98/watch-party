@@ -59,6 +59,7 @@ export class SyncPlayer {
     if (!media.isAdapter && IS_APPLE && !media.syncProfile) media.syncProfile = APPLE_PROFILE;
     const on = (ev, fn) => { media.addEventListener(ev, fn); this.handlers.push([ev, fn]); };
     this.handlers = [];
+    on('ended', () => { this.endedSeq = this.state?.seq; this.clearStart(); });
     on('seeking', () => { this.seekStartedAt = performance.now(); this.vfCheck = null; });
     on('seeked', () => {
       if (this.seekStartedAt) {
@@ -106,6 +107,7 @@ export class SyncPlayer {
       this.attach(media);
     }
     this.movie = movie;
+    this.endedSeq = null;
     this.playAttempt = null;
     this.playPending = false;
 
@@ -209,6 +211,7 @@ export class SyncPlayer {
   }
 
   tryPlay() {
+    if (this.v.ended && this.endedSeq === this.state?.seq) return;
     if (this.playPending) return;
     const media = this.v, attempt = {};
     this.playAttempt = attempt;
@@ -253,6 +256,9 @@ export class SyncPlayer {
     if (v.isAdapter && v.externalChangeAt && performance.now() - v.externalChangeAt < 1200) return;
     if (v.isAdapter && v.holdUntil && performance.now() < v.holdUntil) return; // the viewer is using the site's own controls
     const now = this.clock.now();
+    if (v.ended && (this.endedSeq === s.seq || this.expected(now) >= v.duration - .5)) {
+      this.clearStart(); this.setRate(1); return;
+    }
 
     const pausedEps = this.profile.pausedEps || 0.05; // how exact a paused frame must be
     if (!s.playing) {

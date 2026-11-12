@@ -40,6 +40,20 @@ test('guest, stale-title, preview, seek and unsettled reports cannot overwrite r
   f.progress(f.host, { position: 1 }, 'https://www.netflix.com/browse');
   assert.equal(f.history.playbackList()[0].position, 726);
 });
+
+test('only a matching host YouTube end report stops the room; replay remains an explicit command', t => {
+  const f = fixture(t);
+  f.room.selectUrl(f.host, 'https://www.youtube.com/watch?v=abcdefghijk', false, { duration: 900, playing: true });
+  const status = { movieId: f.room.movie.id, seq: f.room.state.seq, loaded: true, ready: true, ended: true, position: 900, duration: 900 };
+  const report = (who, patch = {}) => f.room.onMessage(who, { type: 'status', status: { ...status, ...patch } });
+  report(f.guest); assert.equal(f.room.state.playing, true);
+  for (const patch of [{ seq: -1 }, { movieId: 'old' }, { position: 1 }, { ad: true }, { seeking: true }]) { report(f.host, patch); assert.equal(f.room.state.playing, true); }
+  report(f.host);
+  assert.equal(f.room.state.playing, false); assert.equal(f.room.state.waiting, false); assert.equal(f.room.state.position, 900);
+  assert.equal(f.history.playbackList()[0].position, 900);
+  f.room.command(f.host, { action: 'play', position: 0 });
+  assert.equal(f.room.state.position, 0); assert.equal(f.room.state.playing, true);
+});
 test('enriching a saved Netflix episode keeps its position, order, and resume URL through restart', async t => {
   const f = fixture(t);
   f.progress();

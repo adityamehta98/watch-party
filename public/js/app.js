@@ -1,4 +1,5 @@
 import { createNotificationCenter } from './notifications.js';
+import { youtubeEndCards } from './youtube-end.js';
 import './emoji-picker.js';
 import { Connection } from './net.js';
 import { trackPlayerWindow } from './player-window.js';
@@ -158,6 +159,7 @@ function start(name) {
     onBlocked: kind => { $('#unmutePill').hidden = false; if (kind === 'blocked') renderNotice(); },
     onChange: () => { scheduleUi(); if (!tuneIn.awaitingMovie) { if (M?.error) hideTuneIn(true); else if (M && M.readyState >= (M.isAdapter ? 1 : 3)) hideTuneIn(); } },
   });
+  ytMedia.addEventListener('ended', onYouTubeEnded);
   wire();
   conn.connect();
   refreshExtensionPackage();
@@ -195,6 +197,8 @@ function wire() {
   });
   conn.on('welcome', onWelcome);
   conn.on('state', m => {
+    if (['play', 'seek'].includes(m.action) && m.state.position < (M?.duration || Infinity) - 1) $('#ytEndScreen').hidden = true;
+    if (m.action === 'ended' && S.movie?.kind === 'youtube') onYouTubeEnded();
     const prev = S.state;
     S.serverState = m.state;
     if (staleOwnEcho(m)) return; // a newer skip / play / pause of ours is already on its way
@@ -520,6 +524,7 @@ function loadMovie(movie) {
   }
   if (!same) S.observatory = null;
   S.movie = movie;
+  if (!same) { $('#ytEndScreen').hidden = true; S.youtubeRecommendations = []; }
   if (!movie || kindOf(movie) === 'service') hideTuneIn(true);
   syncAmbient();
   stage.classList.toggle('has-movie', !!movie);
@@ -2964,6 +2969,21 @@ setInterval(() => {
 let followSig = '', followFlashUntil = 0;
 
 const YT_CHIPS = ['Music', 'Movie trailers', 'Bollywood songs', 'Comedy', 'Cricket highlights', 'Cooking', 'Kids'];
+function onYouTubeEnded() {
+  if (S.movie?.kind !== 'youtube') return;
+  $('#ytEndScreen').hidden = false;
+  $('#ytEndStatus').textContent = 'Finding related videos…';
+  $('#ytEndVideos').innerHTML = youtubeEndCards(S.youtubeRecommendations || [], S.movie.videoId);
+  if (matchMedia('(min-width: 1100px)').matches) openYouTube();
+  else { closeYouTube(); ytBrowse(ytActivePlaylist ? 'playlist' : 'related', ytActivePlaylist); }
+  poke();
+}
+$('#ytReplay').addEventListener('click', () => { if (canControl()) { $('#ytEndScreen').hidden = true; sendCmd('play', 0); } });
+$('#ytEndBrowse').addEventListener('click', openYouTube);
+$('#ytEndVideos').addEventListener('click', e => {
+  const b = e.target.closest('[data-yid]');
+  if (b) conn.send({ type: 'select-url', url: `https://www.youtube.com/watch?v=${b.dataset.yid}` });
+});
 function openYouTube() {
   $('#ytChips').innerHTML = YT_CHIPS.map(c => `<button type="button" data-yq="${esc(c)}">${esc(c)}</button>`).join('');
   $('#ytBrowser').hidden = false;
@@ -3015,6 +3035,11 @@ function onYtResults(m) {
   showYtResults(m.q, m.results || []);
 }
 function showYtResults(q, list) {
+  if (S.movie?.kind === 'youtube' && ['related', 'playlist'].includes(ytView)) {
+    S.youtubeRecommendations = list;
+    $('#ytEndVideos').innerHTML = youtubeEndCards(list, S.movie.videoId);
+    $('#ytEndStatus').textContent = list.length ? 'Choose a video to watch with the room.' : 'No related videos available. Search YouTube below.';
+  }
   {
     $('#ytStatus').textContent = list.length ? `${list.length} ${ytView === 'playlists' ? 'playlists' : 'videos'}` : `No ${ytView === 'playlists' ? 'public playlists' : 'videos'} available. Try another search.`;
     $('#ytResults').innerHTML = list.map(v => `<button type="button" class="yt-card" ${v.playlist ? 'data-yplaylist' : 'data-yid'}="${esc(v.id)}" title="${esc(v.title)}">
