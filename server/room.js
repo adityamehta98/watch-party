@@ -55,6 +55,7 @@ class Room {
     this.settings = {
       autoWait: s.autoWait !== false,
       animeAutoSkip: s.animeAutoSkip !== false,
+      aiFeatures: s.aiFeatures === true, // AI captions / recap / highlights: off until the host turns them on
       requireApproval: s.requireApproval !== false, // on by default: you approve each new guest
       maxGuests: Math.max(1, Math.min(20, Number(s.maxGuests) || 8)),
       locked: false,
@@ -246,7 +247,7 @@ class Room {
   toast(client, text, kind = 'info') { this.send(client.ws, { type: 'toast', kind, text }); }
 
   publicSettings(isHost) {
-    const s = { giphyKey: this.config.giphyKey || '', autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured() };
+    const s = { giphyKey: this.config.giphyKey || '', autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, movieTvConfigured: !!this.catalog?.configured(), subtitlesConfigured: !!this.subtitleSearch?.configured(), aiFeatures: this.settings.aiFeatures };
     if (isHost) Object.assign(s, { requireApproval: this.settings.requireApproval, locked: this.settings.locked, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults });
     return s;
   }
@@ -807,7 +808,7 @@ class Room {
       case 'anime-auto-skip': {
         if (!this.canControl(client) || typeof msg.enabled !== 'boolean') return;
         this.settings.animeAutoSkip = msg.enabled;
-        this.config.room = { ...this.config.room, animeAutoSkip: msg.enabled };
+        this.config.room = { ...this.config.room, animeAutoSkip: msg.enabled, aiFeatures: this.settings.aiFeatures };
         this.save?.();
         this.broadcastSettings();
         return;
@@ -910,6 +911,28 @@ class Room {
         this.broadcastHosts({ type: 'toast', kind: 'request', text: `${client.name} is asking for playback control`, clientId: client.id });
         return;
       }
+      // Live captions, "catch me up" and highlights (live-captions.js, recap.js, highlights.js). Off unless the host starts them.
+      case 'captions-start':
+        if (!isHost || !this.settings.aiFeatures) return;
+        if (this.liveCaptioner) this.liveCaptioner.start();
+        else this.send(client.ws, { type: 'captions-status', ok: false, active: false, reason: 'unavailable' });
+        return;
+      case 'captions-stop': if (isHost) this.liveCaptioner?.stop(); return;
+      case 'captions-sync':
+        if (this.liveCaptioner) this.liveCaptioner.sync(client);
+        else this.send(client.ws, { type: 'captions-status', ok: false, active: false, reason: 'unavailable' });
+        this.highlights?.sync(client);
+        return;
+      case 'recap-request':
+        if (!this.settings.aiFeatures) return this.send(client.ws, { type: 'recap', text: '', reason: 'unavailable' });
+        if (this.recap) this.recap.request(client);
+        else this.send(client.ws, { type: 'recap', text: '', reason: 'unavailable' });
+        return;
+      case 'highlights-generate':
+        if (!isHost || !this.settings.aiFeatures) return;
+        if (this.highlights) this.highlights.generate(client);
+        else this.send(client.ws, { type: 'highlights', clips: [], reason: 'unavailable' });
+        return;
       default:
     }
     if (this.canChoose(client)) {
@@ -1034,11 +1057,15 @@ class Room {
       case 'settings': {
         const s = msg.settings || {};
         if ('autoWait' in s) this.settings.autoWait = !!s.autoWait;
+        if ('aiFeatures' in s) {
+          this.settings.aiFeatures = !!s.aiFeatures;
+          if (!this.settings.aiFeatures) { this.liveCaptioner?.stop(); this.highlights?.stop(); }
+        }
         if ('requireApproval' in s) this.settings.requireApproval = !!s.requireApproval;
         if ('locked' in s) this.settings.locked = !!s.locked;
         if ('maxGuests' in s) this.settings.maxGuests = Math.max(1, Math.min(20, Number(s.maxGuests) || 8));
         if (s.defaults) for (const p of PERMS) if (p in s.defaults) this.settings.defaults[p] = !!s.defaults[p];
-        this.config.room = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, requireApproval: this.settings.requireApproval, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults };
+        this.config.room = { autoWait: this.settings.autoWait, animeAutoSkip: this.settings.animeAutoSkip, aiFeatures: this.settings.aiFeatures, requireApproval: this.settings.requireApproval, maxGuests: this.settings.maxGuests, defaults: this.settings.defaults };
         this.save();
         this.broadcastSettings();
         return;

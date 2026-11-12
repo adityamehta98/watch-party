@@ -13,6 +13,7 @@ import { playbackCapabilities, deliverySources, reconcileDeliverySources } from 
 import { FilePlayback } from './file-playback.js';
 import { StageFullscreen } from './fullscreen.js';
 import { SubtitleTracks } from './subtitles.js';
+import { initLiveCaptions } from './live-captions.js';
 import { observeVisualPolicy, visualPolicy } from './visuals.js';
 import { Mesh } from './rtc.js';
 import { YouTubeMedia, RemoteMedia, REQUIRED_EXT_VERSION, LATEST_EXT_VERSION, SERVICE_NAMES, SERVICE_HOMES, SERVICE_COLORS, SERVICE_SEARCH, serviceOfUrl, extOutdated, canonicalUrl, isTitlePage } from './media.js';
@@ -161,6 +162,7 @@ function start(name) {
   });
   ytMedia.addEventListener('ended', onYouTubeEnded);
   wire();
+  initLiveCaptions({ conn, video, key, isHost, notify: message => notificationCenter.record(message, 'error', []) });
   conn.connect();
   refreshExtensionPackage();
   clearInterval(S.extPackagePoll);
@@ -1359,7 +1361,7 @@ function buildCcMenu() {
   const subs = S.movie?.subs || [];
   const active = subtitles.selected;
   let html = '<div class="menu-label">Subtitles</div>';
-  html += `<button type="button" data-sub="" class="${!active ? 'sel' : ''}">Off</button>`;
+  html += `<button type="button" data-sub="" title="Hide all captions." class="${!active ? 'sel' : ''}">Off</button>`;
   for (const s of subs) html += `<button type="button" data-sub="${esc(s.key)}" class="${active === s.key ? 'sel' : ''}">${esc(s.label)}${s.automatic ? ' (alternative)' : s.local ? ' (saved)' : ''}${subtitles.status(s.key) === 'error' ? ' — unavailable' : ''}</button>`;
   if (S.movie?.kind === 'anime') {
     const lang = subtitleLanguage(subtitles.sources.get(active));
@@ -1370,11 +1372,11 @@ function buildCcMenu() {
   if (active && subtitles.status(active) === 'loading') html += '<div class="menu-note">Loading subtitles…</div>';
   if (active && subtitles.status(active) === 'error') html += '<div class="menu-note">The subtitle file could not be downloaded. Select the language again to retry.</div>';
   if (active) html += `<div class="menu-label">Timing: ${subtitles.offset >= 0 ? '+' : ''}${subtitles.offset.toFixed(1)} s</div><div class="caption-timing"><button type="button" data-sub-shift="-0.5">Earlier</button><button type="button" data-sub-shift="reset">Reset</button><button type="button" data-sub-shift="0.5">Later</button></div>`;
-  if (!subs.length) html += S.movie?.kind === 'anime' ? '<div class="menu-note">No captions came with this stream. Find alternative subtitles above.</div>' : '<div class="menu-note">No text subtitles for this movie. Blu-ray image subtitles (PGS) can\'t be shown in browsers. Put a .srt file next to the movie with the same name to add one.</div>';
   pop.innerHTML = html;
   $('#ccBtn').classList.toggle('on', !!active);
   $('#ccBtn').setAttribute('aria-pressed', String(!!active));
 }
+window.wpSelectSub = (k, remember = true) => selectSub(k, remember);
 function selectSub(k, remember = true) {
   subtitles.select(k);
   if (remember) {

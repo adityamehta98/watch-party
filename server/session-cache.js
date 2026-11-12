@@ -6,7 +6,7 @@ const path = require('path');
 // downloaded tools, certificates, saved history, or unrelated files in a custom cache.
 function clearSessionCache(root) {
   const base = path.resolve(root);
-  const generated = /^(?:probe-cache\.json|status\.json|watchparty\.log|anime-subtitle-mappings-v3\.json|subtitles|[0-9a-f]{12}(?:\.json|\.mp4|\.part\.mp4|\.hls(?:\.part)?|\.[^.]+(?:\.part)?\.vtt))$/i;
+  const generated = /^(?:probe-cache\.json|status\.json|watchparty\.log|anime-subtitle-mappings-v3\.json|subtitles|highlights|[0-9a-f]{12}(?:\.json|\.mp4|\.part\.mp4|\.hls(?:\.part)?|\.[^.]+(?:\.part)?\.vtt))$/i;
   let names;
   try { names = fs.readdirSync(base); } catch { return; }
   for (const name of names) {

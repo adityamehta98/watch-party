@@ -39,6 +39,9 @@ const { createSessions } = require('./sessions');
 const { PlayerLifecycle } = require('./lifecycle');
 const { clearSessionCache } = require('./session-cache');
 const { createExtensionSetup } = require('./extension-setup');
+const { LiveCaptioner, resolveProvider } = require('./live-captions');
+const { Recap } = require('./recap');
+const { Highlights } = require('./highlights');
 
 const ROOT = tools.ROOT;
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -97,6 +100,10 @@ const DEFAULT_CONFIG = {
   giphyKey: '',             // Public browser API key; editable only by the host
   tmdbToken: '',            // TMDB API Read Access Token; never sent to guests
   wyzieKey: '',             // Subtitle provider key; host only
+  hfToken: '',              // Hugging Face token for AI features (free); host only
+  sttKey: '',               // Groq / OpenAI-compatible key for AI features (alternative to hfToken); host only
+  aiProvider: '',           // '' = auto (picks hf if a HF token is set, else groq), or 'hf' / 'groq' / 'openai'
+  llmKey: '',               // optional separate key for "catch me up" summaries (defaults to the one above)
   freeMedia: true,           // public-domain / permissively licensed Internet Archive titles
   movieTvSources: [],       // host-authorized HLS/MP4 sources keyed by TMDB title and language
   room: {},
@@ -151,6 +158,23 @@ const subtitleSearch = new SubtitleSearch({ library: captions, config });
 const animeHistory = new AnimeHistory(path.join(ROOT, 'watch-history.json'));
 const room = new Room({ config, library, save, ytSearch: ytSearchFn, animeSearch: q => anime.search(q), catalog, captions, subtitleSearch, animeHistory,
   netflixMetadata: require('./netflix-metadata').fetchNetflixMetadata });
+// Live captions, "catch me up" and highlights: host-toggled and off by default. ffmpeg reads the
+// current media straight from disk, or through this PC's own media routes with the host key.
+function liveSource(movie) {
+  if (!movie) return null;
+  if (movie.kind === 'file' && movie.file) return { input: movie.file, hls: false };
+  const data = room.movieData();
+  const rel = data && data.id === movie.id ? data.hls || data.url : null;
+  if (!rel || !/^\/(?![\/\\])/.test(rel)) return null;
+  return { input: `${localBase()}${rel}${rel.includes('?') ? '&' : '?'}k=${encodeURIComponent(config.adminKey)}`, hls: !!data.hls };
+}
+const ai = resolveProvider({ env: process.env, config });
+room.liveCaptioner = new LiveCaptioner({ ffmpeg: bins.ffmpeg, captions, room, source: liveSource,
+  provider: ai.provider, sttKey: ai.key, sttUrl: ai.sttUrl, sttModel: ai.sttModel, language: ai.language,
+  translate: ai.translate, llmKey: ai.llmKey, llmUrl: ai.llmUrl, llmModel: ai.llmModel });
+room.recap = new Recap({ room, captioner: room.liveCaptioner, llmKey: ai.llmKey, url: ai.llmUrl, model: ai.llmModel });
+room.highlights = new Highlights({ ffmpeg: bins.ffmpeg, room, captioner: room.liveCaptioner, source: liveSource,
+  dir: path.join(ROOT, config.cacheDir || 'cache', 'highlights'), encoders: () => toolState.encoders });
 const tunnel = config.tunnel === 'cloudflare' ? new Tunnel(bins.cloudflared, config.port) : null;
 const mapper = new PortMapper();
 const turnCreds = { username: 'watchparty', password: randKey(18) };
@@ -780,6 +804,10 @@ async function handler(req, res) {
       if (!mediaRole(req, u.searchParams.get('k'))) return notFound(req, res, 'caption admission');
       return captions.serve(req, res, p, u.searchParams.get('k'), { room, local, missing: () => notFound(req, res, 'caption unavailable') });
     }
+    if (p.startsWith('/highlights/')) {
+      if (!mediaRole(req, u.searchParams.get('k'))) return notFound(req, res, 'highlight admission');
+      return room.highlights.serve(req, res, p, u.searchParams.get('k'), { local, missing: () => notFound(req, res, 'highlight unavailable') });
+    }
     if (p.startsWith('/anime/')) return animeProxy(req, res, p, u);
     if (p.startsWith('/catalog-media/')) return catalogMediaProxy(req, res, p, u);
     if (p === '/healthz') return u.searchParams.get('t') === healthToken ? sendJson(res, 200, { ok: true }) : notFound(req, res, 'health');
@@ -1010,6 +1038,7 @@ async function shutdown() {
   if (awake) { try { awake.kill(); } catch {} }
   await stopSharing();
   library.shutdown();
+  room.liveCaptioner.stop(); room.highlights.stop();
   room.shutdown();
   await new Promise(r => setTimeout(r, 600)); // let stopped conversions release their files
   clearSessionCache(library.cacheDir);
