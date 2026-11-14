@@ -80,7 +80,7 @@ function panel({ host = true, version, brave = false, browserFound = true, updat
     PLATFORM: {}, kindOf: m => m.kind, esc: value => String(value),
     refreshInfoSoon() {}, EventTarget, Event, URL,
   });
-  const source = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const source = require('./app-source');
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js/media.js'), 'utf8').replace(/^export /gm, ''), context);
   vm.runInContext(source.slice(source.indexOf('function serviceName('), source.indexOf("$('#servicePanel').addEventListener")), context);
   context.renderServicePanel();

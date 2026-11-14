@@ -21,7 +21,7 @@ const act = action => send({ type: 'ui-action', action });
 function onMessage(m) {
   if (m.type === 'none') { ui = null; $('#none').hidden = false; $('#app').hidden = true; closeRtc(); return; }
   if (m.type === 'bound') { $('#none').hidden = true; $('#app').hidden = false; return; }
-  if (m.type === 'ui') { ui = m.ui; $('#none').hidden = true; $('#app').hidden = false; render(); return; }
+  if (m.type === 'ui') { ui = m.ui; document.documentElement.dataset.theme = ui.theme === 'light' ? 'light' : 'dark'; $('#none').hidden = true; $('#app').hidden = false; render(); return; }
   if (m.type === 'ui-time') { time = { ...m.t, got: Date.now() }; renderTime(); return; }
   if (m.type === 'dock-rtc') onRtc(m.data || {});
 }
@@ -168,6 +168,7 @@ async function onRtc(d) {
 
 // ------------------------------------------------ your clicks
 $('#playBtn').addEventListener('click', () => act({ op: 'toggle' }));
+$('#qualityBtn').addEventListener('click', () => act({ op: 'quality' }));
 $('#backBtn').addEventListener('click', () => act({ op: 'seek-by', by: -10 }));
 $('#fwdBtn').addEventListener('click', () => act({ op: 'seek-by', by: 10 }));
 $('#seek').addEventListener('click', e => {

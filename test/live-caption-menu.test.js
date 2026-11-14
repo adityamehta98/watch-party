@@ -35,3 +35,11 @@ test('automatic live-caption activation clears regular subtitles and normal CC O
   assert.equal(f.track.mode, 'showing'); assert.ok(f.off() > 0);
   f.clickSub(); assert.equal(f.track.mode, 'hidden');
 });
+
+test('YouTube uses its own timed captions and never appends host transcription tools', () => {
+  const f = fixture();
+  f.emit('movie', { movie: { id: 'yt1', kind: 'youtube' } });
+  f.emit('captions-status', { ok: true, active: true });
+  assert.equal(f.children.length, 0);
+  assert.equal(f.track.mode, 'hidden');
+});

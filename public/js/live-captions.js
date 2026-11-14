@@ -59,12 +59,12 @@ export function initLiveCaptions({ conn, video, key, isHost, notify = () => {}, 
 
   const track = video.addTextTrack('captions', 'Live captions', 'en');
   track.mode = 'hidden';
-  const S = { status: { ok: isHost, active: false, reason: '' }, movieId: null, seen: new Set(), show: pref(), ai: false,
+  const S = { status: { ok: isHost, active: false, reason: '' }, movieId: null, kind: '', seen: new Set(), show: pref(), ai: false,
     recap: { state: 'idle', reason: '' }, highlights: { state: 'idle', clips: [], reason: '', movieId: null } };
 
   const clearCues = () => { for (const cue of [...(track.cues || [])]) track.removeCue(cue); S.seen.clear(); };
   const applyMode = () => {
-    const showing = S.ai && S.status.active && S.show;
+    const showing = S.ai && S.kind !== 'youtube' && S.status.active && S.show;
     if (showing && typeof window !== 'undefined') window.wpSelectSub?.(null, false);
     track.mode = showing ? 'showing' : 'hidden';
   };
@@ -91,7 +91,7 @@ export function initLiveCaptions({ conn, video, key, isHost, notify = () => {}, 
 
   // Build the extra HTML that joins the existing CC popover's innerHTML.
   function sectionsHtml() {
-    if (!S.ai) return '';
+    if (!S.ai || S.kind === 'youtube') return '';
     const st = S.status;
     let html = '';
     if (isHost) html += `<button type="button" data-live="toggle" title="Automatically detects spoken languages and generates English captions for the room." ${!st.ok && !st.active ? 'disabled' : ''}>${st.active ? 'Stop live captions' : 'Start live captions'}</button>`;
@@ -117,7 +117,7 @@ export function initLiveCaptions({ conn, video, key, isHost, notify = () => {}, 
     try {
       // Remove our previous section (if any) before re-adding, so the sub list above us is preserved.
       ccPop.querySelectorAll('[data-wp-live-section]').forEach(el => el.remove());
-      if (!S.ai) return;
+      if (!S.ai || S.kind === 'youtube') return;
       const host = ccPop.ownerDocument.createElement('div');
       host.dataset[MARK] = '1';
       host.innerHTML = sectionsHtml();
@@ -183,11 +183,14 @@ export function initLiveCaptions({ conn, video, key, isHost, notify = () => {}, 
   };
   conn.on('settings', m => applySettings(m.settings));
   conn.on('welcome', m => {
+    S.kind = m.movie?.kind || '';
     if ((m.movie?.id || null) !== S.movieId) { S.movieId = m.movie?.id || null; clearCues(); }
     applySettings(m.settings);
     conn.send({ type: 'captions-sync' });
   });
   conn.on('movie', m => {
+    S.kind = m.movie?.kind || '';
+    applyMode(); schedule();
     if ((m.movie?.id || null) === S.movieId) return;
     S.movieId = m.movie?.id || null;
     clearCues();

@@ -4,7 +4,7 @@ import { PLATFORM } from './platform.js';
 import { syncTuning, APPLE_PROFILE } from './sync.js';
 
 const IS_APPLE = PLATFORM.appleMobile || PLATFORM.safari;
-export const DEVICE = PLATFORM.device;
+const DEVICE = PLATFORM.device;
 
 export class SyncPlayer {
   constructor({ video, clock, onStatus, onBlocked, onChange }) {
@@ -60,6 +60,7 @@ export class SyncPlayer {
     const on = (ev, fn) => { media.addEventListener(ev, fn); this.handlers.push([ev, fn]); };
     this.handlers = [];
     on('ended', () => { this.endedSeq = this.state?.seq; this.clearStart(); });
+    on('loadedmetadata', () => { if (this.profile.settle) { this.playAttempt = null; this.playPending = false; this.correct(); } });
     on('seeking', () => { this.seekStartedAt = performance.now(); this.vfCheck = null; });
     on('seeked', () => {
       if (this.seekStartedAt) {
@@ -84,7 +85,8 @@ export class SyncPlayer {
       if (!this.playStartedAt || performance.now() - this.playStartedAt > 60000) this.playStartedAt = performance.now();
       // Embedded players confirm playback asynchronously. Clear the startup sync
       // notice once they report playing, even before the next correction tick.
-      if (media.isAdapter && this.movie && !this.aligned) { this.aligned = true; this.onChange(); }
+      // A player that settles behind the loader (YouTube) stays hidden until it is also in the right place.
+      if (media.isAdapter && this.movie && !this.aligned && !this.profile.settle) { this.aligned = true; this.onChange(); }
     });
     on('timeupdate', () => {
       this.onChange();
@@ -110,6 +112,7 @@ export class SyncPlayer {
     this.endedSeq = null;
     this.playAttempt = null;
     this.playPending = false;
+    this.blocked = false;
 
     this.seekLatency = this.v.isAdapter ? 0.6 : (movie && movie.hls) ? 1.2 : 0.25;
     this.clearStart();
@@ -135,7 +138,7 @@ export class SyncPlayer {
     this.sawPicture = false;
     this.badChecks = 0;
     const v = this.v;
-    if (v.isAdapter) { if (movie) v.open(movie); else v.close(); this.onChange(); return; }
+    if (v.isAdapter) { if (movie) v.open(movie, () => this.state?.movieId === movie.id ? (this.clock.synced ? this.expected() : this.state.position) : null); else v.close(); this.onChange(); return; }
     for (const t of [...v.querySelectorAll('track')]) t.remove();
     if (!movie) { v.removeAttribute('src'); v.load(); this.onChange(); return; }
     if (srcUrl) v.src = typeof srcUrl === 'string' ? srcUrl : srcUrl.url;
@@ -150,6 +153,7 @@ export class SyncPlayer {
 
     const changed = !prev || state.movieId !== prev.movieId || state.position !== prev.position || state.anchor !== prev.anchor || state.playing !== prev.playing;
     if (changed) {
+      if (!prev || state.playing !== prev.playing) { this.playAttempt = null; this.playPending = false; }
       this.lastHardSeek = 0;
       this.recoverUntil = 0;
       this.driftEma = 0;
@@ -161,6 +165,7 @@ export class SyncPlayer {
     }
     this.state = state;
     this.correct();
+    if (prev && !prev.playing && state.playing && this.v.isAdapter && this.v.readyState >= 1 && this.clock.now() >= state.anchor && !this.blocked && !this.playPending) this.tryPlay();
     this.report(true);
   }
 
@@ -253,8 +258,8 @@ export class SyncPlayer {
     if (s.movieId && this.movie.id && s.movieId !== this.movie.id) return;
     if (this.movie.browsing) return; // the host is still picking something on the service: leave the tabs alone
     if (!this.clock.synced) return; // wait until we know the room's clock, or a late joiner lands in the wrong place
-    if (v.isAdapter && v.externalChangeAt && performance.now() - v.externalChangeAt < 1200) return;
-    if (v.isAdapter && v.holdUntil && performance.now() < v.holdUntil) return; // the viewer is using the site's own controls
+    if (v.isAdapter && !this.needsAlignment && v.externalChangeAt && performance.now() - v.externalChangeAt < 1200) return;
+    if (v.isAdapter && !this.needsAlignment && v.holdUntil && performance.now() < v.holdUntil) return; // the viewer is using the site's own controls
     const now = this.clock.now();
     if (v.ended && (this.endedSeq === s.seq || this.expected(now) >= v.duration - .5)) {
       this.clearStart(); this.setRate(1); return;
@@ -291,7 +296,7 @@ export class SyncPlayer {
       if (!v.paused && v.ended) this.setRate(1);
       return;
     }
-    if (v.seeking) return;
+    if (v.seeking && (!v.isAdapter || !this.needsAlignment || Math.abs((v.seekingTarget ?? v.currentTime) - target) < (this.profile.hardSeek || pausedEps))) { if (v.isAdapter) { this.needsAlignment = false; if (v.paused && !this.blocked) this.tryPlay(); } return; }
 
     const diff = v.currentTime - target;
     this.drift = diff;
@@ -307,7 +312,8 @@ export class SyncPlayer {
     const hardSeek = tuning.hardSeek;
     // User commands align immediately. Ordinary clock drift must not turn into a
     // periodic decoder restart while an Apple video is otherwise playing smoothly.
-    const commandSeek = !v.isAdapter && this.needsAlignment && Math.abs(diff) > pausedEps;
+    // YouTube resumes where this viewer once stopped unless its first move is a jump to the room's position.
+    const commandSeek = (this.needsAlignment && Math.abs(diff) > pausedEps) || !!(prof.settle && !this.aligned && !this.lastHardSeek && v.paused);
     this.needsAlignment = false;
     // A stalled decoder needs its pending data, not another seek to a newer room
     // timestamp. In a slow stream that otherwise keeps moving the load target
@@ -340,17 +346,17 @@ export class SyncPlayer {
         if (v.isAdapter && !v.paused && !this.aligned) v.pause();
         // A large latency allowance can land a paused Apple player beyond its seek threshold
         // forever. Keep compensation inside that threshold and let play() run during the seek.
-        const compensation = v.isAdapter ? Math.min(this.seekLatency, 1) : Math.min(this.seekLatency, hardSeek / 2, 0.25);
+        const compensation = v.isAdapter ? Math.min(this.seekLatency, hardSeek / 2, 1) : Math.min(this.seekLatency, hardSeek / 2, 0.25);
         this.seekTo(target + compensation, 'seek');
         this.setRate(1);
       }
-      if (!v.isAdapter && v.paused && !this.blocked) this.tryPlay();
+      if ((!v.isAdapter || prof.settle) && v.paused && !this.blocked) this.tryPlay();
       return;
     }
     if (v.paused && !this.blocked) this.tryPlay();
 
-    const alignEps = (this.movie && this.movie.hls) ? 0.8 : 0.3;
-    if (!this.aligned && Math.abs(diff) < alignEps && !v.paused) { this.aligned = true; this.onChange(); }
+    const alignEps = prof.settle ? prof.hardSeek : (this.movie && this.movie.hls) ? 0.8 : 0.3;
+    if (!this.aligned && Math.abs(diff) < alignEps && !v.paused && v.readyState >= 3 && (!prof.settle || performance.now() - (v.playingSince || performance.now()) >= 2000)) { this.aligned = true; this.onChange(); }
     if (v.readyState < 3) { this.setRate(1); return; }
     if (prof.rate === false) {
 

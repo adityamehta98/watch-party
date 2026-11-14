@@ -292,6 +292,13 @@
   }
   function apply(c) {
     if (!c || typeof c !== 'object') return;
+    if (c.op === 'quality') {
+      const selector = '[aria-label*="Quality"], [aria-label*="quality"], [aria-label*="Settings"], [aria-label*="settings"], [title*="Settings"], [data-testid="settings-button"], .vjs-settings-control';
+      const button = [...new Set([document, pick()?.getRootNode()].filter(Boolean))].flatMap(root => [...root.querySelectorAll(selector)]).find(el => el.getClientRects().length && !el.disabled);
+      if (button) button.click();
+      else send({ wp: 'quality-unavailable' });
+      return;
+    }
     if (window.__wpCatalogRestoring && !['volume', 'mute'].includes(c.op)) return;
     if (c.op === 'next' && NETFLIX) { nextEpisode(); return; }
     const v = pick();
@@ -616,6 +623,7 @@
         <button data-a="react" title="React"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/><path d="M9 9h.01M15 9h.01"/></svg></button>
         <button data-a="chat" title="Chat"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><i class="dot"></i></button>
         <button data-a="faces" title="Show or hide everyone's cameras"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.5A5 5 0 0 1 21 19"/></svg></button>
+        <button data-a="quality" title="Video quality" aria-label="Video quality">HD</button>
       </div>
       <div class="reacts" id="reacts" hidden></div>
       <div class="faces" id="faces"></div>
@@ -632,6 +640,7 @@
       const b = e.target.closest('button[data-a]');
       if (!b) return;
       const a = b.dataset.a;
+      if (a === 'quality') { act({ op: 'quality' }); return; }
       if (a === 'cam' || a === 'mic') act({ op: a });
       else if (a === 'react') { reactsOpen = !reactsOpen; render(); }
       else if (a === 'chat') { chatOpen = !chatOpen; chatEmojiOpen = false; seenChat = ui ? ui.chat.length : 0; render(); if (chatOpen) chatFocus.claim(); else chatFocus.release(); wake(); }

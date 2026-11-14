@@ -129,7 +129,7 @@ test('room, extension sidebar and video overlay clear drafts synchronously in th
   vm.runInContext(source,context);const draft=context.WpEmoji.createDraft(input),card=holder.children[0];
   let handler;
   if(surface==='room'){
-   const app=fs.readFileSync(require('node:path').join(__dirname,'../public/js/app.js'),'utf8');
+   const app=require('./app-source');
    vm.runInContext(app.match(/function sendChat\(input\) \{[\s\S]*?\n\}/)[0],context);handler=()=>context.sendChat(input);
   }else{
    const file=surface==='sidebar'?'sidebar':'service',js=fs.readFileSync(require('node:path').join(__dirname,'../extension/'+file+'.js'),'utf8');

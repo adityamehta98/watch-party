@@ -214,6 +214,13 @@ function onPartyPort(port) {
       case 'cmd':
         if (party.link) chrome.tabs.sendMessage(party.link.tabId, { wp: 'cmd', cmd: m.cmd }, { frameId: party.link.frameId }).catch(() => unlink(party));
         break;
+      case 'quality-settings':
+        if (party.link) {
+          if (party.watch?.service === 'netflix') { chrome.tabs.create({ url: 'https://www.netflix.com/settings/playback', active: true, windowId: party.windowId }); break; }
+          await chrome.tabs.update(party.link.tabId, { active: true }).catch(() => {});
+          chrome.tabs.sendMessage(party.link.tabId, { wp: 'cmd', cmd: { op: 'quality' } }, { frameId: party.link.frameId }).catch(() => unlink(party));
+        }
+        break;
       case 'overlay':
         // chat is already on screen in the side panel or the "watch here" window; the video only shows it in fullscreen
         if (party.link) chrome.tabs.sendMessage(party.link.tabId, { wp: 'overlay', item: m.item, dockOpen: !!(party.panelOpen || party.inTheater) }, { frameId: rootFrame(party) }).catch(() => {});
@@ -397,6 +404,8 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       if (mine) post(party.port, { type: 'page', url: wpSharedPageUrl(m.url), signin: !!m.signin });
     } else if (m.wp === 'navigation-error') {
       if (party.link?.tabId === tabId || party.pendingTab === tabId) post(party.port, { type: 'ext-problem', kind: 'navigation', error: String(m.error || '').slice(0, 300) });
+    } else if (m.wp === 'quality-unavailable' && party.link?.tabId === tabId) {
+      post(party.port, { type: 'ext-problem', kind: 'quality' });
     } else if (m.wp === 'user' && party.link && party.link.tabId === tabId) {
       post(party.port, { type: 'user', action: m.action, t: m.t, land: !!m.land, url: wpSharedPageUrl(m.url), vol: m.vol, muted: m.muted });
     }

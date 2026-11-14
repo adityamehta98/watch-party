@@ -35,3 +35,15 @@ test('recommendations and playlists do not share a query-only cache entry', asyn
   await search('Cache fixture', fetch, { mode: 'related', id: 'different12' });
   assert.equal(count, 2);
 });
+
+test('a flaky YouTube answer is retried, and Home falls back from recommendations to popular videos', async () => {
+  let calls = 0;
+  const flaky = async () => (++calls === 1 ? { ok: true, text: async () => '<html>try again</html>' } : { ok: true, text: async () => html([video('nextvideo12')]) });
+  assert.deepEqual((await search('Retry fixture', flaky)).map(v => v.id), ['nextvideo12']);
+  assert.equal(calls, 2);
+  const urls = [];
+  const home = async url => { urls.push(url); return { ok: true, text: async () => html(/\/watch/.test(url) ? [] : [video('popular1234')]) }; };
+  assert.deepEqual((await search('Home fixture', home, { mode: 'home', id: 'abcdefghijk' })).map(v => v.id), ['popular1234']);
+  assert.match(urls[0], /\/watch\?v=abcdefghijk/); assert.match(urls.at(-1), /\/results\?/);
+  await assert.rejects(search('Down fixture', async () => ({ ok: false, status: 429 })), /429/);
+});

@@ -17,7 +17,7 @@ test('returning home saves progress before stopping playback and clears pending 
     closeYouTube: () => actions.push(['browser']),
     closePops: () => actions.push(['popovers']),
   });
-  const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf('function returnHome()'), app.indexOf("$('#homeBtn').addEventListener")), context);
   context.returnHome();
   assert.deepEqual(actions[0], ['save', true]);

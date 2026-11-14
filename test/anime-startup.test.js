@@ -24,7 +24,7 @@ function startup() {
     video: new EventTarget(), setTimeout, clearTimeout,
     setInterval: () => ++id, clearInterval() {},
   });
-  const app = read('app.js');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf('const tuneIn ='), app.indexOf("let episodePickerKey = ''")), context);
   return { context, overlay, title,
     show(label = 'Episode 1') { context.showTuneIn(label); },
@@ -62,7 +62,7 @@ test('a new episode cancels the previous loading screen exit', () => {
 test('a new episode also cancels a pending minimum loading time', () => {
   const f = startup();
   f.show(); f.hide(); f.advance(100); f.show('Episode 2'); f.hide();
-  f.advance(2450);
+  f.advance(650);
   assert.equal(f.overlay.hidden, false, 'the new episode keeps its own minimum display time');
   f.advance(400);
   assert.equal(f.overlay.hidden, true);
@@ -73,7 +73,7 @@ function animeSelection(f, movie = null) {
   f.context.S = { movie };
   f.context.saveAnimeProgress = () => {};
   f.context.conn = { send: message => messages.push(message) };
-  const app = read('app.js');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf('function selectAnime(message)'), app.indexOf('// Save promptly on pause/exit')), f.context);
   return { messages, select: message => f.context.selectAnime(message) };
 }
@@ -87,7 +87,7 @@ test('new episode animation survives outgoing playback until the selected movie 
   for (let i = 0; i < 35; i++) { f.hide(); f.advance(100); }
   assert.equal(f.overlay.hidden, false, 'outgoing video readiness must not reveal an unresolved episode');
   f.context.showTuneInForMovie({ title: 'Immortal King · Ep 2 (Dub)' });
-  f.hide(); f.advance(650);
+  f.hide(); f.advance(250);
   assert.equal(f.overlay.hidden, false, 'the accepted episode keeps a short transition before fading');
   f.advance(600);
   assert.equal(f.overlay.hidden, true);
@@ -104,7 +104,7 @@ test('resuming the current episode animates even without another movie message',
 test('joining or refreshing an already selected anime also shows the startup animation', () => {
   const f = startup();
   f.context.showTuneInForMovie({ title: 'Immortal King · Ep 1 (Dub)' });
-  f.hide(); f.advance(2100);
+  f.hide(); f.advance(600);
   assert.equal(f.overlay.hidden, false);
   f.advance(700);
   assert.equal(f.overlay.hidden, true);
@@ -113,7 +113,7 @@ test('joining or refreshing an already selected anime also shows the startup ani
 test('ready paused embeds expose their controls and embed errors clear the loading screen', () => {
   const f = startup();
   f.context.scheduleUi = () => {};
-  const callback = /onChange: (\(\) => \{ scheduleUi\(\);[^\n]+\}),/.exec(read('app.js'))[1];
+  const callback = /onChange: (\(\) => \{ scheduleUi\(\);[^\n]+\}),/.exec(require('./app-source'))[1];
   vm.runInContext(`globalThis.playbackChanged = ${callback}`, f.context);
   f.show();
   f.context.M = { isAdapter: true, readyState: 0, paused: true };
@@ -139,7 +139,7 @@ test('native anime clears the loading screen while video progress continues in t
   const f = startup();
   f.context.scheduleUi = () => {};
   f.context.M = { readyState: 4, paused: false };
-  const callback = /onChange: (\(\) => \{ scheduleUi\(\);[^\n]+\}),/.exec(read('app.js'))[1];
+  const callback = /onChange: (\(\) => \{ scheduleUi\(\);[^\n]+\}),/.exec(require('./app-source'))[1];
   vm.runInContext(`globalThis.playbackChanged = ${callback}`, f.context);
   f.show();
   for (let i = 0; i < 35; i++) { f.context.playbackChanged(); f.advance(100); }
@@ -151,7 +151,7 @@ test('source errors release the loading screen so the episode can be retried', (
   let receive;
   f.context.conn = { on(type, callback) { if (type === 'toast') receive = callback; } };
   f.context.toast = () => {};
-  const app = read('app.js');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf("  conn.on('toast',"), app.indexOf("  conn.on('error',")), f.context);
   f.show(); receive({ type: 'toast', kind: 'error', selection: 'anime', text: 'Try again' });
   assert.equal(f.overlay.hidden, true);

@@ -53,7 +53,9 @@ export function createPlayerMenu(pop) {
     }
     actions.append(button);
   }
-  pop.replaceChildren(grid, actions);
+  const quality = doc.createElement('div');
+  quality.dataset.qualityRow = '';
+  pop.replaceChildren(quality, grid, actions);
   return {
     update(state) {
       for (const [id, value] of Object.entries(playerMenuState(state))) {

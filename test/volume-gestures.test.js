@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../public/js/app.js'),'utf8');
+const source=require('./app-source');
 function gesture(){
  const listeners={},changes=[],brightness=[],seeks=[],M={volume:.5,muted:false};
  const stage={clientWidth:1000,clientHeight:600,getBoundingClientRect:()=>({left:0}),dataset:{idle:'false'},addEventListener:(name,fn)=>{(listeners[name]??=[]).push(fn)}};

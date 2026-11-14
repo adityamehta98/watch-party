@@ -16,7 +16,7 @@ function navigation() {
   const context = vm.createContext({ S, document, $: id => elements[id], kindOf: movie => movie?.kind,
     fmtTime: seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
     selectAnime: message => picks.push(JSON.parse(JSON.stringify(message))) });
-  const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf("let episodePickerKey = ''"), app.indexOf('function renderAnimeOverlay()')), context);
   return { S, elements, picks, document, render: () => context.renderAnimeEpisodePicker(), choose: ep => context.chooseAnimeEpisode(ep) };
 }

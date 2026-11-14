@@ -121,6 +121,44 @@ test('native buffering never chases the advancing room clock with repeated seeks
   assert.equal(f.video.seeks.length, 1, 'a user seek still applies immediately while buffering');
 });
 
+test('YouTube skips bypass drift timers and replace an in-flight seek immediately', async () => {
+  const f = await playerFixture();
+  f.video.isAdapter = true;
+  f.video.syncProfile = { hardSeek: .75, pausedEps: .3, rate: false, settle: true, driftHold: 1000, seekCooldown: 4000 };
+  f.time(100); f.video.paused = false; f.player.aligned = true;
+  f.state(); f.video.holdUntil = 999999; f.video.externalChangeAt = 10000;
+  f.state({ position: 110, seq: 2 });
+  assert.equal(f.video.seeks.length, 1, 'the key press must issue seekTo in the same turn');
+  f.video.seekingTarget = f.video.seeks[0]; f.time(100);
+  f.state({ position: 120, seq: 3 });
+  assert.equal(f.video.seeks.length, 2, 'the next key press must not wait for the previous seek');
+  assert.ok(f.video.seeks[1] >= 120);
+  f.video.seekingTarget = f.video.seeks[1];
+  f.state({ position: 120, anchor: 10001, seq: 4 });
+  assert.equal(f.video.seeks.length, 2, 'the server echo must not repeat an already pending seek');
+});
+
+test('pause then play cancels an obsolete pending play attempt without waiting for its timeout', async () => {
+  const f = await playerFixture();
+  f.video.isAdapter = true; f.video.syncProfile = { hardSeek: .75, rate: false };
+  f.time(100);
+  let calls = 0;
+  f.video.play = () => { calls++; return new Promise(() => {}); };
+  f.state(); assert.equal(calls, 1); assert.equal(f.player.playPending, true);
+  f.state({ playing: false, seq: 2 }); assert.equal(f.player.playPending, false);
+  f.video.seeking = true; f.video.seekingTarget = 100;
+  f.state({ playing: true, seq: 3 }); assert.equal(calls, 2);
+});
+
+test('recreating the YouTube frame for quality settings clears an obsolete play attempt', async () => {
+  const f = await playerFixture();
+  f.video.isAdapter = true; f.video.syncProfile = { hardSeek: .75, settle: true, rate: false };
+  f.time(100); let calls = 0;
+  f.video.play = () => { calls++; return new Promise(() => {}); };
+  f.state(); f.finishSeek(); assert.equal(calls, 1);
+  f.video.emit('loadedmetadata'); assert.equal(calls, 2);
+});
+
 test('continuous iPad playback never adjusts speed or seeks for small timestamp jitter', async () => {
   const f = await playerFixture();
   f.time(100); f.video.paused = false; f.state();
@@ -377,7 +415,7 @@ test('unsupported fullscreen reports the limit and only expands the page when ex
     fullscreen.expandPage(); doc.emit('keydown', { key: 'Escape' });
     assert.equal(fullscreen.active, false);
   }
-  assert.doesNotMatch(read('app.js'), /video\.webkitEnterFullscreen/);
+  assert.doesNotMatch(require('./app-source'), /video\.webkitEnterFullscreen/);
 });
 
 test('Brave video-only fullscreen shim cannot hijack the Watch Party stage', async () => {

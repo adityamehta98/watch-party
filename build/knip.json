@@ -1,6 +1,7 @@
 {
   "entry": [
     "public/js/app.js",
+    "public/js/theme.js",
     "public/sw.js",
     "extension/background.js",
     "extension/party.js",

@@ -120,7 +120,7 @@ test('the app offers Update extension then Reload page, with no restart before t
     $: () => null, renderExtensionUpdate() {}, extensionTargetVersion: () => '1.18.0',
     kindOf: m => m.kind, toast() {},
   });
-  const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const app = require('./app-source');
   vm.runInContext(app.slice(app.indexOf('async function updateExtension()'), app.indexOf('function extensionSetupUi()')), context);
   await context.updateExtension();
   assert.equal(context.S.extUpdate.ready, true);

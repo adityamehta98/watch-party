@@ -63,7 +63,7 @@ function reactions({ synced = true, now = 1000 } = {}) {
   const context = vm.createContext({ S, conn: { clock },
     floatReaction: (emoji, name) => shown.push({ emoji, name }),
     setTimeout: callback => timers.push(callback) });
-  const source = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const source = require('./app-source');
   vm.runInContext(source.slice(source.indexOf('function scheduleReaction('), source.indexOf('function floatReaction(')), context);
   return { shown, timers, S, receive: message => context.scheduleReaction(message), time: value => { now = value; } };
 }

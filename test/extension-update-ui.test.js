@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+const source = require('./app-source');
 const latest = require('../extension/manifest.json').version;
 
 function fixture({ version = '1.17.10', status = 'native', movie = null, host = false } = {}) {

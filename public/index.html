@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="stylesheet" href="/css/app.css">
+<script src="/js/theme.js"></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -48,9 +49,9 @@
     <symbol id="i-back10" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 3.5V9H9"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
     <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6M20.5 3.5V9H15"/><text x="12" y="15.5" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui" font-weight="700">10</text></symbol>
     <symbol id="i-pip" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="15" rx="2.5"/><rect x="12" y="11" width="7" height="5.5" rx="1.2" fill="currentColor" stroke="none"/></symbol>
-    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V5.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.9-2.6L2.8 15a1.5 1.5 0 0 1 2.4-1.8L8 16"/></symbol>
     <symbol id="i-glow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
     <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2.5" y="6" width="17" height="12" rx="2.5"/><path d="M21.5 10v4M6 9v6"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></symbol>
   </defs>
 </svg>
@@ -106,6 +107,7 @@
           <button class="ctrl" id="tbCam" type="button" title="Camera" aria-label="Camera"><svg><use href="#i-cam-off"/></svg></button>
           <button class="ctrl" id="tbMic" type="button" title="Microphone" aria-label="Microphone"><svg><use href="#i-mic-off"/></svg></button>
         </span>
+        <button class="icon-btn" id="themeBtn" type="button" title="Switch between light and dark" aria-label="Switch between light and dark"><svg><use href="#i-theme"/></svg></button>
         <button class="icon-btn" id="notificationBtn" type="button" title="Notification history" aria-label="Notification history" aria-expanded="false"><svg><use href="#i-bell"/></svg></button>
         <span class="conn" id="connPill" title="Connection"><i></i><b>Connecting</b></span>
         <button class="btn sm" id="installBtn" type="button" hidden>Install</button>
@@ -121,6 +123,7 @@
         <video id="video" playsinline webkit-playsinline preload="auto"></video>
         <div class="ambient-light" id="ambientLight" aria-hidden="true"></div>
         <div class="yt-host" id="ytHost"></div>
+        <button class="yt-settings-close btn" id="ytSettingsClose" type="button">YouTube ⚙ → Quality · Done</button>
         <div class="click-layer" id="clickLayer"></div>
         <div class="service-panel" id="servicePanel" hidden></div>
         <button class="yt-open" id="ytOpen" type="button" hidden><svg><use href="#i-film"/></svg>Search YouTube</button>
@@ -133,12 +136,10 @@
         <div class="yt-browser" id="ytBrowser" hidden>
           <div class="yt-top">
             <span class="yt-logo">YouTube</span>
-            <form class="yt-search" id="ytSearchForm" autocomplete="off"><input id="ytQuery" aria-label="Search YouTube" placeholder="Search videos, playlists, or paste a link" spellcheck="false"><button class="btn sm" type="submit">Search</button></form>
+            <form class="yt-search" id="ytSearchForm" autocomplete="off"><input id="ytQuery" aria-label="Search YouTube" placeholder="Search" spellcheck="false"><button type="submit" aria-label="Search" title="Search"><svg><use href="#i-search"/></svg></button></form>
             <button class="icon-btn" id="ytClose" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
           </div>
-          <nav class="yt-nav" aria-label="YouTube browsing"><button type="button" data-yt-view="home">Home</button><button type="button" data-yt-view="related">More like this</button><button type="button" data-yt-view="playlists">Playlists</button></nav>
-          <div class="yt-view-heading" id="ytViewHeading">Discover</div>
-          <div class="yt-chips" id="ytChips"></div>
+          <nav class="yt-chips" id="ytChips" aria-label="YouTube browsing"><button type="button" data-yq="Popular videos">Home</button><button type="button" data-yt-view="related">More like this</button><button type="button" data-yt-view="history">History</button><button type="button" data-yt-view="playlists">Playlists</button><button type="button" data-yq="Music">Music</button><button type="button" data-yq="Movie trailers">Movie trailers</button><button type="button" data-yq="Bollywood songs">Bollywood songs</button><button type="button" data-yq="Comedy">Comedy</button><button type="button" data-yq="Cricket highlights">Cricket highlights</button><button type="button" data-yq="Cooking">Cooking</button><button type="button" data-yq="Kids">Kids</button></nav>
           <div class="yt-status fine" id="ytStatus"></div>
           <div class="yt-results" id="ytResults"></div>
         </div>
@@ -168,18 +169,10 @@
             <div class="tune-in-glyph" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M8 5l12 7-12 7z" fill="currentColor"/></svg>
             </div>
-            <div class="tune-in-orbit"><span></span><span></span><span></span></div>
           </div>
-          <div class="tune-in-grid" aria-hidden="true"></div>
           <div class="tune-in-text">
             <div class="tune-in-eyebrow">ESTABLISHING STREAM</div>
             <div class="tune-in-title" id="tuneInTitle">Tuning in</div>
-            <div class="tune-in-steps" id="tuneInSteps">
-              <span class="s" data-s="1">resolve</span>
-              <span class="s" data-s="2">manifest</span>
-              <span class="s" data-s="3">segments</span>
-              <span class="s" data-s="4">play</span>
-            </div>
           </div>
         </div>
 
@@ -236,6 +229,7 @@
               <button class="ctrl" id="ccBtn" type="button" title="Subtitles" aria-label="Subtitles"><svg><use href="#i-cc"/></svg></button>
               <div class="popover menu" id="ccPop" hidden></div>
             </div>
+            <button class="ctrl" id="qualityBtn" type="button" title="Video quality" aria-label="Video quality">HD</button>
             <button class="ctrl" id="pipBtn" type="button" title="Pop out cameras: float them over other windows, like Netflix" aria-label="Pop out cameras"><svg><use href="#i-pip"/></svg></button>
             <button class="ctrl hide-sm" id="ambientBtn" type="button" title="Ambient theater lighting" aria-label="Toggle ambient theater lighting" aria-pressed="true"><svg><use href="#i-glow"/></svg></button>
             <button class="ctrl hide-sm" id="ecoBtn" type="button" title="Battery saver" aria-label="Toggle battery saver" aria-pressed="false"><svg><use href="#i-battery"/></svg></button>
@@ -328,20 +322,14 @@
             <p class="fine catalog-intro">Search movies and TV, including free Public Domain and Creative Commons titles from the Internet Archive. Choose a language and play in Watch Party's own synchronized player. No extension needed.</p>
             <form class="yt-search" id="catalogForm" autocomplete="off"><input id="catalogQuery" placeholder="Search movies and TV series" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
             <div class="yt-status fine" id="catalogStatus"></div>
-            <div class="shelf-frame">
-            <div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous movie and TV results" aria-controls="catalogResults">&#8592;</button><button type="button" data-shelf-page="1" aria-label="Next movie and TV results" aria-controls="catalogResults">&#8594;</button></div>
             <div class="catalog-results" id="catalogResults" tabindex="0" role="region" aria-label="Movie and TV search results"></div>
-            </div>
             <p class="tmdb-credit">Free results are limited to explicitly licensed items in curated Internet Archive collections. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
           </details>
           <details class="svc-pick" id="animePick">
             <summary class="section-label">Anime</summary>
             <form class="yt-search" id="animeForm" autocomplete="off"><input id="animeQuery" placeholder="Search anime, e.g. Spy x Family" spellcheck="false"><button class="btn sm primary" type="submit">Search</button></form>
             <div class="yt-status fine" id="animeStatus"></div>
-            <div class="shelf-frame">
-            <div class="shelf-nav" hidden><button type="button" data-shelf-page="-1" aria-label="Previous anime results" aria-controls="animeResults">&#8592;</button><button type="button" data-shelf-page="1" aria-label="Next anime results" aria-controls="animeResults">&#8594;</button></div>
             <div class="anime-results" id="animeResults" tabindex="0" role="region" aria-label="Anime search results"></div>
-            </div>
           </details>
           <details class="folders host-only" id="foldersBox">
             <summary><svg><use href="#i-folder"/></svg><span id="foldersSummary">Movie folders</span></summary>

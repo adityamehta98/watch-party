@@ -8,7 +8,7 @@ const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test('Netflix launches in Watch Party once and the separate tab needs a failed launch', () => {
-  const app = read('public/js/app.js');
+  const app = require('./app-source');
   const requests = [], timers = new Map();
   let external = 0;
   const context = vm.createContext({ S: { movie: { service: 'netflix' }, name: 'Host' }, isTheater: false, clientId: 'hostid',

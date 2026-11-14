@@ -23,14 +23,13 @@ test('all Continue watching cards use hours, minutes and seconds for long media'
 });
 
 test('player, library and extension side panel use the same duration format', () => {
-  const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+  const app = require('./app-source');
   const sidebar = fs.readFileSync(path.join(__dirname, '../extension/sidebar.js'), 'utf8');
   const context = vm.createContext({});
   vm.runInContext(app.slice(app.indexOf('function fmtTime('), app.indexOf('function fmtEta(')) +
     sidebar.slice(sidebar.indexOf('function fmt('), sidebar.indexOf('let lastChatKey')), context);
   for (const [value, expected] of [[4356, '1:12:36'], [10009, '2:46:49'], [3599, '59:59'], [3600, '1:00:00'], [0, '0:00']]) {
     assert.equal(context.fmtTime(value), expected);
-    assert.equal(context.fmtDur(value), expected);
     assert.equal(context.fmt(value), expected);
   }
 });

@@ -1,10 +1,11 @@
 'use strict';
 
-const CACHE = 'watch-party-shell-v50';
+const CACHE = 'watch-party-shell-v56';
 const SHELL = new Set([
   '/favicon.svg', '/icon-192.png', '/icon-512.png', '/css/app.css',
-  '/js/app.js', '/js/capabilities.js', '/js/file-playback.js', '/js/media.js', '/js/net.js',
-  '/js/platform.js', '/js/player.js', '/js/player-window.js', '/js/rtc.js', '/js/sync.js', '/js/visuals.js',
+  '/js/app.js', '/js/ui/core.js', '/js/ui/sources.js', '/js/ui/controls.js', '/js/ui/services.js', '/js/ui/social.js', '/js/ui/host.js', '/js/ui/browse.js', '/js/ui/anime.js',
+  '/js/capabilities.js', '/js/file-playback.js', '/js/media.js', '/js/net.js',
+  '/js/platform.js', '/js/theme.js', '/js/player.js', '/js/player-window.js', '/js/rtc.js', '/js/sync.js', '/js/visuals.js',
   '/js/fullscreen.js', '/js/subtitles.js',
   '/js/youtube-end.js',
   '/js/anime-resume.js', '/js/playback-resume.js', '/js/camera-layout.js', '/js/camera-gallery.js', '/js/player-menu.js', '/js/live-captions.js',
@@ -27,8 +28,9 @@ self.addEventListener('fetch', event => {
   event.respondWith(caches.open(CACHE).then(async cache => {
     const cacheKey = url.pathname;
     // Network first: after an update every device gets the new page code at once; the cache is only an offline fallback.
+    // 'no-cache' still asks the server every time, but an unchanged file comes back as a tiny 304.
     try {
-      const response = await fetch(request, { cache: 'no-store' });
+      const response = await fetch(request, { cache: 'no-cache' });
       if (response.ok) cache.put(cacheKey, response.clone());
       return response;
     } catch (error) {

@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const { identify } = require('../server/services');
 const { Room } = require('../server/room');
 
-const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+const app = require('./app-source');
 const launchSource = app.slice(app.indexOf('function launchCatalogService('), app.indexOf('\nfunction onCatalogResponse('));
 const mediaModule = () => import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync(path.join(__dirname, '../public/js/media.js'), 'utf8')).toString('base64')}`);
 

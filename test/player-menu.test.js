@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const app = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+const app = require('./app-source');
 const menuModule = () => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(path.join(__dirname, '../public/js/player-menu.js'), 'utf8')).toString('base64'));
 
 test('menu camera and microphone states describe current sharing, with matching on/off icons', async () => {

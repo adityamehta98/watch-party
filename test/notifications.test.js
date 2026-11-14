@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const { Room } = require('../server/room');
-const source = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+const source = require('./app-source');
 function client(id, role = 'guest', session = id) {
   const messages = [];
   return { id, role, session, admitted: true, perms: {}, messages, ws: { readyState: 1, send: raw => messages.push(JSON.parse(raw)) } };

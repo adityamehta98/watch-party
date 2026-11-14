@@ -68,21 +68,31 @@ function parsePage(html) {
 async function search(query, fetchImpl = fetch, options = {}) {
   const q = String(query || '').trim().slice(0, 150);
   if (!q) return [];
-  const mode = ['related', 'playlist', 'playlists'].includes(options.mode) ? options.mode : 'search';
+  const mode = ['related', 'playlist', 'playlists', 'home'].includes(options.mode) ? options.mode : 'search';
   const id = String(options.id || '');
   if (mode === 'related' && !/^[A-Za-z0-9_-]{11}$/.test(id) || mode === 'playlist' && !/^[A-Za-z0-9_-]{10,100}$/.test(id)) throw new Error('Invalid YouTube selection');
+  // Home: videos like the one the room watched last; a plain search when it has watched nothing.
+  const related = mode === 'related' || mode === 'home' && /^[A-Za-z0-9_-]{11}$/.test(id);
   const cacheKey = `${mode}:${id}:${q.toLowerCase()}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.results;
   // sp=EgIQAQ%3D%3D: videos only (no channels or playlists)
-  const url = mode === 'related' ? `https://www.youtube.com/watch?v=${id}&hl=en&gl=US` : mode === 'playlist' ? `https://www.youtube.com/playlist?list=${id}&hl=en&gl=US` :
+  const url = related ? `https://www.youtube.com/watch?v=${id}&hl=en&gl=US` : mode === 'playlist' ? `https://www.youtube.com/playlist?list=${id}&hl=en&gl=US` :
     `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=${mode === 'playlists' ? 'EgIQAw%253D%253D' : 'EgIQAQ%253D%253D'}&hl=en&gl=US`;
-  const r = await fetchImpl(url, {
-    headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!r.ok) throw new Error(`YouTube answered ${r.status}`);
-  const results = parsePage(await r.text()).filter(v => mode === 'playlists' ? v.playlist : !v.playlist && (mode !== 'related' || v.id !== id));
+  // YouTube now and then answers with a redirect loop or a page without data: try twice, then fall back.
+  let results, error;
+  for (let attempt = 0; attempt < 2 && !results; attempt++) {
+    try {
+      const r = await fetchImpl(url, {
+        headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) throw new Error(`YouTube answered ${r.status}`);
+      results = parsePage(await r.text()).filter(v => mode === 'playlists' ? v.playlist : !v.playlist && (!related || v.id !== id));
+    } catch (e) { error = e; }
+  }
+  if (mode === 'home' && related && !(results && results.length)) return search(q, fetchImpl);
+  if (!results) { if (hit) return hit.results; throw error; } // the last good answer beats an empty screen
   cache.set(cacheKey, { at: Date.now(), results });
   if (cache.size > 100) cache.delete(cache.keys().next().value);
   return results;

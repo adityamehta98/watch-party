@@ -68,7 +68,7 @@ function skips({ leader = false, control = true, auto = true, position = 50, epi
     sendCmd: (action, to) => actions.push([action, to]), selectAnime: message => actions.push(message),
     setTimeout: fn => { timers.set(++timerId, fn); return timerId; }, clearTimeout: id => timers.delete(id), setInterval() {},
   });
-  vm.runInContext(read('app.js').slice(read('app.js').indexOf('const AUTO_SKIP_DELAY')), context);
+  vm.runInContext(require('./app-source').slice(require('./app-source').indexOf('const AUTO_SKIP_DELAY')), context);
   return { state, button, label, actions, timers, video,
     update: () => context.updateAnimeSkip(), click: () => events.get('click')({ stopPropagation() {} }) };
 }

@@ -158,7 +158,7 @@ function roomFlow(t, { paused, spinner, embedded, transportMs = 0 }) {
   const routeStart = bg.indexOf('  for (const party of parties) {', bg.indexOf('const tabId = sender.tab.id, frameId'));
   const routeEnd = bg.indexOf('\n});\n\nchrome.tabs.onRemoved', routeStart);
   vm.runInContext(`function report(m, sender) { const tabId = sender.tab.id, frameId = sender.frameId || 0; ${bg.slice(routeStart, routeEnd)} }`, background);
-  const app = read('public/js/app.js');
+  const app = require('./app-source');
   const follow = app.slice(app.indexOf('let followTimer ='), app.indexOf("window.addEventListener('message', e => {", app.indexOf('let followTimer =')));
   const keep = app.slice(app.indexOf('let keepOffSince ='), app.indexOf('// top bar camera', app.indexOf('let keepOffSince =')));
   for (const [index, page] of [host, guest].entries()) {
@@ -356,7 +356,7 @@ test('a failed native route does not repeatedly reload Netflix or reset its PIN 
 });
 
 test('guest arrival is confirmed by playable video, not a /watch URL carrying a PIN gate', () => {
-  const app = read('public/js/app.js'), start = app.indexOf('let keepOffSince =');
+  const app = require('./app-source'), start = app.indexOf('let keepOffSince =');
   let tick, now = 1000;
   const moves = [];
   const remote = { present: true, linked: false, pageUrl: 'https://www.netflix.com/watch/12345', signingIn: true, readyState: 0, page: { at: now } };
