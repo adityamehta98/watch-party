@@ -182,7 +182,7 @@ node build/build-windows.js /path/to/windows/node.exe /path/to/ffmpeg/bin
 (you can also run that line directly if you already have both.) The output goes to `build/output/WatchParty/`. What the script does:
 
 1. **Bundles** `server/index.js` and its dependencies into one CommonJS file with esbuild.
-2. **Checks** that the Chromium manifest matches `REQUIRED_EXT_VERSION` in `public/js/media.js`, and fails if it differs.
+2. **Checks** that the Chromium manifest matches `LATEST_EXT_VERSION` in `public/js/media.js`, and fails if it differs.
 3. **Packages the Chromium extension** to `public/ext/watch-party-sync.zip`, then copies its folder to `build/output/WatchParty/extension/`.
 4. **Embeds** every file under `public/` as a SEA asset, plus the hls.js player from `node_modules` (served as `/vendor/hls.min.js`).
 5. **Injects** the blob into a copy of `node.exe` with `postject`.
@@ -191,7 +191,7 @@ node build/build-windows.js /path/to/windows/node.exe /path/to/ffmpeg/bin
 
 Put `refresh.bat` next to the exe, zip the `build/output/WatchParty` folder and attach it to a GitHub release.
 
-Build the extension downloads alone with `npm run build:extensions`. When changing the extension, bump `version` in `extension/manifest.json` and `REQUIRED_EXT_VERSION` in `public/js/media.js` together.
+Build the extension downloads alone with `npm run build:extensions`. When changing the extension, bump `version` in `extension/manifest.json` and `LATEST_EXT_VERSION` in `public/js/media.js` together.
 
 For a Chrome Web Store upload, use `npm run build:extension-store`; it creates a separate ZIP with the manifest at the archive root. Account setup, listing drafts and remaining publication steps are in [CHROME_STORE_PUBLICATION.md](CHROME_STORE_PUBLICATION.md).
 
@@ -212,7 +212,7 @@ flowchart LR
     turn["turn.js<br/>STUN/TURN relay (UDP)"]
     reach["upnp.js / tailscale.js / tunnel.js"]
   end
-  viewer["Each viewer's browser<br/>app.js, player.js, file-playback.js"]
+  viewer["Each viewer's browser<br/>app.js + ui/*.js, player.js, file-playback.js"]
   ext["Watch Party Sync extension<br/>(Netflix, Prime Video, ...)"]
 
   viewer -->|"wss: play/pause/seek, chat, status"| guard --> server <--> room
@@ -633,6 +633,23 @@ watch-party/
 └── package-lock.json
 ```
 
+The web page's own code is split by feature, each file under 1,000 lines:
+
+| File | What it holds |
+| --- | --- |
+| `public/js/app.js` | Entry: connects to the room, routes its messages, loads the selected title |
+| `public/js/ui/core.js` | Shared helpers, who this browser is, the room state and the active player |
+| `public/js/ui/sources.js` | File and stream sources, subtitles, ambient light, battery saver |
+| `public/js/ui/controls.js` | Player controls, seeking, gestures, volume, fullscreen, menus, shortcuts |
+| `public/js/ui/services.js` | Streaming services through the extension: setup, updates, side panel, theater |
+| `public/js/ui/social.js` | Reactions, notifications, chat, saved scenes, cameras, people, pop-out window |
+| `public/js/ui/host.js` | Server and invite, room settings, the host's movie library |
+| `public/js/ui/browse.js` | YouTube browser (search, related, playlists, watch history), Movies & TV search |
+| `public/js/ui/anime.js` | Anime search, history, loading overlay, episode switching, skipping |
+| `public/js/theme.js` | Sets light or dark before first paint |
+
+Modules import what they use from each other; only `core.js` is imported by all. Tests that cut the page code by text markers read it through `test/app-source.js`, which joins these files back into one script. On the server, `room.js` keeps the room and its timeline, `room-messages.js` holds what the room does with each message a browser sends, and `upstream.js` has the one relay that both media proxies (anime and Movies & TV) hand their streams through. No source file is over 1,000 lines; the long regression suite is split into `test/regression.test.js` and `test/media-pipeline.test.js`.
+
 Runtime dependencies are just [`ws`](https://github.com/websockets/ws) (WebSocket), [`qrcode`](https://github.com/soldair/node-qrcode) (QR code for invite links) and [`hls.js`](https://github.com/video-dev/hls.js) (HLS playback in browsers without a usable native player). Everything else (TLS certificates, UPnP, TURN, range serving) is written with Node's standard library.
 
 ---
@@ -680,6 +697,18 @@ Please only share content you have the right to share.
 See [privacy and storage](PRIVACY.md), [third-party notices](THIRD_PARTY_NOTICES.md), and [validation scope](AUDIT_COVERAGE.md).
 
 Run `npm run audit:unused` for unused-code analysis and `npm run test:ffmpeg` for local compatibility checks. Private reports stay under `app/cache/`.
+
+## Light and dark theme
+
+The half-circle button in the top bar switches between light and dark. The first visit follows the device setting; the choice is then remembered in that browser. The picture area and its controls stay dark in both themes, like any video player; the top bar, side panel, dialogs, home screen and the YouTube browser follow the theme. The extension's side panel follows the theme of the Watch Party page it is connected to (extension 1.17.16 onward); the chat overlay drawn on top of a streaming service's video stays dark.
+
+## YouTube watch history
+
+The **History** chip in the YouTube browser lists the videos the room has watched, newest first; pick one to play it again. It reads the same saved playback history as Continue watching, so it survives restarts and is recorded by the host's player.
+
+## Page loading
+
+Page files are sent gzip-compressed and carry a content tag (`ETag`). Browsers ask again on every load, so an update reaches everyone at once, but an unchanged file is answered with a short `304 Not Modified` instead of a new download.
 
 ## Notification history and emoji
 

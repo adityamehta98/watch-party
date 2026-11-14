@@ -1,8 +1,8 @@
 # Netflix and session fixes — validation
 
-Installed extension version: **1.17.15**. Minimum playback-compatible version: **1.17.8**.
+Installed extension version: **1.17.17**, including quality controls in the service overlay and side panel. Minimum playback-compatible version: **1.17.8**.
 
-The complete regression suite passed: **370 tests, zero failures**. Results are in `build/cache/youtube-end-all-tests.log`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
+The complete regression suite passed: **427 tests, zero failures**. Results are in `build/cache/control-overlay-full-tests.txt`. Fixed-folder installation and precise first-install steps are in [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md). Tests verify temporary-profile file replacement, stale-message handling, source consent, integrity checks, rollback, interrupted-update recovery, permission expansion and server download transport. Native installer dialogs/URI registration and live Chrome/Brave approval are not exercised by those simulations. Real store delivery remains untested until a store item exists.
 
 YouTube state 0 now emits a single ended event and retains the final timestamp even if the iframe clock resets to zero. Sync correction latches that state and cancels pending playback retries. A matching host end report pauses the room at the verified duration and saves completion; stale or guest reports cannot stop it. An explicit Replay or seek can start playback again. The end screen offers up to six related videos directly over the player, reopens the desktop recommendation rail, and supports the full-height narrow layout. No video is selected automatically.
 
@@ -52,7 +52,7 @@ The earlier join tests supplied a destination directly to the guest. The new tes
 
 Real Netflix accounts, its current page router and DRM playback were not available in two independent extension-enabled browser sessions here. The simulated tests do not certify that external behavior.
 
-1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.15** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
+1. On both PCs, use **Update extension** to enable Watch Party Sync **1.17.17** if the browser already uses the fixed folder. Otherwise follow [EXTENSION_INSTALLATION.md](EXTENSION_INSTALLATION.md) once and disable any older copy loaded from another folder. Reload Watch Party and Netflix, and allow Netflix site access if it was restricted to localhost. The manual ZIP fallback remains `public/ext/watch-party-sync.zip`.
 2. On PC 1, start sharing and load a Netflix movie. Pause while waiting for the guest. Confirm Watch Party leaves the picking state and shows the selected title before the guest unlocks its profile. Repeat once with the host playing.
 3. On PC 2, join through the invite, open Netflix, select the profile and enter its PIN. After unlock, confirm the guest reaches the same `/watch/<id>` title as PC 1 and catches up to the host timestamp. Wait at least a minute to check for delayed PIN redirects.
 4. In fullscreen, open chat, type, leave the mouse still until Netflix's controls fade, and continue typing. Click outside chat and check that Netflix then receives keyboard focus.

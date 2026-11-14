@@ -14,7 +14,9 @@ Watch Party opens as a private player and stays running until you close its wind
 
 The host can turn on three helpers in **Room settings -> Live tools -> Enable live tools**. Start captions from the CC menu. Options appear once; hover or focus an option for its explanation. Errors appear in notification history.
 
-- **Live captions:** the playing audio is transcribed in rolling windows and streamed to every viewer over the existing WebSocket as WebVTT, so captions stay in sync and work when someone pauses, seeks or joins late. Works for library movies, anime and the Movies & TV catalog; streaming services play inside each viewer's own browser, so their audio is not available to transcribe.
+- **Live captions:** library movies, anime and Movies & TV are transcribed from the host's media. On YouTube, **CC → Start auto-generated captions** selects YouTube's timestamped auto-generated track, when available. It stays aligned with playback and needs no tab sharing. A confirmation appears for three seconds. Videos without a YouTube auto-generated track cannot generate new captions without providing audio to a transcription engine.
+- **Video quality:** select **HD** beside **CC** on the bottom bar. HLS streams expose all available resolutions and Auto. YouTube opens its native player controls; choose ⚙ → Quality, then Done. Its native controls are disabled during normal playback. Subscription services open their player settings through Watch Party Sync; Netflix opens its profile playback settings. Services that only offer automatic quality retain that restriction. A single-resolution source cannot offer additional resolutions.
+- **YouTube subtitles:** the CC menu's subtitle-language selector includes the video's original tracks, auto-generated tracks and YouTube's available auto-translation languages. These are independent of the live transcription provider.
 - **Catch me up:** a late joiner requests a 3 to 4 sentence summary built from the captions up to the current moment. Response time depends on the provider.
 - **Highlights:** finds notable moments from audio-energy spikes and chat/reaction spikes, then cuts short shareable clips with ffmpeg.
 
@@ -50,7 +52,7 @@ Source runs share app/config.json, app/watch-history.json and app/cache/ with th
 | --- | --- |
 | app/ | Tools, extension, private settings/history and caches; ignored by Git |
 | server/ | Host server and media delivery |
-| public/ | Web player and chat |
+| public/ | Web player and chat; page code in public/js/app.js and public/js/ui/ |
 | extension/ | Chromium extension source |
 | test/ | Regression tests |
 | benchmark/ | Sync simulation and FFmpeg compatibility checks |
