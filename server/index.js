@@ -28,9 +28,11 @@ const crypto = require('crypto');
 const { Guard, norm } = require('./guard');
 const { Tailscale } = require('./tailscale');
 const youtube = require('./youtube');
+const { captionMetadata } = require('./youtube-captions');
 const { WP_ARTWORK_HOSTS } = require('../extension/services');
 const artworkSources = [...new Set(Object.values(WP_ARTWORK_HOSTS).flat())].flatMap(host => [`https://${host}`, `https://*.${host}`]).join(' ');
 const anime = require('./anime');
+const { relay } = require('./upstream');
 const remoteMedia = require('./remote-media');
 const { Catalog } = require('./catalog');
 const { migrateConfig } = require('./settings');
@@ -464,8 +466,12 @@ function readBody(req) {
 function serveStatic(req, res, rel, extraHeaders = {}) {
   const a = assets.get(rel);
   if (!a) return notFound(req, res, 'unknown file');
-  res.writeHead(200, { 'Content-Type': a.type, 'Cache-Control': rel.endsWith('.html') ? 'no-store' : 'no-cache', ...extraHeaders });
-  res.end(a.body);
+  if (rel.endsWith('.html')) { res.writeHead(200, { 'Content-Type': a.type, 'Cache-Control': 'no-store', ...extraHeaders }); return res.end(a.body); }
+  const validator = { ETag: assets.etag(a), 'Cache-Control': 'no-cache' };
+  if (req.headers['if-none-match'] === validator.ETag) { res.writeHead(304, validator); return res.end(); }
+  const { body, headers } = assets.encoded(a, req.headers['accept-encoding']);
+  res.writeHead(200, { 'Content-Type': a.type, ...validator, ...headers, ...extraHeaders });
+  res.end(body);
 }
 
 const isLocal = req => /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '') && isLocalHostHeader(req.headers.host) &&
@@ -499,7 +505,7 @@ function securityHeaders(req, res) {
   const host = effectiveHost(req).replace(/[^A-Za-z0-9.:\[\]-]/g, '');
   const theater = isTheaterPage(req);
 
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${artworkSources} https://s4.anilist.co https://fonts.gstatic.com https://media.giphy.com https://media0.giphy.com https://media1.giphy.com https://media2.giphy.com https://media3.giphy.com https://media4.giphy.com https://i.giphy.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host} https://api.giphy.com; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; worker-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${artworkSources} https://s4.anilist.co https://fonts.gstatic.com https://media.giphy.com https://media0.giphy.com https://media1.giphy.com https://media2.giphy.com https://media3.giphy.com https://media4.giphy.com https://i.giphy.com; media-src 'self' blob:; connect-src 'self' wss://${host} ws://${host} https://api.giphy.com https://www.youtube.com; frame-ancestors ${theater ? 'chrome-extension:' : "'none'"}; base-uri 'none'; form-action 'self'; object-src 'none'`);
   if (!theater) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -679,84 +685,20 @@ async function animeProxy(req, res, p, u) {
   const role = mediaRole(req, u.searchParams.get('k'));
   if (!role) return notFound(req, res, 'anime key');
   const target = anime.parseProxyPath(p);
-  const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
-  if (!target) return fail(404);
   // Only a current-movie request is served to guests; the host (local) may prefetch freely.
-  if (role !== 'host' && (!room.movie || room.movie.kind !== 'anime')) return fail(404);
-  try {
-    if (target.kind === 'm3u8') {
-      const r = await anime.fetchUpstream(target.url, target.referer);
-      if (!r.ok) return fail(r.status === 404 ? 404 : 502);
-      const text = await r.text();
-      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
-      const c = u.searchParams.get('c'); if (c) auth.set('c', c);
-      const body = anime.rewriteM3u8(text, r.url || target.url, target.referer, auth.toString());
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
-      return req.method === 'HEAD' ? res.end() : res.end(body);
-    }
-    if (target.kind === 'sub') {
-      const r = await anime.fetchUpstream(target.url, target.referer);
-      if (!r.ok) return fail(r.status === 404 ? 404 : 502);
-      const body = anime.toVtt(await r.text());
-      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
-      return req.method === 'HEAD' ? res.end() : res.end(body);
-    }
-    // a media segment, encryption key or init segment: stream the bytes, relaying Range
-    const extra = req.headers.range ? { Range: req.headers.range } : {};
-    const r = await anime.fetchUpstream(target.url, target.referer, extra);
-    if (!(r.ok || r.status === 206)) return fail(r.status === 404 ? 404 : 502);
-    const h = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
-    const ct = r.headers.get('content-type'); if (ct) h['Content-Type'] = ct;
-    const cl = r.headers.get('content-length'); if (cl) h['Content-Length'] = cl;
-    const cr = r.headers.get('content-range'); if (cr) h['Content-Range'] = cr;
-    res.writeHead(r.status === 206 ? 206 : 200, h);
-    if (req.method === 'HEAD' || !r.body) { await r.body?.cancel().catch(() => {}); return res.end(); }
-    const stream = anime.Readable.fromWeb(r.body);
-    stream.on('error', () => res.destroy());
-    res.on('close', () => stream.destroy());
-    return stream.pipe(res);
-  } catch { return fail(502); }
+  if (!target || (role !== 'host' && room.movie?.kind !== 'anime')) return relay(req, res, u, null);
+  return relay(req, res, u, target, { fetch: extra => anime.fetchUpstream(target.url, target.referer, extra),
+    rewrite: (text, base, auth) => anime.rewriteM3u8(text, base, target.referer, auth), toVtt: anime.toVtt });
 }
 
 async function catalogMediaProxy(req, res, p, u) {
   const role = mediaRole(req, u.searchParams.get('k'));
   if (!role) return notFound(req, res, 'catalog media key');
   const target = remoteMedia.parsePath(p);
-  const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
-  if (!target) return fail(404);
-  if (role !== 'host' && (!room.movie || room.movie.kind !== 'catalog' || !target.scope || target.scope !== room.movie.mediaScope)) return fail(404);
-  try {
-    if (target.kind === 'm3u8') {
-      const upstream = await remoteMedia.fetchUpstream(target);
-      if (!upstream.ok) return fail(upstream.status === 404 ? 404 : 502);
-      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
-      const clientId = u.searchParams.get('c'); if (clientId) auth.set('c', clientId);
-      const body = remoteMedia.rewriteM3u8(await upstream.text(), upstream.url || target.url, target, auth.toString());
-      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
-      return req.method === 'HEAD' ? res.end() : res.end(body);
-    }
-    if (target.kind === 'sub') {
-      const upstream = await remoteMedia.fetchUpstream(target);
-      if (!upstream.ok) return fail(upstream.status === 404 ? 404 : 502);
-      const body = remoteMedia.toVtt(await upstream.text());
-      res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
-      return req.method === 'HEAD' ? res.end() : res.end(body);
-    }
-    const extra = req.headers.range ? { Range: req.headers.range } : {};
-    const upstream = await remoteMedia.fetchUpstream(target, extra);
-    if (!(upstream.ok || upstream.status === 206)) return fail(upstream.status === 404 ? 404 : 502);
-    const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
-    const contentType = upstream.headers.get('content-type'); if (contentType) headers['Content-Type'] = contentType;
-    const contentLength = upstream.headers.get('content-length'); if (contentLength) headers['Content-Length'] = contentLength;
-    const contentRange = upstream.headers.get('content-range'); if (contentRange) headers['Content-Range'] = contentRange;
-    res.writeHead(upstream.status === 206 ? 206 : 200, headers);
-    if (req.method === 'HEAD' || !upstream.body) { await upstream.body?.cancel().catch(() => {}); return res.end(); }
-    const stream = remoteMedia.Readable.fromWeb(upstream.body);
-    stream.on('data', chunk => room.addBytes(u.searchParams.get('c'), chunk.length));
-    stream.on('error', () => res.destroy());
-    res.on('close', () => stream.destroy());
-    return stream.pipe(res);
-  } catch { return fail(502); }
+  if (!target || (role !== 'host' && (room.movie?.kind !== 'catalog' || !target.scope || target.scope !== room.movie.mediaScope))) return relay(req, res, u, null);
+  return relay(req, res, u, target, { fetch: extra => remoteMedia.fetchUpstream(target, extra),
+    rewrite: (text, base, auth) => remoteMedia.rewriteM3u8(text, base, target, auth), toVtt: remoteMedia.toVtt,
+    onBytes: n => room.addBytes(u.searchParams.get('c'), n) });
 }
 
 async function handler(req, res) {
@@ -799,6 +741,12 @@ async function handler(req, res) {
       return serveStatic(req, res, 'index.html', { 'Set-Cookie': cookies });
     }
     if (p.startsWith('/api/')) return await api(req, res, p);
+    if ((m = p.match(/^\/youtube\/captions\/([A-Za-z0-9_-]{11})$/)) && req.method === 'GET') {
+      const role = mediaRole(req, u.searchParams.get('k'));
+      if (!role || role !== 'host' && (room.movie?.kind !== 'youtube' || room.movie.videoId !== m[1])) return notFound(req, res, 'youtube captions');
+      try { return sendJson(res, 200, await captionMetadata(m[1])); }
+      catch { return sendJson(res, 502, { error: 'Could not load YouTube subtitle languages. Open the CC menu to retry.' }); }
+    }
     if (p.startsWith('/media/')) return media(req, res, p, u);
     if (p.startsWith('/captions/')) {
       if (!mediaRole(req, u.searchParams.get('k'))) return notFound(req, res, 'caption admission');

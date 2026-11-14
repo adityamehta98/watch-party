@@ -107,4 +107,34 @@ async function fetchPublic(raw, { headers = {}, lookup, request, timeout = 20000
   throw new Error('too many redirects');
 }
 
-module.exports = { fetchPublic, isPublicIp, boundedText };
+// Hands one upstream HLS resource to a browser: playlists are rewritten to come back through this server,
+// captions become WebVTT, and everything else (segments, keys) is streamed with Range support.
+async function relay(req, res, u, target, { fetch, rewrite, toVtt, onBytes } = {}) {
+  const fail = (code = 404) => { res.writeHead(code, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end(code === 404 ? 'Not found' : 'Upstream error'); };
+  const privately = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
+  const sendText = (type, body) => { res.writeHead(200, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body), ...privately }); return req.method === 'HEAD' ? res.end() : res.end(body); };
+  if (!target) return fail();
+  try {
+    if (target.kind === 'm3u8' || target.kind === 'sub') {
+      const r = await fetch();
+      if (!r.ok) return fail(r.status === 404 ? 404 : 502);
+      if (target.kind === 'sub') return sendText('text/vtt; charset=utf-8', toVtt(await r.text()));
+      const auth = new URLSearchParams({ k: u.searchParams.get('k') || '' });
+      const c = u.searchParams.get('c'); if (c) auth.set('c', c);
+      return sendText('application/vnd.apple.mpegurl', rewrite(await r.text(), r.url || target.url, auth.toString()));
+    }
+    const r = await fetch(req.headers.range ? { Range: req.headers.range } : {});
+    if (!(r.ok || r.status === 206)) return fail(r.status === 404 ? 404 : 502);
+    const headers = { ...privately, 'Accept-Ranges': 'bytes' };
+    for (const name of ['Content-Type', 'Content-Length', 'Content-Range']) { const value = r.headers.get(name); if (value) headers[name] = value; }
+    res.writeHead(r.status === 206 ? 206 : 200, headers);
+    if (req.method === 'HEAD' || !r.body) { await r.body?.cancel().catch(() => {}); return res.end(); }
+    const stream = Readable.fromWeb(r.body);
+    if (onBytes) stream.on('data', chunk => onBytes(chunk.length));
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    return stream.pipe(res);
+  } catch { return fail(502); }
+}
+
+module.exports = { fetchPublic, isPublicIp, boundedText, relay };

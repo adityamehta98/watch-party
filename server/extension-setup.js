@@ -38,7 +38,7 @@ function createExtensionSetup({ root, platform = process.platform, env = process
       child.once('spawn', () => { child.unref(); resolve(); });
     });
   }
-  async function open({ browser, folder = false } = {}) {
+  async function open({ folder = false } = {}) {
     if (platform !== 'win32') throw new Error('Open the browser extensions page manually on this operating system.');
     if (!info()) throw new Error('The bundled extension is missing. Reinstall Watch Party to restore it.');
     if (!folder) throw new Error('Open extension settings in your current browser using its extension or the copied address.');

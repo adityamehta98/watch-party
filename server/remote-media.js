@@ -5,7 +5,6 @@
 // access token). The catalog module is the only production caller that registers
 // targets, so guests cannot turn this into an open proxy.
 const crypto = require('crypto');
-const { Readable } = require('stream');
 const { fetchPublic } = require('./upstream');
 
 let secret = 'watch-party-remote-media';
@@ -99,4 +98,4 @@ function toVtt(text) {
   return `WEBVTT\n\n${body.replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-module.exports = { init, signedPath, parsePath, fetchUpstream, rewriteM3u8, toVtt, Readable, _targets: targets };
+module.exports = { init, signedPath, parsePath, fetchUpstream, rewriteM3u8, toVtt, _targets: targets };

@@ -1,7 +1,6 @@
 'use strict';
 
 const crypto = require('crypto');
-const { Readable } = require('stream');
 const { fetchPublic } = require('./upstream');
 
 const PRIMARY = 'https://megaplay.buzz';
@@ -149,4 +148,4 @@ function toVtt(text) {
   return `WEBVTT\n\n${body.replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-module.exports = { search, poster, embedSources, resolveStream, parseSource, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt, Readable };
+module.exports = { search, poster, embedSources, resolveStream, parseSource, init, signedPath, parseProxyPath, fetchUpstream, rewriteM3u8, toVtt };

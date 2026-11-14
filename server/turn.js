@@ -50,7 +50,7 @@ function parse(buf) {
 }
 const getAttr = (msg, t) => msg.attrs.find(a => a.type === t);
 
-function xorAddr(value, tid) {
+function xorAddr(value) {
   // IPv4 only
   if (value.length < 8 || value[1] !== 0x01) return null;
   const port = value.readUInt16BE(2) ^ (MAGIC >>> 16);
@@ -183,7 +183,7 @@ class TurnServer {
       const alloc = this.allocations.get(key);
       const pa = getAttr(msg, A.XOR_PEER_ADDRESS), data = getAttr(msg, A.DATA);
       if (!alloc || !pa || !data) return;
-      const peer = xorAddr(pa.value, msg.tid);
+      const peer = xorAddr(pa.value);
       if (peer && alloc.permissions.get(peer.ip) > Date.now()) this.relayOut(alloc, peer.ip, peer.port, data.value);
       return;
     }
@@ -238,7 +238,7 @@ class TurnServer {
       }
       case M.CREATE_PERMISSION: {
         if (!alloc) return fail(437, 'Allocation Mismatch');
-        const peers = msg.attrs.filter(a => a.type === A.XOR_PEER_ADDRESS).map(a => xorAddr(a.value, msg.tid)).filter(Boolean);
+        const peers = msg.attrs.filter(a => a.type === A.XOR_PEER_ADDRESS).map(a => xorAddr(a.value)).filter(Boolean);
         if (!peers.length) return fail(400, 'Bad Request');
         if (new Set([...alloc.permissions.keys(), ...peers.map(p => p.ip)]).size > 64) return fail(508, 'Permission Quota Reached');
         for (const p of peers) alloc.permissions.set(p.ip, Date.now() + PERMISSION_LIFETIME * 1000);
@@ -249,7 +249,7 @@ class TurnServer {
         const chA = getAttr(msg, A.CHANNEL_NUMBER), pa = getAttr(msg, A.XOR_PEER_ADDRESS);
         if (!chA || !pa) return fail(400, 'Bad Request');
         const ch = chA.value.readUInt16BE(0);
-        const peer = xorAddr(pa.value, msg.tid);
+        const peer = xorAddr(pa.value);
         if (ch < 0x4000 || ch > 0x7ffe || !peer) return fail(400, 'Bad Request');
         if ((!alloc.channels.has(ch) && alloc.channels.size >= 64) || (!alloc.permissions.has(peer.ip) && alloc.permissions.size >= 64)) return fail(508, 'Channel Quota Reached');
         const previous = alloc.channels.get(ch);
